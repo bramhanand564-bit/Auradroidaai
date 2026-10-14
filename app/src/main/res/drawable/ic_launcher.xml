@@ -4,24 +4,23 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Matte Charcoal Background -->
     <path
         android:fillColor="#121316"
         android:pathData="M0,0h108v108h-108z" />
-    <!-- Soft White Marshmallow Companion Head -->
+    <!-- Soft White Marshmallow Head -->
     <path
         android:fillColor="#F8FAFC"
-        android:pathData="M24,38 C24,25 36,20 54,20 C72,20 84,25 84,38 L84,68 C84,81 72,86 54,86 C36,86 24,81 24,68 Z" />
+        android:pathData="M22,36 C22,22 35,18 54,18 C73,18 86,22 86,36 L86,70 C86,84 73,88 54,88 C35,88 22,84 22,70 Z" />
     <!-- Friendly Dark Eyes -->
     <path
-        android:fillColor="#1E293B"
-        android:pathData="M41,53 m-5.5,0 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0" />
+        android:fillColor="#0F172A"
+        android:pathData="M40,53 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
     <path
-        android:fillColor="#1E293B"
-        android:pathData="M67,53 m-5.5,0 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0" />
-    <!-- Subtle Gentle Connector Line (Original Companion Style) -->
+        android:fillColor="#0F172A"
+        android:pathData="M68,53 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
     <path
-        android:strokeColor="#CBD5E1"
-        android:strokeWidth="2.5"
+        android:strokeColor="#94A3B8"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
         android:pathData="M46,53 L62,53" />
 </vector>
