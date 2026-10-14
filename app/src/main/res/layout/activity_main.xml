@@ -426,7 +426,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🔄 Universal Automations & Scheduler"
+                            android:text="🔄 Universal Automations &amp; Scheduler"
                             android:textColor="#F8FAFC"
                             android:textSize="18sp"
                             android:textStyle="bold" />
