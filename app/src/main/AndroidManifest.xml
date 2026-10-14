@@ -38,7 +38,7 @@
         <service
             android:name=".AutoTouchService"
             android:exported="true"
-            android:label="AuraDroid AI Autonomous Companion"
+            android:label="AuraDroid AI Universal Companion"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
