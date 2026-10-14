@@ -41,7 +41,7 @@ object VideoQueueManager {
                 f.isFile &&
                 f.extension.lowercase() in listOf("mp4", "webm", "mov") &&
                 f.lastModified() >= sinceTimestampMs &&
-                f.length() > 50_000L
+                f.length() > 40_000L
             }?.let { candidates.addAll(it) }
         }
 
@@ -58,6 +58,25 @@ object VideoQueueManager {
         return newest
     }
 
+    /**
+     * Shows all downloaded videos & files in Download/AutoVideos and Downloads folder for the in-app Browser Storage dialog.
+     */
+    fun getDownloadedFilesReport(targetFolder: String): String {
+        val targetDir = File(targetFolder)
+        if (!targetDir.exists()) targetDir.mkdirs()
+        val files = getVideoFilesInFolder(targetFolder).sortedByDescending { it.lastModified() }
+        if (files.isEmpty()) {
+            return "📂 फोल्डर ($targetFolder) अभी खाली है।\n\nजब Google Flow या ब्राउज़र से कोई वीडियो डाउनलोड होगी, तो वह यहाँ दिखेगी।"
+        }
+        val uploaded = mutableSetOf<String>()
+        val sdf = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
+        return files.mapIndexed { idx, file ->
+            val sizeMb = String.format(Locale.US, "%.2f MB", file.length() / (1024.0 * 1024.0))
+            val dateStr = sdf.format(Date(file.lastModified()))
+            "${idx + 1}. 🎬 ${file.name}\n    Size: $sizeMb • $dateStr"
+        }.joinToString("\n\n")
+    }
+
     fun markVideoUploaded(context: Context, videoFile: File) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val current = getUploadedSet(context).toMutableSet()
@@ -71,6 +90,29 @@ object VideoQueueManager {
         prefs.edit().remove(KEY_UPLOADED_SET).apply()
     }
 
+    fun savePinnedFlowUrl(context: Context, url: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString("pinned_flow_url", url.trim()).apply()
+    }
+
+    fun getPinnedFlowUrl(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("pinned_flow_url", "https://labs.google/fx/tools/flow") ?: "https://labs.google/fx/tools/flow"
+    }
+
+    fun getFlowTopic(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(
+                "flow_topic",
+                "Cinematic 8-second hyper-realistic story of a futuristic AI boy exploring a glowing sci-fi world"
+            ) ?: ""
+    }
+
+    fun getDailyVideoLimit(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt("daily_video_limit", 1).coerceIn(1, 5)
+    }
+
     fun saveMemoryVault(context: Context, memoryText: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putString("memory_vault", memoryText.trim()).apply()
@@ -80,7 +122,7 @@ object VideoQueueManager {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(
                 "memory_vault",
-                "Favorite Video Topic: AI & Tech Facts\nPreferred Language: Hindi + English"
+                "Favorite Video Topic: Futuristic AI & Sci-Fi Stories\nPreferred Language: Hindi + English"
             ) ?: ""
     }
 
