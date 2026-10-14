@@ -27,6 +27,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.sin
 
 class AiOverlayHud(private val context: Context) {
@@ -34,14 +35,14 @@ class AiOverlayHud(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var pointerCanvasView: SoftCompanionCursorCanvas? = null
+    private var pointerCanvasView: CuteBaymaxHandCursorCanvas? = null
     private var podRootLayout: LinearLayout? = null
     private var podLayoutParams: WindowManager.LayoutParams? = null
 
     private var compactRow: LinearLayout? = null
     private var tvPodTitle: TextView? = null
     private var tvPodSubtitle: TextView? = null
-    private var botAvatarView: SoftWhiteCompanionAvatar? = null
+    private var botAvatarView: ExpressiveCompanionAvatar? = null
 
     private var expandedContainer: LinearLayout? = null
     private var tvExpandedStepInfo: TextView? = null
@@ -128,7 +129,7 @@ class AiOverlayHud(private val context: Context) {
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT
                 )
-                pointerCanvasView = SoftCompanionCursorCanvas(context)
+                pointerCanvasView = CuteBaymaxHandCursorCanvas(context)
                 windowManager.addView(pointerCanvasView, canvasParams)
 
                 podLayoutParams = WindowManager.LayoutParams(
@@ -141,8 +142,8 @@ class AiOverlayHud(private val context: Context) {
                     PixelFormat.TRANSLUCENT
                 ).apply {
                     gravity = Gravity.TOP or Gravity.START
-                    x = dpToPx(24)
-                    y = dpToPx(42)
+                    x = dpToPx(20)
+                    y = dpToPx(38)
                 }
 
                 podRootLayout = buildThreeStagePodUi()
@@ -192,6 +193,7 @@ class AiOverlayHud(private val context: Context) {
             tvPodSubtitle?.text = detailMessage
             tvExpandedStepInfo?.text = "$stepBadge • $detailMessage"
             botAvatarView?.setMood(mood)
+            pointerCanvasView?.setHandMood(mood)
         }
     }
 
@@ -199,7 +201,7 @@ class AiOverlayHud(private val context: Context) {
         mainHandler.post {
             if (isPodVisible && !isAdded) show()
             pointerCanvasView?.visibility = View.VISIBLE
-            pointerCanvasView?.animateBotTo(targetX, targetY, actionLabel)
+            pointerCanvasView?.animateHandToTap(targetX, targetY, actionLabel)
         }
     }
 
@@ -266,8 +268,8 @@ class AiOverlayHud(private val context: Context) {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        botAvatarView = SoftWhiteCompanionAvatar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dpToPx(42), dpToPx(38)).apply {
+        botAvatarView = ExpressiveCompanionAvatar(context).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(40)).apply {
                 marginEnd = dpToPx(10)
             }
         }
@@ -451,19 +453,21 @@ class AiOverlayHud(private val context: Context) {
     }
 
     /**
-     * Extra-Cute Soft-White Marshmallow Companion Bot Avatar
-     * Features: Plump rounded white head, rosy cheeks, eye sparkles, smooth blinking & happy (^ ^) eyes!
+     * Expressive Soft-White Companion Face:
+     * - Dynamic Eye Colors (Blue = Thinking, Green = Working/Success, Red = Error/Sad, Amber = Waiting, Dark = Ready)
+     * - Dynamic Emoji Mouths (Smile, Big Happy Laugh, Thinking 'o', Sad Frown + Tear)
+     * - Micro-animations (Scanning eyes while thinking, blinking, floating sparkles, rosy cheeks)
      */
-    private class SoftWhiteCompanionAvatar(context: Context) : View(context) {
+    private class ExpressiveCompanionAvatar(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var phase = 0f
-        private var mood = "WORKING"
+        private var mood = "WORKING" // WORKING, THINKING, DONE, ERROR, SAD, WAITING
 
         private val animator = object : Runnable {
             override fun run() {
-                phase += 0.16f
+                phase += 0.18f
                 invalidate()
-                postDelayed(this, 45)
+                postDelayed(this, 40)
             }
         }
 
@@ -472,7 +476,7 @@ class AiOverlayHud(private val context: Context) {
         }
 
         fun setMood(newMood: String) {
-            mood = newMood
+            mood = newMood.uppercase()
             invalidate()
         }
 
@@ -485,98 +489,186 @@ class AiOverlayHud(private val context: Context) {
             super.onDraw(canvas)
             val w = width.toFloat()
             val h = height.toFloat()
-            val bobY = sin(phase * 0.65f) * 2.0f
+            val bobY = sin(phase * 0.7f) * 2.0f
 
-            // 1. Plump Marshmallow White Head
-            val headRect = RectF(3f, 5f + bobY, w - 3f, h - 5f + bobY)
+            // 1. Soft Marshmallow White Head
+            val headRect = RectF(3f, 4f + bobY, w - 3f, h - 4f + bobY)
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#F8FAFC")
             canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
 
-            // Soft Outline
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2f
-            paint.color = when (mood) {
-                "DONE" -> Color.parseColor("#10B981")
-                "THINKING" -> Color.parseColor("#3B82F6")
-                else -> Color.parseColor("#CBD5E1")
+            // Mood-reactive Soft Head Border
+            val accentColor = when (mood) {
+                "ERROR", "SAD", "FAILED" -> Color.parseColor("#EF4444") // Red
+                "THINKING", "PROCESSING" -> Color.parseColor("#2563EB") // Electric Blue
+                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#10B981") // Emerald Green
+                "WAITING" -> Color.parseColor("#F59E0B") // Warm Amber
+                else -> Color.parseColor("#059669") // Teal/Green Working
             }
+
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.4f
+            paint.color = accentColor
             canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
 
-            val eyeY = h * 0.50f + bobY
-            val leftEyeX = w * 0.33f
-            val rightEyeX = w * 0.67f
+            // Eye Positions (Slightly shifts left-right when THINKING!)
+            val lookOffsetX = if (mood == "THINKING") sin(phase * 1.6f) * 3.2f else 0f
+            val lookOffsetY = if (mood == "THINKING") cos(phase * 1.2f) * 1.5f else 0f
 
-            // 2. Cute Soft Pinkish Blush on Cheeks
-            paint.style = Paint.Style.FILL
-            paint.color = Color.argb(75, 244, 114, 182)
-            canvas.drawOval(RectF(leftEyeX - 9f, eyeY + 3f, leftEyeX - 1f, eyeY + 8f), paint)
-            canvas.drawOval(RectF(rightEyeX + 1f, eyeY + 3f, rightEyeX + 9f, eyeY + 8f), paint)
+            val eyeY = h * 0.43f + bobY + lookOffsetY
+            val leftEyeX = w * 0.32f + lookOffsetX
+            val rightEyeX = w * 0.68f + lookOffsetX
 
-            // 3. Gentle Connector Bridge Line
+            // 2. Cute Rosy Cheeks (Brighter when Happy/Working)
+            if (mood != "ERROR" && mood != "SAD") {
+                paint.style = Paint.Style.FILL
+                paint.color = Color.argb(85, 244, 114, 182)
+                canvas.drawOval(RectF(w * 0.14f, eyeY + 3.5f, w * 0.28f, eyeY + 9f), paint)
+                canvas.drawOval(RectF(w * 0.72f, eyeY + 3.5f, w * 0.86f, eyeY + 9f), paint)
+            }
+
+            // 3. Subtle Baymax-style Bridge Line (Faint so the smile stands out clearly)
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.2f
-            paint.color = Color.parseColor("#CBD5E1")
+            paint.strokeWidth = 1.6f
+            paint.color = Color.parseColor("#E2E8F0")
             canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, paint)
 
-            // 4. Expressive Blinking Eyes
-            val isBlinking = sin(phase * 0.85f) > 0.92f
-            paint.color = Color.parseColor("#0F172A")
+            // 4. Dynamic Color-Changing Eyes
+            val isBlinking = sin(phase * 0.85f) > 0.93f
+            val eyeColor = when (mood) {
+                "ERROR", "SAD", "FAILED" -> Color.parseColor("#DC2626") // Red Eyes on Error!
+                "THINKING", "PROCESSING" -> Color.parseColor("#2563EB") // Blue Eyes while Thinking!
+                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#059669") // Green Happy Eyes!
+                "WAITING" -> Color.parseColor("#D97706") // Amber Eyes!
+                else -> Color.parseColor("#0F172A") // Deep Charcoal/Teal Eyes
+            }
 
-            if (mood == "DONE") {
-                // Cute Happy Arc Eyes (^  ^)
+            paint.color = eyeColor
+
+            if (mood == "DONE" || mood == "HAPPY") {
+                // Happy Joyful Curved Arc Eyes (^  ^)
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 3f
-                canvas.drawArc(RectF(leftEyeX - 4.5f, eyeY - 4f, leftEyeX + 4.5f, eyeY + 4f), 190f, 160f, false, paint)
-                canvas.drawArc(RectF(rightEyeX - 4.5f, eyeY - 4f, rightEyeX + 4.5f, eyeY + 4f), 190f, 160f, false, paint)
+                paint.strokeWidth = 3.2f
+                paint.strokeCap = Paint.Cap.ROUND
+                canvas.drawArc(RectF(leftEyeX - 5f, eyeY - 4f, leftEyeX + 5f, eyeY + 4f), 190f, 160f, false, paint)
+                canvas.drawArc(RectF(rightEyeX - 5f, eyeY - 4f, rightEyeX + 5f, eyeY + 4f), 190f, 160f, false, paint)
             } else if (isBlinking) {
+                // Smooth Blink Line
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 3f
+                paint.strokeCap = Paint.Cap.ROUND
                 canvas.drawLine(leftEyeX - 4.5f, eyeY, leftEyeX + 4.5f, eyeY, paint)
                 canvas.drawLine(rightEyeX - 4.5f, eyeY, rightEyeX + 4.5f, eyeY, paint)
             } else {
+                // Round Expressive Eyes
                 paint.style = Paint.Style.FILL
-                canvas.drawCircle(leftEyeX, eyeY, 4.6f, paint)
-                canvas.drawCircle(rightEyeX, eyeY, 4.6f, paint)
+                val eyeRadius = if (mood == "THINKING") 4.8f + sin(phase * 2f) * 0.6f else 4.8f
+                canvas.drawCircle(leftEyeX, eyeY, eyeRadius, paint)
+                canvas.drawCircle(rightEyeX, eyeY, eyeRadius, paint)
 
-                // Cute White Eye Sparkle Catchlights
+                // Cute White Sparkle Catchlights inside Eyes
                 paint.color = Color.WHITE
-                canvas.drawCircle(leftEyeX - 1.4f, eyeY - 1.4f, 1.4f, paint)
-                canvas.drawCircle(rightEyeX - 1.4f, eyeY - 1.4f, 1.4f, paint)
+                canvas.drawCircle(leftEyeX - 1.5f, eyeY - 1.5f, 1.6f, paint)
+                canvas.drawCircle(rightEyeX - 1.5f, eyeY - 1.5f, 1.6f, paint)
+                canvas.drawCircle(leftEyeX + 1.5f, eyeY + 1.5f, 0.8f, paint)
+                canvas.drawCircle(rightEyeX + 1.5f, eyeY + 1.5f, 0.8f, paint)
+
+                // Sad / Worried Eyebrows when Error/Sad
+                if (mood == "ERROR" || mood == "SAD") {
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = 2.4f
+                    paint.color = Color.parseColor("#DC2626")
+                    canvas.drawLine(leftEyeX - 5f, eyeY - 6f, leftEyeX + 4f, eyeY - 8.5f, paint)
+                    canvas.drawLine(rightEyeX - 4f, eyeY - 8.5f, rightEyeX + 5f, eyeY - 6f, paint)
+                }
+            }
+
+            // 5. Expressive Emoji Mouth / Smile Below the Eyes!
+            val mouthCenterX = w * 0.50f + lookOffsetX * 0.5f
+            val mouthTopY = h * 0.62f + bobY
+            paint.color = eyeColor
+            paint.strokeCap = Paint.Cap.ROUND
+
+            when (mood) {
+                "ERROR", "SAD", "FAILED" -> {
+                    // Sad Frown Mouth (︵)
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = 2.8f
+                    val frownRect = RectF(mouthCenterX - 6.5f, mouthTopY, mouthCenterX + 6.5f, mouthTopY + 8f)
+                    canvas.drawArc(frownRect, 200f, 140f, false, paint)
+
+                    // Cute Animated Blue Tear Drop
+                    val tearY = eyeY + 5f + (phase % 3f) * 2.2f
+                    paint.style = Paint.Style.FILL
+                    paint.color = Color.parseColor("#38BDF8")
+                    canvas.drawCircle(rightEyeX + 5.5f, tearY, 2.2f, paint)
+                }
+                "THINKING", "PROCESSING" -> {
+                    // Cute Thinking "o" Mouth that pulses slightly
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = 2.5f
+                    val r = 3.2f + sin(phase * 2.2f) * 0.8f
+                    canvas.drawCircle(mouthCenterX, mouthTopY + 3f, r, paint)
+
+                    // 3 Floating Thinking Dots at top-right of head
+                    paint.style = Paint.Style.FILL
+                    paint.color = Color.parseColor("#3B82F6")
+                    val activeDot = ((phase * 1.5f).toInt()) % 3
+                    for (i in 0..2) {
+                        val dotR = if (i == activeDot) 2.4f else 1.4f
+                        canvas.drawCircle(w * 0.76f + i * 4.2f, 7f + bobY - i * 1.5f, dotR, paint)
+                    }
+                }
+                "DONE", "HAPPY", "SUCCESS" -> {
+                    // Big Cheerful Open D-Smile (▽)
+                    paint.style = Paint.Style.FILL
+                    val laughRect = RectF(mouthCenterX - 7.5f, mouthTopY - 2f, mouthCenterX + 7.5f, mouthTopY + 7.5f)
+                    canvas.drawArc(laughRect, 0f, 180f, true, paint)
+                }
+                else -> {
+                    // Cute Friendly Happy Smile Arc (◡)
+                    paint.style = Paint.Style.STROKE
+                    paint.strokeWidth = 2.8f
+                    val smileRect = RectF(mouthCenterX - 6.5f, mouthTopY - 2.5f, mouthCenterX + 6.5f, mouthTopY + 5.5f)
+                    canvas.drawArc(smileRect, 15f, 150f, false, paint)
+                }
             }
         }
     }
 
     /**
-     * Cute On-Screen Marshmallow Companion Cursor + Clean Soft Touch Ripple
+     * Super Cute Plump Soft-White Baymax Hand Cursor (`CuteBaymaxHandCursorCanvas`)
+     * Moves smoothly to the target coordinate and gently presses ("boops") the button with its chubby index finger!
      */
-    private class SoftCompanionCursorCanvas(context: Context) : View(context) {
+    private class CuteBaymaxHandCursorCanvas(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#F8FAFC")
-            textSize = 28f
+            textSize = 27f
             typeface = Typeface.DEFAULT_BOLD
         }
         private val screenOffset = IntArray(2)
 
-        private var botX = 540f
-        private var botY = 400f
+        private var handX = 540f
+        private var handY = 400f
         private var startX = 540f
         private var startY = 400f
         private var targetX = 540f
         private var targetY = 400f
         private var rippleProgress = 0f
-        private var blinkPhase = 0f
+        private var pressScale = 1f
+        private var phase = 0f
         private var currentLabel = ""
+        private var handMood = "WORKING"
 
         private var moveAnimator: ValueAnimator? = null
         private var rippleAnimator: ValueAnimator? = null
 
         private val ticker = object : Runnable {
             override fun run() {
-                blinkPhase += 0.18f
+                phase += 0.2f
                 invalidate()
-                postDelayed(this, 45)
+                postDelayed(this, 40)
             }
         }
 
@@ -584,21 +676,26 @@ class AiOverlayHud(private val context: Context) {
             post(ticker)
         }
 
-        fun animateBotTo(destX: Float, destY: Float, label: String) {
-            startX = botX
-            startY = botY
+        fun setHandMood(mood: String) {
+            handMood = mood.uppercase()
+            invalidate()
+        }
+
+        fun animateHandToTap(destX: Float, destY: Float, label: String) {
+            startX = handX
+            startY = handY
             targetX = destX
             targetY = destY
             currentLabel = label
 
             moveAnimator?.cancel()
             moveAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 360
+                duration = 340
                 interpolator = DecelerateInterpolator()
                 addUpdateListener { anim ->
                     val f = anim.animatedValue as Float
-                    botX = startX + (targetX - startX) * f
-                    botY = startY + (targetY - startY) * f
+                    handX = startX + (targetX - startX) * f
+                    handY = startY + (targetY - startY) * f
                     invalidate()
                 }
                 start()
@@ -606,10 +703,17 @@ class AiOverlayHud(private val context: Context) {
 
             rippleAnimator?.cancel()
             rippleAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-                startDelay = 280
-                duration = 600
+                startDelay = 260
+                duration = 620
                 addUpdateListener { anim ->
-                    rippleProgress = anim.animatedValue as Float
+                    val p = anim.animatedValue as Float
+                    rippleProgress = p
+                    // Cute "Boop" press-down effect when finger touches the target
+                    pressScale = if (p < 0.35f) {
+                        1f - (p / 0.35f) * 0.16f
+                    } else {
+                        0.84f + ((p - 0.35f) / 0.65f) * 0.16f
+                    }
                     invalidate()
                 }
                 start()
@@ -630,75 +734,136 @@ class AiOverlayHud(private val context: Context) {
             val ox = screenOffset[0].toFloat()
             val oy = screenOffset[1].toFloat()
 
-            val drawTargetX = targetX - ox
-            val drawTargetY = targetY - oy
-            val cx = (botX - ox)
-            val cy = (botY - oy) + sin(blinkPhase * 0.7f) * 4f
+            // Exact fingertip target coordinates on canvas
+            val tipX = handX - ox
+            val tipY = (handY - oy) + sin(phase * 0.8f) * 2.5f
 
-            // 1. Soft White Touch Ripple
+            val accentColor = when (handMood) {
+                "ERROR", "SAD" -> Color.parseColor("#EF4444")
+                "DONE", "HAPPY" -> Color.parseColor("#10B981")
+                else -> Color.parseColor("#3B82F6")
+            }
+
+            // 1. Cute Touch Ripple & Sparkle Dots at Fingertip
             if (rippleProgress > 0f && rippleProgress < 1f) {
-                val alpha = ((1f - rippleProgress) * 190).toInt().coerceIn(0, 255)
+                val alpha = ((1f - rippleProgress) * 210).toInt().coerceIn(0, 255)
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 4f
-                paint.color = Color.argb(alpha, 248, 250, 252)
-                canvas.drawCircle(drawTargetX, drawTargetY, 16f + rippleProgress * 70f, paint)
-            }
+                paint.strokeWidth = 4.5f
+                paint.color = Color.argb(alpha, 59, 130, 246)
+                canvas.drawCircle(targetX - ox, targetY - oy, 12f + rippleProgress * 62f, paint)
 
-            // 2. Cute Plump Soft-White Head Cursor
-            val headRect = RectF(cx - 30f, cy - 22f, cx + 30f, cy + 22f)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#F8FAFC")
-            canvas.drawRoundRect(headRect, 22f, 22f, paint)
-
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.5f
-            paint.color = Color.parseColor("#475569")
-            canvas.drawRoundRect(headRect, 22f, 22f, paint)
-
-            // Cheek Blush
-            paint.style = Paint.Style.FILL
-            paint.color = Color.argb(80, 244, 114, 182)
-            canvas.drawOval(RectF(cx - 21f, cy + 3f, cx - 12f, cy + 9f), paint)
-            canvas.drawOval(RectF(cx + 12f, cy + 3f, cx + 21f, cy + 9f), paint)
-
-            // Gentle Bridge & Blinking Eyes with Sparkles
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.2f
-            paint.color = Color.parseColor("#CBD5E1")
-            canvas.drawLine(cx - 11f, cy, cx + 11f, cy, paint)
-
-            val blinking = sin(blinkPhase) > 0.92f
-            paint.color = Color.parseColor("#0F172A")
-            if (blinking) {
-                paint.strokeWidth = 3f
-                canvas.drawLine(cx - 15f, cy, cx - 7f, cy, paint)
-                canvas.drawLine(cx + 7f, cy, cx + 15f, cy, paint)
-            } else {
+                // 4 Tiny Cute Sparkle Dots popping around the tap point
                 paint.style = Paint.Style.FILL
-                canvas.drawCircle(cx - 11f, cy, 4.8f, paint)
-                canvas.drawCircle(cx + 11f, cy, 4.8f, paint)
-
-                paint.color = Color.WHITE
-                canvas.drawCircle(cx - 12.5f, cy - 1.5f, 1.5f, paint)
-                canvas.drawCircle(cx + 9.5f, cy - 1.5f, 1.5f, paint)
+                paint.color = Color.argb(alpha, 248, 250, 252)
+                val sparkDist = 18f + rippleProgress * 45f
+                for (angleDeg in listOf(45.0, 135.0, 225.0, 315.0)) {
+                    val rad = Math.toRadians(angleDeg)
+                    val sx = (targetX - ox) + (cos(rad) * sparkDist).toFloat()
+                    val sy = (targetY - oy) + (sin(rad) * sparkDist).toFloat()
+                    canvas.drawCircle(sx, sy, 4f * (1f - rippleProgress), paint)
+                }
             }
 
-            // 3. Clean Matte Action Pill
+            // 2. Draw Super Cute Plump Soft-White Baymax Hand!
+            // The index fingertip is anchored at (tipX, tipY) so you see the exact point being touched!
+            canvas.save()
+            canvas.translate(tipX, tipY)
+            canvas.scale(pressScale, pressScale)
+
+            // Soft Drop Shadow under Hand
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(55, 0, 0, 0)
+            canvas.drawRoundRect(RectF(-22f, 20f, 34f, 74f), 26f, 26f, paint)
+
+            val handFillColor = Color.parseColor("#F8FAFC")
+            val handStrokeColor = Color.parseColor("#334155")
+
+            // A) Cute Chubby Thumb (sticking out to the left)
+            val thumbRect = RectF(-34f, 28f, -6f, 52f)
+            paint.style = Paint.Style.FILL
+            paint.color = handFillColor
+            canvas.rotate(-22f, -20f, 40f)
+            canvas.drawRoundRect(thumbRect, 14f, 14f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.6f
+            paint.color = handStrokeColor
+            canvas.drawRoundRect(thumbRect, 14f, 14f, paint)
+            canvas.rotate(22f, -20f, 40f)
+
+            // B) Cute Chubby Middle & Ring Finger Bumps (to the right of index finger)
+            val midFingerRect = RectF(6f, 10f, 22f, 38f)
+            val ringFingerRect = RectF(18f, 16f, 33f, 42f)
+
+            paint.style = Paint.Style.FILL
+            paint.color = handFillColor
+            canvas.drawRoundRect(ringFingerRect, 10f, 10f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.color = handStrokeColor
+            canvas.drawRoundRect(ringFingerRect, 10f, 10f, paint)
+
+            paint.style = Paint.Style.FILL
+            paint.color = handFillColor
+            canvas.drawRoundRect(midFingerRect, 10f, 10f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.color = handStrokeColor
+            canvas.drawRoundRect(midFingerRect, 10f, 10f, paint)
+
+            // C) Plump Pointing Index Finger (Tip right at 0,0!)
+            val indexFingerRect = RectF(-9f, -2f, 10f, 36f)
+            paint.style = Paint.Style.FILL
+            paint.color = handFillColor
+            canvas.drawRoundRect(indexFingerRect, 11f, 11f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.color = handStrokeColor
+            canvas.drawRoundRect(indexFingerRect, 11f, 11f, paint)
+
+            // D) Marshmallow-Puffy Rounded Palm (overlapping finger bases smoothly)
+            val palmRect = RectF(-20f, 22f, 32f, 70f)
+            paint.style = Paint.Style.FILL
+            paint.color = handFillColor
+            canvas.drawRoundRect(palmRect, 24f, 24f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.6f
+            paint.color = handStrokeColor
+            canvas.drawRoundRect(palmRect, 24f, 24f, paint)
+
+            // E) Cute Baymax Wrist Cuff & Tiny Heart/Port Badge on back of hand
+            val cuffRect = RectF(-12f, 64f, 24f, 75f)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.parseColor("#E2E8F0")
+            canvas.drawRoundRect(cuffRect, 8f, 8f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f
+            paint.color = handStrokeColor
+            canvas.drawRoundRect(cuffRect, 8f, 8f, paint)
+
+            // Tiny glowing status dot on the back of the cute hand
+            paint.style = Paint.Style.FILL
+            paint.color = accentColor
+            canvas.drawCircle(6f, 46f, 4.5f, paint)
+
+            // Exact Fingertip Touch Indicator Dot at (0, 0)
+            paint.color = accentColor
+            canvas.drawCircle(0f, 0f, 4f, paint)
+
+            canvas.restore()
+
+            // 3. Sleek Action Label Tag next to the Cute Hand
             val textWidth = textPaint.measureText(currentLabel)
-            val tagLeft = (cx + 36f).coerceAtMost(width - textWidth - 36f).coerceAtLeast(16f)
-            val tagTop = (cy - 20f).coerceAtLeast(60f)
-            val tagRect = RectF(tagLeft, tagTop, tagLeft + textWidth + 24f, tagTop + 42f)
+            val tagLeft = (tipX + 42f).coerceAtMost(width - textWidth - 34f).coerceAtLeast(16f)
+            val tagTop = (tipY + 18f).coerceAtMost(height - 70f).coerceAtLeast(50f)
+            val tagRect = RectF(tagLeft, tagTop, tagLeft + textWidth + 24f, tagTop + 40f)
 
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#E6181A20")
             canvas.drawRoundRect(tagRect, 14f, 14f, paint)
 
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.5f
-            paint.color = Color.parseColor("#475569")
+            paint.strokeWidth = 1.8f
+            paint.color = accentColor
             canvas.drawRoundRect(tagRect, 14f, 14f, paint)
 
-            canvas.drawText(currentLabel, tagLeft + 12f, tagTop + 29f, textPaint)
+            canvas.drawText(currentLabel, tagLeft + 12f, tagTop + 28f, textPaint)
         }
     }
 }
