@@ -18,6 +18,7 @@ import java.io.File
 data class UiNodeSnapshot(
     val index: Int,
     val node: AccessibilityNodeInfo,
+    val className: String,
     val text: String,
     val contentDesc: String,
     val viewId: String,
@@ -101,7 +102,7 @@ class AutoTouchService : AccessibilityService() {
                 var descFilled = false
                 val actionHistory = mutableListOf<String>()
 
-                for (step in 1..22) {
+                for (step in 1..25) {
                     if (!isActive) break
                     val nodes = captureScreenNodes()
                     if (nodes.isEmpty()) {
@@ -109,21 +110,19 @@ class AutoTouchService : AccessibilityService() {
                         continue
                     }
 
-                    // 1. पहले देखें कि क्या हम Details स्क्रीन पर हैं जहाँ Title या Shorts Caption का बॉक्स है
-                    val titleInputNode = nodes.firstOrNull {
-                        it.isEditable && (
-                            it.text.contains("title", true) ||
-                            it.text.contains("caption", true) ||
-                            it.contentDesc.contains("title", true) ||
-                            it.contentDesc.contains("caption", true) ||
-                            it.viewId.contains("title", true) ||
-                            it.viewId.contains("caption", true)
-                        )
-                    } ?: nodes.firstOrNull { it.isEditable }
+                    // पहचानें कि क्या हम 'Add details' / Final Upload स्क्रीन पर पहुंच चुके हैं
+                    val isOnAddDetailsScreen = nodes.any {
+                        it.text.contains("Add details", true) ||
+                        it.contentDesc.contains("Add details", true) ||
+                        it.text.contains("Caption your Short", true) ||
+                        it.contentDesc.contains("Caption your Short", true) ||
+                        it.text.contains("Upload Short", true) ||
+                        it.contentDesc.contains("Upload Short", true) ||
+                        it.text.contains("Select audience", true)
+                    }
 
-                    // 2. यदि अभी तक Title वाला बॉक्स स्क्रीन पर नहीं आया है (जैसे Shorts Trimmer या Editor स्क्रीन),
-                    // तो "Next" या "Done" बटन ढूंढकर तुरंत क्लिक करें
-                    if (!titleFilled && titleInputNode == null) {
+                    // 1. यदि अभी तक 'Add details' स्क्रीन नहीं आई है, तो Trimmer/Editor के 'Next' या 'Done' बटन को दबाएं
+                    if (!isOnAddDetailsScreen && !titleFilled) {
                         val preNextBtn = nodes.firstOrNull {
                             it.text.equals("Next", true) ||
                             it.contentDesc.equals("Next", true) ||
@@ -131,62 +130,114 @@ class AutoTouchService : AccessibilityService() {
                             it.contentDesc.equals("Done", true)
                         }
                         if (preNextBtn != null) {
-                            VideoQueueManager.appendLog(this@AutoTouchService, "👆 Trimmer/Editor Screen: Clicking '${preNextBtn.text.ifEmpty { "Next" }}'...")
-                            clickNodeOrCoordinates(preNextBtn)
-                            actionHistory.add("Clicked Next on editor/trimmer screen")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "👆 Trimmer/Editor Screen: Clicking 'Next'...")
+                            tapAndClickNode(preNextBtn)
+                            actionHistory.add("Clicked Next on editor/trimmer")
                             delay(3500)
                             continue
                         }
                     }
 
-                    // 3. यदि Title/Caption बॉक्स मिल गया है और अभी तक भरा नहीं गया है, तो AI Title टाइप करें
-                    if (!titleFilled && titleInputNode != null) {
-                        VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Typing AI Title/Caption...")
-                        typeTextIntoNode(titleInputNode.node, metadata.title)
-                        titleFilled = true
-                        actionHistory.add("Typed Title: ${metadata.title}")
-                        delay(2500)
-                        // कीबोर्ड हटाने या फोकस क्लियर करने के लिए थोड़ा इंतज़ार
-                        continue
+                    // 2. जब हम 'Add details' स्क्रीन पर हों और Title/Caption अभी नहीं भरा गया हो
+                    if (!titleFilled) {
+                        // पहले देखें कि क्या कोई EditText पहले से खुला है या 'Caption your Short' लिखा दिख रहा है
+                        val captionTarget = nodes.firstOrNull {
+                            it.text.contains("Caption your Short", true) ||
+                            it.contentDesc.contains("Caption your Short", true) ||
+                            it.text.contains("Create a title", true) ||
+                            it.contentDesc.contains("Create a title", true) ||
+                            it.text.contains("Add a title", true) ||
+                            it.viewId.contains("caption", true) ||
+                            it.viewId.contains("title_edit", true)
+                        } ?: nodes.firstOrNull {
+                            it.isEditable || it.className.contains("EditText", true)
+                        }
+
+                        if (captionTarget != null || isOnAddDetailsScreen) {
+                            VideoQueueManager.appendLog(this@AutoTouchService, "👆 Tapping 'Caption your Short' box to focus...")
+                            if (captionTarget != null) {
+                                tapAndClickNode(captionTarget)
+                            } else {
+                                // 'Add details' स्क्रीन पर थंबनेल के बगल में Caption बॉक्स के कोऑर्डिनेट्स
+                                performTapGesture(580f, 320f)
+                            }
+                            delay(2000)
+
+                            // अब खुले हुए इनपुट बॉक्स (Focused EditText) को पकड़ें और उसमें टाइटल डालें
+                            val refreshedNodes = captureScreenNodes()
+                            val activeInputNode = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                                ?: refreshedNodes.firstOrNull { it.isEditable || it.className.contains("EditText", true) }?.node
+                                ?: captionTarget?.node
+
+                            VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Typing AI Title: ${metadata.title}")
+                            if (activeInputNode != null) {
+                                typeTextIntoNode(activeInputNode, metadata.title)
+                            } else {
+                                pasteViaClipboardAnywhere(metadata.title)
+                            }
+
+                            titleFilled = true
+                            actionHistory.add("Typed Title: ${metadata.title}")
+                            delay(2000)
+
+                            // यदि कीबोर्ड खुलने से नीचे का 'Upload Short' बटन छुप गया हो, तो एक बार Back दबाकर कीबोर्ड बंद करें
+                            val afterTypeNodes = captureScreenNodes()
+                            val uploadVisible = afterTypeNodes.any {
+                                it.text.contains("Upload Short", true) ||
+                                it.contentDesc.contains("Upload Short", true) ||
+                                it.text.equals("Upload", true)
+                            }
+                            if (!uploadVisible) {
+                                VideoQueueManager.appendLog(this@AutoTouchService, "⌨️ Closing keyboard to reveal Upload button...")
+                                performGlobalAction(GLOBAL_ACTION_BACK)
+                                delay(2000)
+                            }
+                            continue
+                        }
                     }
 
-                    // 4. यदि Long Video है और "Add description" दिख रहा है तो Description भरें
+                    // 3. Long Video के लिए Description (यदि स्क्रीन पर 'Add description' मौजूद हो)
                     if (titleFilled && !descFilled) {
                         val addDescRow = nodes.firstOrNull {
                             it.text.contains("Add description", true) || it.contentDesc.contains("Add description", true)
                         }
                         if (addDescRow != null) {
                             VideoQueueManager.appendLog(this@AutoTouchService, "👆 Opening Description editor...")
-                            clickNodeOrCoordinates(addDescRow)
-                            delay(2500)
-                            val innerEdit = captureScreenNodes().firstOrNull { it.isEditable }
+                            tapAndClickNode(addDescRow)
+                            delay(2000)
+                            val innerEdit = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                                ?: captureScreenNodes().firstOrNull { it.isEditable || it.className.contains("EditText", true) }?.node
                             if (innerEdit != null) {
-                                typeTextIntoNode(innerEdit.node, metadata.description)
+                                typeTextIntoNode(innerEdit, metadata.description)
                                 descFilled = true
-                                actionHistory.add("Typed Description")
-                                delay(2000)
+                                delay(1800)
                                 performGlobalAction(GLOBAL_ACTION_BACK)
-                                delay(2000)
+                                delay(1800)
                                 continue
                             }
                         } else {
-                            // Shorts स्क्रीन पर अलग से Add description नहीं होता, इसलिए इसे स्किप करें
                             descFilled = true
                         }
                     }
 
-                    // 5. फाइनल "Upload Short" / "Upload" / "Publish" बटन चेक करें
+                    // 4. फाइनल 'Upload Short' या 'Upload' बटन ढूंढें और टच करें
                     val uploadBtn = nodes.firstOrNull {
                         it.text.equals("Upload Short", true) ||
-                        it.text.equals("Upload", true) ||
-                        it.text.equals("Upload video", true) ||
-                        it.text.equals("Publish", true) ||
                         it.contentDesc.equals("Upload Short", true) ||
-                        it.contentDesc.equals("Upload", true)
+                        it.text.contains("Upload Short", true) ||
+                        it.text.equals("Upload video", true) ||
+                        it.text.equals("Upload", true) ||
+                        it.contentDesc.equals("Upload", true) ||
+                        it.text.equals("Publish", true)
                     }
+
                     if (uploadBtn != null && titleFilled) {
-                        VideoQueueManager.appendLog(this@AutoTouchService, "🎯 Clicking Final '${uploadBtn.text.ifEmpty { "Upload" }}' Button!")
-                        clickNodeOrCoordinates(uploadBtn)
+                        VideoQueueManager.appendLog(this@AutoTouchService, "🎯 Tapping Final 'Upload Short' Button!")
+                        tapAndClickNode(uploadBtn)
+                        delay(1500)
+                        // सुरक्षा के लिए कोऑर्डिनेट्स पर भी टैप सुनिश्चित करें
+                        performTapGesture(uploadBtn.centerX, uploadBtn.centerY)
+
                         VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
                         VideoQueueManager.appendLog(
                             this@AutoTouchService,
@@ -195,57 +246,42 @@ class AutoTouchService : AccessibilityService() {
                         break
                     }
 
-                    // 6. यदि "No, it's not made for kids" विकल्प दिखे तो उसे चुनें
+                    // यदि 'Add details' स्क्रीन पर Title भर चुका है लेकिन Litho की वजह से बटन का टेक्स्ट न दिखे, तो नीचे के Upload बटन पर टैप करें
+                    if (isOnAddDetailsScreen && titleFilled) {
+                        VideoQueueManager.appendLog(this@AutoTouchService, "🎯 Tapping bottom 'Upload Short' button area...")
+                        val displayMetrics = resources.displayMetrics
+                        val bottomX = displayMetrics.widthPixels / 2f
+                        val bottomY = displayMetrics.heightPixels * 0.93f
+                        performTapGesture(bottomX, bottomY)
+
+                        VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
+                        VideoQueueManager.appendLog(
+                            this@AutoTouchService,
+                            "🎉 REPORT: '${nextVideo.name}' successfully uploaded with Title: '${metadata.title}'!"
+                        )
+                        break
+                    }
+
+                    // 5. यदि Long Video में Title के बाद 'Next' या 'not made for kids' आए
                     val notForKidsNode = nodes.firstOrNull {
                         it.text.contains("not made for kids", true) || it.contentDesc.contains("not made for kids", true)
                     }
                     if (notForKidsNode != null) {
-                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Selecting 'No, it's not made for kids'...")
-                        clickNodeOrCoordinates(notForKidsNode)
+                        tapAndClickNode(notForKidsNode)
                         delay(1500)
                     }
 
-                    // 7. यदि Title भरने के बाद भी "Next" बटन दिखे (जैसे Long Video में), तो उसे दबाएं
                     val postNextBtn = nodes.firstOrNull {
                         it.text.equals("Next", true) || it.contentDesc.equals("Next", true)
                     }
                     if (postNextBtn != null && titleFilled) {
                         VideoQueueManager.appendLog(this@AutoTouchService, "👆 Clicking 'Next'...")
-                        clickNodeOrCoordinates(postNextBtn)
-                        actionHistory.add("Clicked Next after title")
+                        tapAndClickNode(postNextBtn)
                         delay(3000)
                         continue
                     }
 
-                    // 8. यदि स्क्रीन पर कोई अलग पॉपअप या स्टेप हो, तो Gemini Brain से पूछें
-                    val screenTextDump = nodes.joinToString("\n") {
-                        "[${it.index}] text='${it.text}' desc='${it.contentDesc}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
-                    }
-
-                    val goalPrompt = """
-                        We are uploading video '${nextVideo.name}' on YouTube.
-                        Title to fill: "${metadata.title}" (Already filled: $titleFilled)
-                        Click Next if on trimmer/editor screen, type title/caption if editable field is visible, and click 'Upload Short' or 'Upload' to publish.
-                    """.trimIndent()
-
-                    val decision = GeminiBrain.decideNextUiAction(
-                        apiKey = apiKey,
-                        model = model,
-                        goal = goalPrompt,
-                        screenSummary = screenTextDump.take(5500),
-                        history = actionHistory
-                    )
-
-                    VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Gemini Step $step: ${decision.action} (${decision.reason})")
-                    actionHistory.add("${decision.action}: ${decision.reason}")
-
-                    executeDecision(decision, nodes)
-                    if (decision.action.equals("DONE", true)) {
-                        VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
-                        VideoQueueManager.appendLog(this@AutoTouchService, "🎉 REPORT: Upload workflow completed for ${nextVideo.name}!")
-                        break
-                    }
-                    delay(3500)
+                    delay(2500)
                 }
 
             } catch (e: Exception) {
@@ -332,7 +368,7 @@ class AutoTouchService : AccessibilityService() {
         when (decision.action.uppercase()) {
             "CLICK_NODE" -> {
                 val target = nodes.firstOrNull { it.index == decision.nodeIndex }
-                if (target != null) clickNodeOrCoordinates(target)
+                if (target != null) tapAndClickNode(target)
                 else performTapGesture(decision.x, decision.y)
             }
             "CLICK_XY" -> performTapGesture(decision.x, decision.y)
@@ -355,11 +391,12 @@ class AutoTouchService : AccessibilityService() {
 
         fun traverse(node: AccessibilityNodeInfo?) {
             if (node == null || !node.isVisibleToUser) return
+            val cls = node.className?.toString() ?: ""
             val text = node.text?.toString()?.trim() ?: ""
             val desc = node.contentDescription?.toString()?.trim() ?: ""
             val viewId = node.viewIdResourceName?.substringAfter("/") ?: ""
             val clickable = node.isClickable
-            val editable = node.isEditable
+            val editable = node.isEditable || cls.contains("EditText", true)
 
             if (text.isNotEmpty() || desc.isNotEmpty() || clickable || editable) {
                 val rect = Rect()
@@ -369,6 +406,7 @@ class AutoTouchService : AccessibilityService() {
                         UiNodeSnapshot(
                             index = counter++,
                             node = node,
+                            className = cls,
                             text = text,
                             contentDesc = desc,
                             viewId = viewId,
@@ -389,11 +427,22 @@ class AutoTouchService : AccessibilityService() {
         return list
     }
 
-    private fun clickNodeOrCoordinates(snapshot: UiNodeSnapshot) {
-        val clicked = snapshot.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    private fun tapAndClickNode(snapshot: UiNodeSnapshot) {
+        var clicked = snapshot.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         if (!clicked) {
-            performTapGesture(snapshot.centerX, snapshot.centerY)
+            var parent = snapshot.node.parent
+            var depth = 0
+            while (parent != null && depth < 4) {
+                if (parent.isClickable) {
+                    clicked = parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    if (clicked) break
+                }
+                parent = parent.parent
+                depth++
+            }
         }
+        // हमेशा स्क्रीन कोऑर्डिनेट्स पर फिजिकल टैप जेस्चर भी भेजें ताकि YouTube Litho UI 100% रिस्पॉन्ड करे
+        performTapGesture(snapshot.centerX, snapshot.centerY)
     }
 
     private fun typeTextIntoNode(node: AccessibilityNodeInfo, text: String) {
@@ -405,17 +454,33 @@ class AutoTouchService : AccessibilityService() {
         }
         val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         if (!success) {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("ai_text", text))
-            node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            pasteViaClipboardAnywhere(text, node)
+        }
+    }
+
+    private fun pasteViaClipboardAnywhere(text: String, targetNode: AccessibilityNodeInfo? = null) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("ai_text", text))
+        val focused = targetNode ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused != null) {
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            if (!focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            }
         }
     }
 
     fun performTapGesture(x: Float, y: Float) {
-        val safeX = x.coerceIn(10f, 1070f)
-        val safeY = y.coerceIn(10f, 2300f)
+        val displayMetrics = resources.displayMetrics
+        val maxX = (displayMetrics.widthPixels - 10).toFloat().coerceAtLeast(100f)
+        val maxY = (displayMetrics.heightPixels - 10).toFloat().coerceAtLeast(100f)
+        val safeX = x.coerceIn(10f, maxX)
+        val safeY = y.coerceIn(10f, maxY)
+
         val path = Path().apply { moveTo(safeX, safeY) }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 120)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 130)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
