@@ -272,7 +272,7 @@ class AutoTouchService : AccessibilityService() {
                     forceChainYouTube = true
                 )
             } catch (e: CancellationException) {
-                // Normal stop by user
+                // Normal stop
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.updateStatus("Flow Error", e.message ?: "Error", "ERROR")
@@ -282,7 +282,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (With Google Flow Editor Fix!)
+    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (With Canvas Screenshot + Badges!)
     // ========================================================================
     fun startBackgroundWebTask(
         apiKey: String,
@@ -315,7 +315,6 @@ class AutoTouchService : AccessibilityService() {
             val maxSteps = if (unstoppable) 2000 else 60
 
             try {
-                // Do NOT reload if we are already inside labs.google/fx/tools/flow project page!
                 val currentLoadedUrl = webView?.url ?: ""
                 val alreadyOnSameDomain = currentLoadedUrl.contains("labs.google/fx", true) &&
                         initialUrl.contains("labs.google/fx", true)
@@ -346,9 +345,19 @@ class AutoTouchService : AccessibilityService() {
                     }
 
                     val currentUrl = webView?.url ?: initialUrl
-                    val domSnapshot = extractWebDomSummary(webView)
+                    // 1. Tag all buttons/inputs with Visual Yellow/Red Number Badges [0], [1], [2]...
+                    val domSnapshot = extractWebDomAndDrawBadges(webView)
+                    delay(180) // Allow badges to paint onto WebView canvas
 
-                    overlayHud?.updateStatus("Web • Step $step", "Inspecting page...", "THINKING")
+                    // 2. Capture Live Internal Canvas Screenshot of the Background Browser!
+                    val webCanvasScreenshotB64 = if (VideoQueueManager.isScreenVisionEnabled(this@AutoTouchService)) {
+                        overlayHud?.captureWebViewScreenshotBase64()
+                    } else null
+
+                    // 3. Remove visual badges after screenshot so the user's page looks clean
+                    clearWebVisualBadges(webView)
+
+                    overlayHud?.updateStatus("Web • Step $step", "Vision inspecting page...", "THINKING")
                     val decision = GeminiBrain.decideNextWebAction(
                         apiKey = apiKey,
                         model = model,
@@ -356,7 +365,8 @@ class AutoTouchService : AccessibilityService() {
                         pageUrl = currentUrl,
                         pageTextAndElements = domSnapshot,
                         history = history,
-                        memoryVault = memoryVault
+                        memoryVault = memoryVault,
+                        screenshotBase64 = webCanvasScreenshotB64
                     )
 
                     val mood = if (decision.action == "WAIT") "WAITING" else "WORKING"
@@ -390,7 +400,6 @@ class AutoTouchService : AccessibilityService() {
                             history.add("Step $step: DOWNLOAD_VIDEO")
                         }
                         "WAIT" -> {
-                            // If a <video> is already rendered on the page while waiting, auto-download it!
                             if (domSnapshot.contains("HAS_VIDEO_ELEMENT: YES")) {
                                 VideoQueueManager.appendLog(this@AutoTouchService, "🎥 Video element detected on page! Auto-downloading...")
                                 triggerVideoDownloadInWebView(webView, "")
@@ -416,12 +425,13 @@ class AutoTouchService : AccessibilityService() {
                     delay(stepDelay)
                 }
             } catch (e: CancellationException) {
-                // Clean user stop — do NOT log as error!
+                // Clean user stop
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.updateStatus("Web Error", e.message ?: "Failed", "ERROR")
                 VideoQueueManager.appendLog(this@AutoTouchService, "❌ Web Agent Error: ${e.message}")
             } finally {
+                clearWebVisualBadges(webView)
                 releaseWakeLock()
                 isJobRunning = false
             }
@@ -465,16 +475,19 @@ class AutoTouchService : AccessibilityService() {
     }
 
     /**
-     * Deep DOM Scanner that pierces Shadow DOM, detects contenteditable editors,
-     * shows CURRENT_VALUE of inputs so AI knows if text was truly entered, and flags <video> elements!
+     * Scans DOM AND draws bright yellow/red visual number badges `[0]`, `[1]`, `[2]` onto the webpage
+     * right before `captureWebViewScreenshotBase64()` takes a photo!
      */
-    private suspend fun extractWebDomSummary(webView: WebView?): String = suspendCancellableCoroutine { cont ->
+    private suspend fun extractWebDomAndDrawBadges(webView: WebView?): String = suspendCancellableCoroutine { cont ->
         if (webView == null) {
             cont.resume("Empty WebView")
             return@suspendCancellableCoroutine
         }
         val js = """
             (function() {
+                var oldBadges = document.querySelectorAll('.aura-vision-badge');
+                for (var b = 0; b < oldBadges.length; b++) oldBadges[b].remove();
+
                 function queryAllDeep(root) {
                     var res = [];
                     var nodes = root.querySelectorAll('a, button, input, textarea, select, [role="button"], [role="textbox"], [contenteditable="true"], video');
@@ -493,10 +506,10 @@ class AutoTouchService : AccessibilityService() {
                 for (var i = 0; i < items.length && out.length < 75; i++) {
                     var el = items[i];
                     var rect = el.getBoundingClientRect();
-                    if (rect.width > 5 && rect.height > 5) {
+                    if (rect.width > 5 && rect.height > 5 && rect.bottom > 0 && rect.top < window.innerHeight) {
                         el.setAttribute('data-aura-idx', i);
                         var tag = el.tagName.toLowerCase();
-                        var placeholder = el.placeholder || el.getAttribute('placeholder') || el.getAttribute(' data-placeholder') || '';
+                        var placeholder = el.placeholder || el.getAttribute('placeholder') || el.getAttribute('data-placeholder') || '';
                         var aria = el.getAttribute('aria-label') || '';
                         var val = (el.value !== undefined ? el.value : (el.isContentEditable ? el.innerText : '')) || '';
                         var txt = (el.innerText || placeholder || aria || el.src || '').trim().replace(/\s+/g, ' ').substring(0, 65);
@@ -504,6 +517,15 @@ class AutoTouchService : AccessibilityService() {
                             ? ' | CURRENT_VALUE="' + val.trim().substring(0, 45) + '" | PLACEHOLDER="' + placeholder + '"'
                             : '';
                         out.push('[' + i + '] <' + tag + '> ' + txt + valInfo);
+
+                        // Draw visual number sticker [i] for Gemini Vision screenshot!
+                        try {
+                            var badge = document.createElement('div');
+                            badge.className = 'aura-vision-badge';
+                            badge.innerText = '[' + i + ']';
+                            badge.style.cssText = 'position:fixed;left:' + Math.max(2, Math.min(window.innerWidth - 34, rect.left)) + 'px;top:' + Math.max(2, Math.min(window.innerHeight - 20, rect.top)) + 'px;background:#FACC15;color:#000000;border:1.5px solid #DC2626;border-radius:4px;padding:0px 3px;font-size:10px;font-weight:bold;z-index:2147483647;pointer-events:none;line-height:12px;';
+                            document.body.appendChild(badge);
+                        } catch (e) {}
                     }
                 }
                 var bodyText = (document.body ? document.body.innerText : '').substring(0, 1400).replace(/\s+/g, ' ');
@@ -518,9 +540,16 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    /**
-     * Dispatches full pointer + mouse + click events on the target element and its button parent
-     */
+    private fun clearWebVisualBadges(webView: WebView?) {
+        val js = """
+            (function() {
+                var oldBadges = document.querySelectorAll('.aura-vision-badge');
+                for (var b = 0; b < oldBadges.length; b++) oldBadges[b].remove();
+            })();
+        """.trimIndent()
+        webView?.evaluateJavascript(js, null)
+    }
+
     private suspend fun performWebJsClick(webView: WebView?, index: Int): String = suspendCancellableCoroutine { cont ->
         if (webView == null) {
             cont.resume("No WebView")
@@ -546,11 +575,6 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    /**
-     * Specially engineered for Google Flow ("What do you want to create?") & React/Lit/ContentEditable editors!
-     * 1. Smartly prioritizes the "What do you want to create?" prompt box over the top search bar.
-     * 2. Uses `document.execCommand('insertText')` + Native Prototype Value Setter + InputEvent so the `arrow_forward` button immediately enables!
-     */
     private suspend fun performWebJsTypeAndSubmit(
         webView: WebView?,
         index: Int,
@@ -565,7 +589,6 @@ class AutoTouchService : AccessibilityService() {
             (function() {
                 var target = document.querySelector('[data-aura-idx="$index"]');
                 
-                // Smart Override: If target is null, or is the top search bar, find the real "What do you want to create?" prompt box!
                 var allCandidates = document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"], input[type="text"], input:not([type])');
                 var flowPromptBox = null;
                 for (var i = 0; i < allCandidates.length; i++) {
@@ -590,14 +613,12 @@ class AutoTouchService : AccessibilityService() {
                 target.click();
                 target.focus();
 
-                // Method 1: Native Browser execCommand('insertText') — triggers real user typing state in React/Lit/ProseMirror!
                 try {
                     if (target.select) target.select();
                     else document.execCommand('selectAll', false, null);
                     document.execCommand('insertText', false, $safeText);
                 } catch (e) {}
 
-                // Method 2: Native Prototype Value Setter fallback for <textarea> / <input>
                 var currentVal = (target.value !== undefined ? target.value : target.innerText) || '';
                 if (currentVal.trim().length < 5) {
                     try {
@@ -617,7 +638,6 @@ class AutoTouchService : AccessibilityService() {
                     } catch (e2) {}
                 }
 
-                // Also press Enter / trigger arrow_forward button automatically after 400ms if on Google Flow!
                 setTimeout(function() {
                     var btns = document.querySelectorAll('button, [role="button"]');
                     for (var b = 0; b < btns.length; b++) {
@@ -925,7 +945,7 @@ class AutoTouchService : AccessibilityService() {
                         else -> "WORKING"
                     }
                     overlayHud?.updateStatus("Step $step • ${decision.action}", decision.reason, stepMood)
-                    VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Step $step [${decision.action}]:${decision.reason}")
+                    VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Step $step [${decision.action}]: ${decision.reason}")
 
                     if (decision.action.equals("DONE", true)) {
                         isJobRunning = false
@@ -938,7 +958,7 @@ class AutoTouchService : AccessibilityService() {
                     if (decision.action.equals("WAIT", true)) {
                         overlayHud?.setCursorOverlayVisible(false)
                         delay(4500)
-                        history.add("Step $step: WAIT -${decision.reason}")
+                        history.add("Step $step: WAIT - ${decision.reason}")
                         continue
                     }
 
@@ -961,7 +981,7 @@ class AutoTouchService : AccessibilityService() {
                         lastTapY = tapY
                     }
 
-                    history.add("Step $step:${decision.action} ($executedSummary) -${decision.reason}")
+                    history.add("Step $step: ${decision.action} ($executedSummary) - ${decision.reason}")
                     delay(stepDelay)
                 }
             } catch (e: CancellationException) {
@@ -1187,7 +1207,7 @@ class AutoTouchService : AccessibilityService() {
 
     private fun isAddDetailsScreenVisible(appNodes: List<UiNodeSnapshot>): Boolean {
         return appNodes.any {
-            val c = "${it.text} ${it.contentDesc}${it.hintText}"
+            val c = "${it.text} ${it.contentDesc} ${it.hintText}"
             c.contains("Add details", true) ||
             c.contains("Caption your Short", true) ||
             c.contains("Upload Short", true) ||
