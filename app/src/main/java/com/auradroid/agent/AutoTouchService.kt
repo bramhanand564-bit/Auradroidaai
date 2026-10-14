@@ -59,14 +59,6 @@ class AutoTouchService : AccessibilityService() {
         VideoQueueManager.appendLog(this, "🛑 Agent Stopped by User.")
     }
 
-    /**
-     * Complete Automated YouTube Video Upload Workflow:
-     * 1. Checks folder & picks next un-uploaded video
-     * 2. Generates Title & Description using Gemini API
-     * 3. Opens YouTube Upload UI with the selected video
-     * 4. Uses Screen Reading + Auto-Touch + Gemini Brain to type Title, Description & click Next/Upload
-     * 5. Marks video as uploaded & writes final report
-     */
     fun startYouTubeAutoUpload(
         apiKey: String,
         model: String,
@@ -84,13 +76,13 @@ class AutoTouchService : AccessibilityService() {
                 VideoQueueManager.appendLog(this@AutoTouchService, "📂 Checking folder: $folderPath")
                 val nextVideo = VideoQueueManager.getNextPendingVideo(this@AutoTouchService, folderPath)
                 if (nextVideo == null) {
-                    VideoQueueManager.appendLog(this@AutoTouchService, "✅ All videos in folder are already uploaded! Nothing pending.")
+                    VideoQueueManager.appendLog(this@AutoTouchService, "✅ All videos in folder are already uploaded!")
                     isJobRunning = false
                     return@launch
                 }
 
                 VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Selected Next Video: ${nextVideo.name}")
-                VideoQueueManager.appendLog(this@AutoTouchService, "🧠 Asking Gemini ($model) for viral Title & Description...")
+                VideoQueueManager.appendLog(this@AutoTouchService, "🧠 Generating viral Title & Description...")
 
                 val metadata = GeminiBrain.generateYouTubeMetadata(
                     apiKey = apiKey,
@@ -103,13 +95,13 @@ class AutoTouchService : AccessibilityService() {
                 VideoQueueManager.appendLog(this@AutoTouchService, "🚀 Launching YouTube with video file...")
 
                 launchYouTubeWithVideo(nextVideo)
-                delay(5500) // Wait for YouTube upload screen to load
+                delay(5500)
 
                 var titleFilled = false
                 var descFilled = false
                 val actionHistory = mutableListOf<String>()
 
-                for (step in 1..18) {
+                for (step in 1..22) {
                     if (!isActive) break
                     val nodes = captureScreenNodes()
                     if (nodes.isEmpty()) {
@@ -117,87 +109,93 @@ class AutoTouchService : AccessibilityService() {
                         continue
                     }
 
-                    // Fast Smart Rules + Gemini Assisted Hybrid Loop for YouTube UI
-                    val screenTextDump = nodes.joinToString("\n") {
-                        "[${it.index}] text='${it.text}' desc='${it.contentDesc}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
-                    }
+                    // 1. पहले देखें कि क्या हम Details स्क्रीन पर हैं जहाँ Title या Shorts Caption का बॉक्स है
+                    val titleInputNode = nodes.firstOrNull {
+                        it.isEditable && (
+                            it.text.contains("title", true) ||
+                            it.text.contains("caption", true) ||
+                            it.contentDesc.contains("title", true) ||
+                            it.contentDesc.contains("caption", true) ||
+                            it.viewId.contains("title", true) ||
+                            it.viewId.contains("caption", true)
+                        )
+                    } ?: nodes.firstOrNull { it.isEditable }
 
-                    // Step A: Fill Title if an editable title field is visible
-                    if (!titleFilled) {
-                        val titleNode = nodes.firstOrNull {
-                            it.isEditable && (
-                                it.text.contains("title", true) ||
-                                it.contentDesc.contains("title", true) ||
-                                it.viewId.contains("title", true)
-                            )
-                        } ?: nodes.firstOrNull { it.isEditable }
-
-                        if (titleNode != null) {
-                            VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Typing AI Title into field...")
-                            typeTextIntoNode(titleNode.node, metadata.title)
-                            titleFilled = true
-                            actionHistory.add("Typed Title: ${metadata.title}")
-                            delay(2500)
+                    // 2. यदि अभी तक Title वाला बॉक्स स्क्रीन पर नहीं आया है (जैसे Shorts Trimmer या Editor स्क्रीन),
+                    // तो "Next" या "Done" बटन ढूंढकर तुरंत क्लिक करें
+                    if (!titleFilled && titleInputNode == null) {
+                        val preNextBtn = nodes.firstOrNull {
+                            it.text.equals("Next", true) ||
+                            it.contentDesc.equals("Next", true) ||
+                            it.text.equals("Done", true) ||
+                            it.contentDesc.equals("Done", true)
+                        }
+                        if (preNextBtn != null) {
+                            VideoQueueManager.appendLog(this@AutoTouchService, "👆 Trimmer/Editor Screen: Clicking '${preNextBtn.text.ifEmpty { "Next" }}'...")
+                            clickNodeOrCoordinates(preNextBtn)
+                            actionHistory.add("Clicked Next on editor/trimmer screen")
+                            delay(3500)
                             continue
                         }
                     }
 
-                    // Step B: Fill Description if visible
+                    // 3. यदि Title/Caption बॉक्स मिल गया है और अभी तक भरा नहीं गया है, तो AI Title टाइप करें
+                    if (!titleFilled && titleInputNode != null) {
+                        VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Typing AI Title/Caption...")
+                        typeTextIntoNode(titleInputNode.node, metadata.title)
+                        titleFilled = true
+                        actionHistory.add("Typed Title: ${metadata.title}")
+                        delay(2500)
+                        // कीबोर्ड हटाने या फोकस क्लियर करने के लिए थोड़ा इंतज़ार
+                        continue
+                    }
+
+                    // 4. यदि Long Video है और "Add description" दिख रहा है तो Description भरें
                     if (titleFilled && !descFilled) {
-                        val descEditNode = nodes.firstOrNull {
-                            it.isEditable && (it.text.contains("description", true) || it.viewId.contains("description", true))
-                        }
-                        if (descEditNode != null) {
-                            VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Typing AI Description...")
-                            typeTextIntoNode(descEditNode.node, metadata.description)
-                            descFilled = true
-                            actionHistory.add("Typed Description")
-                            delay(2000)
-                            performGlobalAction(GLOBAL_ACTION_BACK) // Close description sub-screen if opened
-                            delay(2000)
-                            continue
-                        }
-
                         val addDescRow = nodes.firstOrNull {
                             it.text.contains("Add description", true) || it.contentDesc.contains("Add description", true)
                         }
                         if (addDescRow != null) {
-                            VideoQueueManager.appendLog(this@AutoTouchService, "👆 Opening Description section...")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "👆 Opening Description editor...")
                             clickNodeOrCoordinates(addDescRow)
                             delay(2500)
                             val innerEdit = captureScreenNodes().firstOrNull { it.isEditable }
                             if (innerEdit != null) {
                                 typeTextIntoNode(innerEdit.node, metadata.description)
                                 descFilled = true
-                                actionHistory.add("Typed Description inside editor")
+                                actionHistory.add("Typed Description")
                                 delay(2000)
                                 performGlobalAction(GLOBAL_ACTION_BACK)
                                 delay(2000)
                                 continue
                             }
+                        } else {
+                            // Shorts स्क्रीन पर अलग से Add description नहीं होता, इसलिए इसे स्किप करें
+                            descFilled = true
                         }
                     }
 
-                    // Step C: Check for final "Upload" or "Upload Short" or "Publish" button
+                    // 5. फाइनल "Upload Short" / "Upload" / "Publish" बटन चेक करें
                     val uploadBtn = nodes.firstOrNull {
-                        (it.text.equals("Upload", true) ||
-                         it.text.equals("Upload video", true) ||
-                         it.text.equals("Upload Short", true) ||
-                         it.text.equals("Publish", true) ||
-                         it.contentDesc.equals("Upload", true)) && it.isClickable
+                        it.text.equals("Upload Short", true) ||
+                        it.text.equals("Upload", true) ||
+                        it.text.equals("Upload video", true) ||
+                        it.text.equals("Publish", true) ||
+                        it.contentDesc.equals("Upload Short", true) ||
+                        it.contentDesc.equals("Upload", true)
                     }
                     if (uploadBtn != null && titleFilled) {
-                        VideoQueueManager.appendLog(this@AutoTouchService, "🎯 Clicking Final UPLOAD Button!")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "🎯 Clicking Final '${uploadBtn.text.ifEmpty { "Upload" }}' Button!")
                         clickNodeOrCoordinates(uploadBtn)
                         VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
                         VideoQueueManager.appendLog(
                             this@AutoTouchService,
-                            "🎉 REPORT: '${nextVideo.name}' successfully submitted for Public upload with Title: '${metadata.title}'!"
+                            "🎉 REPORT: '${nextVideo.name}' successfully uploaded with Title: '${metadata.title}'!"
                         )
                         break
                     }
 
-                    // Step D: Check for "Not made for kids" option if shown
+                    // 6. यदि "No, it's not made for kids" विकल्प दिखे तो उसे चुनें
                     val notForKidsNode = nodes.firstOrNull {
                         it.text.contains("not made for kids", true) || it.contentDesc.contains("not made for kids", true)
                     }
@@ -207,24 +205,27 @@ class AutoTouchService : AccessibilityService() {
                         delay(1500)
                     }
 
-                    // Step E: Check for "Next" button if Title is filled
-                    val nextBtn = nodes.firstOrNull {
+                    // 7. यदि Title भरने के बाद भी "Next" बटन दिखे (जैसे Long Video में), तो उसे दबाएं
+                    val postNextBtn = nodes.firstOrNull {
                         it.text.equals("Next", true) || it.contentDesc.equals("Next", true)
                     }
-                    if (nextBtn != null && titleFilled) {
+                    if (postNextBtn != null && titleFilled) {
                         VideoQueueManager.appendLog(this@AutoTouchService, "👆 Clicking 'Next'...")
-                        clickNodeOrCoordinates(nextBtn)
-                        actionHistory.add("Clicked Next")
+                        clickNodeOrCoordinates(postNextBtn)
+                        actionHistory.add("Clicked Next after title")
                         delay(3000)
                         continue
                     }
 
-                    // Step F: Ask Gemini Brain to inspect current screen and decide next touch
+                    // 8. यदि स्क्रीन पर कोई अलग पॉपअप या स्टेप हो, तो Gemini Brain से पूछें
+                    val screenTextDump = nodes.joinToString("\n") {
+                        "[${it.index}] text='${it.text}' desc='${it.contentDesc}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
+                    }
+
                     val goalPrompt = """
                         We are uploading video '${nextVideo.name}' on YouTube.
                         Title to fill: "${metadata.title}" (Already filled: $titleFilled)
-                        Description to fill: "${metadata.description.take(100)}..." (Already filled: $descFilled)
-                        Then click Next, set Public if needed, and click Upload/Publish.
+                        Click Next if on trimmer/editor screen, type title/caption if editable field is visible, and click 'Upload Short' or 'Upload' to publish.
                     """.trimIndent()
 
                     val decision = GeminiBrain.decideNextUiAction(
@@ -255,9 +256,6 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    /**
-     * Universal Multi-Tasking Agent: Can control ANY app based on natural language command
-     */
     fun startUniversalAiTask(apiKey: String, model: String, userGoal: String) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ Agent is already busy!")
@@ -270,7 +268,6 @@ class AutoTouchService : AccessibilityService() {
                 VideoQueueManager.appendLog(this@AutoTouchService, "🌐 Starting Multi-Task Agent: $userGoal")
                 val history = mutableListOf<String>()
 
-                // Take user to Home screen first if they want to open another app
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 delay(2000)
 
@@ -323,7 +320,6 @@ class AutoTouchService : AccessibilityService() {
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            // Fallback: Launch YouTube main app if direct share fails
             val fallback = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
             if (fallback != null) {
                 fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
