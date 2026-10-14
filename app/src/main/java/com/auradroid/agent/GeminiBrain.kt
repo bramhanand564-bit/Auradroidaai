@@ -169,6 +169,10 @@ object GeminiBrain {
         throw Exception("Gemini API Busy/Error ($lastError)")
     }
 
+    /**
+     * Generates a 100% Policy-Safe 8-second cinematic video prompt for Google Flow.
+     * Strictly avoids minor/child/boy/girl/skin/violence keywords so Google Flow NEVER fails!
+     */
     suspend fun generateDailyFlowPrompt(
         apiKey: String,
         model: String,
@@ -178,14 +182,19 @@ object GeminiBrain {
             You are an expert AI Video Prompt Director for Google Flow (Veo 8-second video generator).
             User's core topic/theme: "$userTopic"
             
-            Create ONE fresh, vivid, cinematic 8-second video generation prompt in English (around 35 to 55 words) with clear camera movement, lighting, and action.
+            STRICT GOOGLE FLOW SAFETY RULES (CRITICAL):
+            1. Google Flow strictly blocks any prompt containing words related to minors or children!
+            2. NEVER use words like: "boy", "girl", "child", "kid", "young", "teen", "minor", "baby", "skin", "flesh", "blood", "weapon", "fight", or "violence".
+            3. If the user's topic mentions "boy" or "girl", automatically replace it with safe sci-fi/cinematic terms like "futuristic cybernetic android explorer", "robotic sci-fi traveler in a glowing neon suit", or "sleek humanoid astronaut".
+            4. Create ONE fresh, vivid, 100% family-safe cinematic 8-second video prompt in English (30 to 45 words) with smooth camera movement and glowing lighting.
+            
             Respond strictly in valid JSON:
             {
-              "videoPrompt": "Detailed 8-second cinematic prompt..."
+              "videoPrompt": "Detailed 100% policy-safe 8-second cinematic prompt..."
             }
         """.trimIndent()
 
-        return try {
+        val rawPrompt = try {
             val raw = callGeminiApi(apiKey, model, prompt)
             val clean = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             JSONObject(clean).optString("videoPrompt", userTopic).ifBlank { userTopic }
@@ -194,6 +203,11 @@ object GeminiBrain {
         } catch (e: Exception) {
             userTopic
         }
+
+        // Hard safety sanitizer so minor-related words NEVER slip through to Google Flow
+        return rawPrompt
+            .replace(Regex("\\b(young\\s+boy|little\\s+boy|boy|child|kid|minor|teenager|teen|girl)\\b", RegexOption.IGNORE_CASE), "futuristic android explorer")
+            .replace(Regex("\\b(skin|bare)\\b", RegexOption.IGNORE_CASE), "armor")
     }
 
     suspend fun chatAndBuildPlan(
@@ -295,9 +309,6 @@ object GeminiBrain {
         }
     }
 
-    /**
-     * Background Web Studio Agent Brain (Vision-First with Yellow/Red Number Badges `[0]`, `[1]`, `[2]`!)
-     */
     suspend fun decideNextWebAction(
         apiKey: String,
         model: String,
@@ -320,25 +331,22 @@ object GeminiBrain {
             CURRENT WEBPAGE INTERACTIVE ELEMENTS & VISIBLE TEXT:
             $pageTextAndElements
             
-            VISION-FIRST RULES (LOOK AT THE ATTACHED WEBPAGE SCREENSHOT!):
-            1. In the attached screenshot of the webpage, every interactive button and input box has a bright yellow/red numbered badge like `[0]`, `[1]`, `[2]` drawn directly on it!
-            2. Visually inspect the screenshot FIRST:
-               - If you see "+ New project" on screen, click its badge number using "CLICK_EL".
-               - If you see the bottom prompt area ("What do you want to create?"), look at the screenshot to see if the prompt text is already typed inside that box!
-               - If the "What do you want to create?" box is still empty (and the middle of the screen still says "Start creating or drop media"), you MUST use "TYPE_EL" with the badge number of "What do you want to create?"!
-               - Once you visually see the prompt text typed inside the bottom prompt box, click the round submit arrow button (`->` / `arrow_forward`) next to it using "CLICK_EL".
-            3. NEVER return "WAIT" if the screenshot still shows "Start creating or drop media" and an empty prompt box!
-            4. Only return "WAIT" when you visually see a video generation progress indicator / loading card in the screenshot.
-            5. As soon as you see a generated video thumbnail/player or Download button in the screenshot (or `HAS_VIDEO_ELEMENT: YES`), return action="DOWNLOAD_VIDEO".
-            6. After downloading, if the goal mentions YouTube, return "CHAIN_YOUTUBE", otherwise "DONE".
+            STRICT CREDIT-SAVING & GOOGLE FLOW RULES:
+            1. NEVER generate more than 1 video! Look at RECENT ACTIONS TAKEN: if you already executed TYPE_EL or clicked arrow_forward/Create, DO NOT type or click arrow_forward again!
+            2. If you are on the landing page and see "+ New project", click "+ New project" using "CLICK_EL".
+            3. BEFORE typing the prompt on Google Flow, check the mode selector pill at the bottom (next to the arrow_forward button):
+               - If it says "Nano Banana" or "Image" or "x2" / "x4", click that mode pill first to switch it to "Video • 720p • 8s • x1"!
+            4. If no video is rendering yet and the prompt box ("What do you want to create?") is empty, use "TYPE_EL" ONCE.
+            5. If you see a percentage like "1%", "15%", "45%" on screen, the video is rendering! Return action="WAIT".
+            6. As soon as the percentage disappears and a completed video thumbnail card or player appears on screen (or `HAS_VIDEO_ELEMENT: YES`), return action="DOWNLOAD_VIDEO".
             
             Available actions:
             - "CLICK_EL": Click interactive webpage element by its badge number (`elementIndex`).
             - "TYPE_EL": Type/fill text into input/textarea/editor at `elementIndex` (provide `textToType`).
             - "SCROLL": Scroll down the webpage.
             - "LOAD_URL": Navigate directly to a specific URL (provide `url`).
-            - "DOWNLOAD_VIDEO": Extract and download the generated <video> or MP4 file from the page.
-            - "WAIT": Wait 6 seconds (ONLY use when video generation is visibly in progress in the screenshot).
+            - "DOWNLOAD_VIDEO": Open completed video card, extract and download the generated MP4 video.
+            - "WAIT": Wait 6 seconds while video generation is in progress.
             - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
             - "DONE": Goal is 100% completed.
             
@@ -386,18 +394,19 @@ object GeminiBrain {
             """
             CONTINUOUS CHAT MONITORING MODE IS ACTIVE:
             - NEVER return "DONE"! You must keep monitoring the chat continuously until the user stops you.
-            - Messages on the RIGHT side (centerX > ${screenWidth / 2}) were sent by YOU.
-            - Messages on the LEFT side (centerX < ${screenWidth / 2}) are INCOMING messages from the other person.
-            - If the lowest/latest message in the chat is on the RIGHT side (your own message), DO NOT send another message! Return action="WAIT" with reason="Waiting for new incoming reply...".
-            - As soon as a NEW incoming message appears at the bottom on the LEFT side, use action="TYPE" to type a friendly reply in the 'Message' input box, and then click Send!
+            - IMPORTANT: Check the bottom message input box (`edit=true`).
+              * If there is already typed reply text sitting inside the bottom input box AND the green 'Send' button (`desc='Send'`) is visible on screen, you MUST immediately return action="CLICK_NODE" on the 'Send' button's nodeIndex! Text inside the input box is NOT sent until you click 'Send'!
+            - Look at the actual sent/received chat bubbles above the input bar:
+              * Bubbles on the RIGHT side (`centerX > ${screenWidth / 2}`) are messages already sent by YOU.
+              * Bubbles on the LEFT side (`centerX < ${screenWidth / 2}`) are INCOMING messages from the other person.
+            - If the lowest chat bubble (above the input box) is on the LEFT side (an incoming message from the other person), use action="TYPE" to type a friendly reply in the language they requested!
+            - Only return action="WAIT" when the input box is empty (`text='Message'`) AND the lowest chat bubble is on the RIGHT side (your sent message).
             """.trimIndent()
         } else ""
 
         val prompt = """
             You are a Vision-First Universal Autonomous Android UI Agent controlling a phone with EXACT screen resolution ${screenWidth}x${screenHeight} pixels.
-            OVERALL GOAL: $goal
-            
-            $monitorRules
+            OVERALL GOAL: $goal$monitorRules
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
@@ -409,10 +418,10 @@ object GeminiBrain {
             $screenSummary
             
             CRITICAL RULES FOR ACCURATE TAPPING:
-            1. Look at the attached phone screenshot AND the UI ELEMENTS list together!
-            2. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
-            3. NEVER tap inside the top Android Status Bar (y < 120 pixels).
-            4. If you use "CLICK_XY", output exact pixel coordinates for ${screenWidth}x${screenHeight}.
+            1. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
+               - In WhatsApp, the green Send button has `desc='Send'` or `id='send'`. ALWAYS use `action="CLICK_NODE"` with its exact `nodeIndex`!
+            2. NEVER tap inside the top Android Status Bar (y < 120 pixels).
+            3. If you use "CLICK_XY", output exact pixel coordinates for ${screenWidth}x${screenHeight}.
             
             Available actions:
             - "CLICK_NODE", "CLICK_XY", "TYPE", "SCROLL", "BACK", "OPEN_APP", "WAIT", "DONE".
