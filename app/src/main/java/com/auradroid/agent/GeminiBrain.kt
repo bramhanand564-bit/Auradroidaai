@@ -296,7 +296,7 @@ object GeminiBrain {
     }
 
     /**
-     * Background Web Studio Agent Brain (With Strict Verification for Google Flow Prompt Typing & Submission!)
+     * Background Web Studio Agent Brain (Vision-First with Yellow/Red Number Badges `[0]`, `[1]`, `[2]`!)
      */
     suspend fun decideNextWebAction(
         apiKey: String,
@@ -309,7 +309,7 @@ object GeminiBrain {
         screenshotBase64: String? = null
     ): WebAgentDecision {
         val prompt = """
-            You are an Autonomous Background Web Browser Agent running inside AuraDroid OS.
+            You are a Vision-Powered Autonomous Background Web Browser Agent running inside AuraDroid OS.
             OVERALL GOAL: $goal
             CURRENT URL: $pageUrl
             MEMORY VAULT: $memoryVault
@@ -320,28 +320,25 @@ object GeminiBrain {
             CURRENT WEBPAGE INTERACTIVE ELEMENTS & VISIBLE TEXT:
             $pageTextAndElements
             
-            CRITICAL RULES FOR GOOGLE FLOW & VIDEO GENERATION WEBSITES:
-            1. Look at CURRENT WEBPAGE INTERACTIVE ELEMENTS:
-               - If you are on the landing page and see "+ New project" (and do NOT see "What do you want to create?"), click "+ New project" using "CLICK_EL".
-               - Once inside a project, look for the prompt input box (usually labeled/placeholder "What do you want to create?" or <textarea> or [contenteditable]). NEVER type into the top search bar!
-            2. VERIFY BEFORE WAITING:
-               - Check the CURRENT_VALUE of the "What do you want to create?" box in ELEMENTS.
-               - If CURRENT_VALUE is empty ("") AND the page still says "Start creating or drop media", the prompt has NOT been entered yet! You MUST use "TYPE_EL" on the "What do you want to create?" element!
-               - Once CURRENT_VALUE shows the prompt text is inside the box, click the submit button ("arrow_forward" / "Create" / "Generate") using "CLICK_EL".
-               - NEVER return "WAIT" if the page still says "Start creating or drop media" and no generation is happening!
-            3. WHILE VIDEO IS ACTUALLY GENERATING:
-               - When generation has truly started (you see a progress percentage, spinner, or generating card), return action="WAIT".
-            4. DOWNLOAD & YOUTUBE CHAIN:
-               - As soon as a <video> element (`HAS_VIDEO_ELEMENT: YES`) or Download button appears on the page, return action="DOWNLOAD_VIDEO".
-               - After downloading, if the goal mentions YouTube, return "CHAIN_YOUTUBE", otherwise "DONE".
+            VISION-FIRST RULES (LOOK AT THE ATTACHED WEBPAGE SCREENSHOT!):
+            1. In the attached screenshot of the webpage, every interactive button and input box has a bright yellow/red numbered badge like `[0]`, `[1]`, `[2]` drawn directly on it!
+            2. Visually inspect the screenshot FIRST:
+               - If you see "+ New project" on screen, click its badge number using "CLICK_EL".
+               - If you see the bottom prompt area ("What do you want to create?"), look at the screenshot to see if the prompt text is already typed inside that box!
+               - If the "What do you want to create?" box is still empty (and the middle of the screen still says "Start creating or drop media"), you MUST use "TYPE_EL" with the badge number of "What do you want to create?"!
+               - Once you visually see the prompt text typed inside the bottom prompt box, click the round submit arrow button (`->` / `arrow_forward`) next to it using "CLICK_EL".
+            3. NEVER return "WAIT" if the screenshot still shows "Start creating or drop media" and an empty prompt box!
+            4. Only return "WAIT" when you visually see a video generation progress indicator / loading card in the screenshot.
+            5. As soon as you see a generated video thumbnail/player or Download button in the screenshot (or `HAS_VIDEO_ELEMENT: YES`), return action="DOWNLOAD_VIDEO".
+            6. After downloading, if the goal mentions YouTube, return "CHAIN_YOUTUBE", otherwise "DONE".
             
             Available actions:
-            - "CLICK_EL": Click interactive webpage element by its elementIndex.
-            - "TYPE_EL": Type/fill text into input/textarea/editor at elementIndex (provide textToType).
+            - "CLICK_EL": Click interactive webpage element by its badge number (`elementIndex`).
+            - "TYPE_EL": Type/fill text into input/textarea/editor at `elementIndex` (provide `textToType`).
             - "SCROLL": Scroll down the webpage.
-            - "LOAD_URL": Navigate directly to a specific URL (provide url).
+            - "LOAD_URL": Navigate directly to a specific URL (provide `url`).
             - "DOWNLOAD_VIDEO": Extract and download the generated <video> or MP4 file from the page.
-            - "WAIT": Wait 6 seconds (ONLY use when video generation or page loading is actively in progress).
+            - "WAIT": Wait 6 seconds (ONLY use when video generation is visibly in progress in the screenshot).
             - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
             - "DONE": Goal is 100% completed.
             
@@ -364,7 +361,7 @@ object GeminiBrain {
                 elementIndex = obj.optInt("elementIndex", -1),
                 textToType = obj.optString("textToType", ""),
                 url = obj.optString("url", ""),
-                reason = obj.optString("reason", "Analyzing webpage...")
+                reason = obj.optString("reason", "Analyzing webpage screenshot...")
             )
         } catch (e: CancellationException) {
             throw e
@@ -397,7 +394,7 @@ object GeminiBrain {
         } else ""
 
         val prompt = """
-            You are a Universal Autonomous Android UI Agent controlling a phone with EXACT screen resolution ${screenWidth}x${screenHeight} pixels.
+            You are a Vision-First Universal Autonomous Android UI Agent controlling a phone with EXACT screen resolution ${screenWidth}x${screenHeight} pixels.
             OVERALL GOAL: $goal
             
             $monitorRules
@@ -412,9 +409,10 @@ object GeminiBrain {
             $screenSummary
             
             CRITICAL RULES FOR ACCURATE TAPPING:
-            1. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
-            2. NEVER tap inside the top Android Status Bar (y < 120 pixels).
-            3. If you use "CLICK_XY", output exact pixel coordinates for ${screenWidth}x${screenHeight}.
+            1. Look at the attached phone screenshot AND the UI ELEMENTS list together!
+            2. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
+            3. NEVER tap inside the top Android Status Bar (y < 120 pixels).
+            4. If you use "CLICK_XY", output exact pixel coordinates for ${screenWidth}x${screenHeight}.
             
             Available actions:
             - "CLICK_NODE", "CLICK_XY", "TYPE", "SCROLL", "BACK", "OPEN_APP", "WAIT", "DONE".
