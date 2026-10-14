@@ -15,26 +15,15 @@ class TaskSchedulerReceiver : BroadcastReceiver() {
         val model = prefs.getString("model_name", "gemini-2.5-flash") ?: "gemini-2.5-flash"
         val folderPath = prefs.getString("folder_path", "/storage/emulated/0/Download/AutoVideos") ?: ""
         val command = prefs.getString("ai_command", "Upload next video with viral title and tags") ?: ""
-        val createAiFirst = prefs.getBoolean("pipeline_ai_video_first", false)
-        val hour = prefs.getInt("sched_hour", 18)
-        val minute = prefs.getInt("sched_min", 0)
 
-        VideoQueueManager.appendLog(context, "⏰ Scheduled Daily Pipeline Triggered!")
+        VideoQueueManager.appendLog(context, "⏰ Scheduled Automation Triggered!")
 
         val service = AutoTouchService.instance
         if (service != null) {
-            service.startYouTubeAutoUpload(
-                apiKey = apiKey,
-                model = model,
-                folderPath = folderPath,
-                userPrompt = command,
-                createAiVideoIfEmpty = createAiFirst
-            )
+            service.startYouTubeAutoUpload(apiKey, model, folderPath, command)
         } else {
-            VideoQueueManager.appendLog(context, "⚠️ Cannot auto-run: Enable Auto-Touch Service in Settings tab.")
+            VideoQueueManager.appendLog(context, "⚠️ Cannot auto-run: Enable Auto-Touch Service in Settings.")
         }
-
-        scheduleDailyUpload(context, hour, minute)
     }
 
     companion object {
