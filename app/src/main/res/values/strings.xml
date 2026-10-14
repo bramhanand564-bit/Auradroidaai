@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">AuraDroid AI uses accessibility to perform user-requested on-screen actions and assist with navigation. Enable or disable this service from Android Accessibility settings.</string>
+</resources>
