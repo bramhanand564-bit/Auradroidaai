@@ -64,7 +64,7 @@ class AutoTouchService : AccessibilityService() {
         overlayHud = AiOverlayHud(this)
         overlayHud?.show()
         overlayHud?.setCursorOverlayVisible(false)
-        VideoQueueManager.appendLog(this, "✅ AuraDroid Companion Connected & Ready!")
+        VideoQueueManager.appendLog(this, "✅ Universal Companion Connected & Ready!")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -86,16 +86,14 @@ class AutoTouchService : AccessibilityService() {
                 wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AuraDroid::AutonomousAgentLock")
             }
             if (wakeLock?.isHeld == false) {
-                wakeLock?.acquire(24 * 60 * 60 * 1000L) // Up to 24 hours
+                wakeLock?.acquire(24 * 60 * 60 * 1000L)
             }
         } catch (_: Exception) {}
     }
 
     private fun releaseWakeLock() {
         try {
-            if (wakeLock?.isHeld == true) {
-                wakeLock?.release()
-            }
+            if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (_: Exception) {}
     }
 
@@ -121,9 +119,6 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    /**
-     * Real Screenshot Vision (Android 11 / API 30+)
-     */
     private suspend fun captureScreenshotBase64(): String? {
         if (!VideoQueueManager.isScreenVisionEnabled(this)) return null
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
@@ -178,8 +173,7 @@ class AutoTouchService : AccessibilityService() {
         model: String,
         initialUrl: String,
         userGoal: String,
-        folderPath: String,
-        chainYouTubeAfterDownload: Boolean = false
+        folderPath: String
     ) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
@@ -190,7 +184,7 @@ class AutoTouchService : AccessibilityService() {
             isJobRunning = true
             acquireWakeLock()
             overlayHud?.show()
-            overlayHud?.setCursorOverlayVisible(false) // Keep user's phone screen 100% free!
+            overlayHud?.setCursorOverlayVisible(false)
 
             val startTimeMs = System.currentTimeMillis()
             val webView = overlayHud?.getOrCreateSharedWebView()
@@ -212,12 +206,12 @@ class AutoTouchService : AccessibilityService() {
                 for (step in 1..maxSteps) {
                     if (!isActive) break
 
-                    // Check if a new video was downloaded into Download / AutoVideos folder
+                    // If a new video was downloaded and the goal mentions YouTube, automatically chain!
                     val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                    if (newlyDownloaded != null && (chainYouTubeAfterDownload || userGoal.contains("youtube", true))) {
+                    if (newlyDownloaded != null && userGoal.contains("youtube", true)) {
                         VideoQueueManager.appendLog(
                             this@AutoTouchService,
-                            "🎬 New Downloaded Video Detected: ${newlyDownloaded.name}! Chaining to YouTube Upload..."
+                            "🎬 Downloaded Video Detected: ${newlyDownloaded.name}! Chaining to YouTube Upload..."
                         )
                         isJobRunning = false
                         startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
@@ -243,15 +237,9 @@ class AutoTouchService : AccessibilityService() {
                     history.add("Step $step: ${decision.action} - ${decision.reason}")
 
                     when (decision.action) {
-                        "CLICK_EL" -> {
-                            performWebJsClick(webView, decision.elementIndex)
-                        }
-                        "TYPE_EL" -> {
-                            performWebJsType(webView, decision.elementIndex, decision.textToType)
-                        }
-                        "SCROLL" -> {
-                            webView?.evaluateJavascript("window.scrollBy(0, 550);", null)
-                        }
+                        "CLICK_EL" -> performWebJsClick(webView, decision.elementIndex)
+                        "TYPE_EL" -> performWebJsType(webView, decision.elementIndex, decision.textToType)
+                        "SCROLL" -> webView?.evaluateJavascript("window.scrollBy(0, 550);", null)
                         "LOAD_URL" -> {
                             if (decision.url.startsWith("http")) {
                                 webView?.loadUrl(decision.url)
@@ -259,15 +247,11 @@ class AutoTouchService : AccessibilityService() {
                             }
                         }
                         "DOWNLOAD_URL" -> {
-                            if (decision.url.startsWith("http")) {
-                                webView?.loadUrl(decision.url)
-                            }
+                            if (decision.url.startsWith("http")) webView?.loadUrl(decision.url)
                         }
-                        "WAIT" -> {
-                            delay(5000)
-                        }
+                        "WAIT" -> delay(5000)
                         "CHAIN_YOUTUBE" -> {
-                            VideoQueueManager.appendLog(this@AutoTouchService, "🚀 Switching to YouTube Auto-Upload Pipeline...")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "🚀 Switching to YouTube Auto-Upload...")
                             isJobRunning = false
                             startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
                             return@launch
@@ -351,14 +335,13 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 2: 100% TESTED & WORKING YOUTUBE SHORTS AUTO-UPLOADER
+    // ENGINE 2: TESTED & WORKING YOUTUBE SHORTS AUTO-UPLOADER
     // ========================================================================
     fun startYouTubeAutoUpload(
         apiKey: String,
         model: String,
         folderPath: String,
-        userPrompt: String,
-        createAiVideoIfEmpty: Boolean = false
+        userPrompt: String
     ) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
@@ -371,32 +354,15 @@ class AutoTouchService : AccessibilityService() {
             overlayHud?.show()
             overlayHud?.setCursorOverlayVisible(true)
             try {
-                overlayHud?.updateStatus("YouTube • Step 1/5", "Scanning folder for video...", "WORKING")
+                overlayHud?.updateStatus("Step 1/5 • Folder", "Scanning folder for video...", "WORKING")
                 VideoQueueManager.appendLog(this@AutoTouchService, "📂 Checking folder: $folderPath")
 
                 val nextVideo = VideoQueueManager.getNextPendingVideo(this@AutoTouchService, folderPath)
                 if (nextVideo == null) {
-                    if (createAiVideoIfEmpty) {
-                        VideoQueueManager.appendLog(
-                            this@AutoTouchService,
-                            "🌐 Folder empty! Launching Background Web Agent to generate & download new AI video first..."
-                        )
-                        isJobRunning = false
-                        startBackgroundWebTask(
-                            apiKey = apiKey,
-                            model = model,
-                            initialUrl = "https://gemini.google.com",
-                            userGoal = "Generate and download a short video based on: $userPrompt, then upload to YouTube",
-                            folderPath = folderPath,
-                            chainYouTubeAfterDownload = true
-                        )
-                        return@launch
-                    }
-
-                    overlayHud?.updateStatus("Queue Empty", "Tap 'Reset Uploaded' or add video!", "DONE")
+                    overlayHud?.updateStatus("Queue Empty", "Tap 'Reset History' or add video!", "DONE")
                     VideoQueueManager.appendLog(
                         this@AutoTouchService,
-                        "⚠️ No pending video! Tap 'Reset Uploaded' in YouTube tab to re-test."
+                        "⚠️ No pending video! Tap 'Reset History' in Tasks tab to re-test."
                     )
                     delay(3500)
                     overlayHud?.setCursorOverlayVisible(false)
@@ -405,8 +371,7 @@ class AutoTouchService : AccessibilityService() {
                 }
 
                 VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Selected Next Video: ${nextVideo.name}")
-                overlayHud?.updateStatus("YouTube • Step 2/5", "Gemini generating viral Title...", "THINKING")
-                VideoQueueManager.appendLog(this@AutoTouchService, "🧠 Generating viral Title & Description...")
+                overlayHud?.updateStatus("Step 2/5 • Gemini", "Generating viral Title...", "THINKING")
 
                 val metadata = GeminiBrain.generateYouTubeMetadata(
                     apiKey = apiKey,
@@ -418,8 +383,7 @@ class AutoTouchService : AccessibilityService() {
                 copyToClipboard(metadata.title)
 
                 VideoQueueManager.appendLog(this@AutoTouchService, "✨ AI Title: ${metadata.title}")
-                overlayHud?.updateStatus("YouTube • Step 3/5", "Opening YouTube Upload...", "WORKING")
-                VideoQueueManager.appendLog(this@AutoTouchService, "🚀 Launching YouTube with video file...")
+                overlayHud?.updateStatus("Step 3/5 • YouTube", "Opening YouTube Upload...", "WORKING")
 
                 launchYouTubeWithVideo(nextVideo)
                 delay(5500)
@@ -452,8 +416,8 @@ class AutoTouchService : AccessibilityService() {
                     // STEP A: Trimmer/Editor screen par 'Next' dabayein
                     if (!isOnAddDetailsScreen && !titleFilled && nextBtn != null) {
                         nextClickCount++
-                        overlayHud?.updateStatus("YouTube • Editor ($nextClickCount)", "Tapping 'Next'...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Trimmer/Editor Screen: Tapping 'Next' (#$nextClickCount)...")
+                        overlayHud?.updateStatus("Step 3/5 • Editor ($nextClickCount)", "Tapping 'Next'...", "WORKING")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Trimmer/Editor: Tapping 'Next' (#$nextClickCount)...")
                         animateAndPhysicalTapNode(nextBtn, "Tap: Next")
                         delay(4000)
                         continue
@@ -476,20 +440,17 @@ class AutoTouchService : AccessibilityService() {
                         val capX = captionNode?.centerX ?: (realW * 0.52f)
                         val capY = captionNode?.centerY ?: (realH * 0.138f)
 
-                        overlayHud?.updateStatus("YouTube • Step 4/5", "Focusing Caption Box...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Tapping 'Caption your Short' at (${capX.toInt()}, ${capY.toInt()})...")
+                        overlayHud?.updateStatus("Step 4/5 • Caption", "Focusing Caption Box...", "WORKING")
                         animateAndTapXY(capX, capY, "Tap: Caption")
                         delay(2200)
 
-                        overlayHud?.updateStatus("YouTube • Typing", "Pasting AI Title...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Inserting AI Title: ${metadata.title}")
-
+                        overlayHud?.updateStatus("Step 4/5 • Typing", "Pasting AI Title...", "WORKING")
                         insertCaptionSingleClean(metadata.title, capX, capY)
 
                         titleFilled = true
                         delay(1800)
 
-                        overlayHud?.updateStatus("YouTube • Step 4/5", "Closing keyboard...", "WORKING")
+                        overlayHud?.updateStatus("Step 4/5 • Keyboard", "Closing keyboard...", "WORKING")
                         performGlobalAction(GLOBAL_ACTION_BACK)
                         delay(2800)
                         continue
@@ -538,7 +499,7 @@ class AutoTouchService : AccessibilityService() {
                                 it.text.equals("Subscriptions", true) ||
                                 it.contentDesc.contains("Subscriptions", true) ||
                                 it.text.equals("Home", true) ||
-                                it.contentDesc.equals("Home", true)
+                                it.contentDesc.contains("Home", true)
                             } && !isAddDetailsScreenVisible(currentNodes)
 
                             if (onMainYouTubeFeed && attempt > 1) break
@@ -568,7 +529,7 @@ class AutoTouchService : AccessibilityService() {
                                 exactUploadYPoints[(attempt - 1) % exactUploadYPoints.size]
                             }
 
-                            overlayHud?.updateStatus("YouTube • Step 5/5", "Tapping 'Upload Short' (#$attempt)...", "WORKING")
+                            overlayHud?.updateStatus("Step 5/5 • Upload", "Tapping 'Upload Short' (#$attempt)...", "WORKING")
                             VideoQueueManager.appendLog(
                                 this@AutoTouchService,
                                 "🎯 Tapping 'Upload Short' Center at (${tapX.toInt()}, ${tapY.toInt()}) [Attempt #$attempt]..."
@@ -609,13 +570,12 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 3: PHONE DOCTOR & UNIVERSAL 24/7 SCREEN AGENT (With Vision!)
+    // ENGINE 3: UNIVERSAL 24/7 PHONE & SETTINGS AGENT (With Screenshot Vision!)
     // ========================================================================
     fun startUniversalAiTask(
         apiKey: String,
         model: String,
-        userGoal: String,
-        initialSettingAction: String? = null
+        userGoal: String
     ) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ Agent is already busy!")
@@ -634,14 +594,9 @@ class AutoTouchService : AccessibilityService() {
             val maxSteps = if (unstoppable) 2000 else 35
 
             try {
-                overlayHud?.updateStatus("Phone Agent", "Goal: ${userGoal.take(28)}...", "THINKING")
-                VideoQueueManager.appendLog(this@AutoTouchService, "🛠️ Starting Phone Screen Agent: $userGoal")
+                overlayHud?.updateStatus("Universal Agent", "Goal: ${userGoal.take(28)}...", "THINKING")
+                VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Starting Universal Phone Agent: $userGoal")
                 val history = mutableListOf<String>()
-
-                if (!initialSettingAction.isNullOrBlank()) {
-                    openSystemSettingOrApp(initialSettingAction)
-                    delay(2500)
-                }
 
                 for (step in 1..maxSteps) {
                     if (!isActive) break
@@ -650,10 +605,9 @@ class AutoTouchService : AccessibilityService() {
                         "[${it.index}] text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
                     }
 
-                    // Capture real screen image if Vision is enabled
                     val screenshotB64 = captureScreenshotBase64()
 
-                    overlayHud?.updateStatus("Step $step • Thinking", "Reading screen & screenshot...", "THINKING")
+                    overlayHud?.updateStatus("Step $step • Thinking", "Reading screen & vision...", "THINKING")
                     val decision = GeminiBrain.decideNextUiAction(
                         apiKey = apiKey,
                         model = model,
