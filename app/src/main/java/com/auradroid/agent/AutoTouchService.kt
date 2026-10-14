@@ -915,7 +915,7 @@ class AutoTouchService : AccessibilityService() {
         val cleanTarget = target.trim()
         val actionIntent = when (cleanTarget.uppercase()) {
             "SETTINGS" -> Intent(Settings.ACTION_SETTINGS)
-            "BATTERY" -> Intent(Settings.ACTION_POWER_USAGE_SUMMARY)
+            "BATTERY" -> Intent("android.settings.POWER_USAGE_SUMMARY")
             "WIFI" -> Intent(Settings.ACTION_WIFI_SETTINGS)
             "DISPLAY" -> Intent(Settings.ACTION_DISPLAY_SETTINGS)
             "STORAGE" -> Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
