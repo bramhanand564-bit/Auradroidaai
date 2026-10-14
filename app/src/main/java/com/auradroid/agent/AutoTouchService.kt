@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.*
 import java.io.File
@@ -19,13 +20,16 @@ import java.io.File
 data class UiNodeSnapshot(
     val index: Int,
     val node: AccessibilityNodeInfo,
+    val windowType: Int,
     val className: String,
     val text: String,
     val contentDesc: String,
     val hintText: String,
     val viewId: String,
     val isEditable: Boolean,
+    val isFocused: Boolean,
     val isClickable: Boolean,
+    val supportsSetText: Boolean,
     val centerX: Float,
     val centerY: Float
 )
@@ -90,16 +94,19 @@ class AutoTouchService : AccessibilityService() {
 
                 val nextVideo = VideoQueueManager.getNextPendingVideo(this@AutoTouchService, folderPath)
                 if (nextVideo == null) {
-                    overlayHud?.updateStatus("ALL DONE", "All videos in folder are uploaded!", "DONE")
-                    VideoQueueManager.appendLog(this@AutoTouchService, "✅ All videos in folder are already uploaded!")
-                    delay(3000)
+                    overlayHud?.updateStatus("QUEUE EMPTY", "Tap 'Reset Uploaded List' or add new video!", "DONE")
+                    VideoQueueManager.appendLog(
+                        this@AutoTouchService,
+                        "⚠️ No pending video! Tap 'Reset Uploaded List' in app if you want to re-upload."
+                    )
+                    delay(3500)
                     overlayHud?.hide()
                     isJobRunning = false
                     return@launch
                 }
 
                 VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Selected Next Video: ${nextVideo.name}")
-                overlayHud?.updateStatus("STEP 2/5 • GEMINI AI", "Generating viral Title & Tags for ${nextVideo.name.take(18)}...", "THINKING")
+                overlayHud?.updateStatus("STEP 2/5 • GEMINI AI", "Generating Title & Tags...", "THINKING")
                 VideoQueueManager.appendLog(this@AutoTouchService, "🧠 Generating viral Title & Description...")
 
                 val metadata = GeminiBrain.generateYouTubeMetadata(
@@ -108,6 +115,9 @@ class AutoTouchService : AccessibilityService() {
                     fileName = nextVideo.name,
                     userInstruction = userPrompt
                 )
+
+                // Title ko turant Clipboard mein copy karke rakhein
+                copyToClipboard(metadata.title)
 
                 VideoQueueManager.appendLog(this@AutoTouchService, "✨ AI Title: ${metadata.title}")
                 overlayHud?.updateStatus("STEP 3/5 • YOUTUBE", "Opening YouTube Upload Screen...", "WORKING")
@@ -128,15 +138,14 @@ class AutoTouchService : AccessibilityService() {
                     if (!isActive) break
                     val nodes = captureScreenNodes()
 
-                    // देखें कि क्या स्क्रीन पर अभी 'Next' बटन मौजूद है (Trimmer या Editor स्क्रीन)
                     val nextBtn = nodes.firstOrNull {
-                        it.text.equals("Next", true) ||
-                        it.contentDesc.equals("Next", true) ||
-                        it.text.equals("Done", true) ||
-                        it.contentDesc.equals("Done", true)
+                        it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD &&
+                        (it.text.equals("Next", true) ||
+                         it.contentDesc.equals("Next", true) ||
+                         it.text.equals("Done", true) ||
+                         it.contentDesc.equals("Done", true))
                     }
 
-                    // देखें कि क्या हम 'Add details' स्क्रीन पर पहुँच गए हैं
                     val hasAddDetailsText = nodes.any {
                         val combined = "${it.text} ${it.contentDesc} ${it.hintText}"
                         combined.contains("Add details", true) ||
@@ -146,68 +155,64 @@ class AutoTouchService : AccessibilityService() {
                         combined.contains("Visibility", true)
                     }
 
-                    // यदि हम कम से कम 1-2 बार Next दबा चुके हैं और अब स्क्रीन पर Next बटन नहीं है, तो हम Add details पेज पर हैं!
                     val isOnAddDetailsScreen = hasAddDetailsText || (nextClickCount >= 2 && nextBtn == null)
 
-                    // STEP A: Trimmer/Editor स्क्रीन पर 'Next' दबाएं (जब तक Add details पेज न आए)
+                    // STEP A: Trimmer/Editor screen par 'Next' dabayein
                     if (!isOnAddDetailsScreen && !titleFilled && nextBtn != null) {
                         nextClickCount++
-                        overlayHud?.updateStatus(
-                            "STEP 3/5 • EDITOR ($nextClickCount)",
-                            "Clicking 'Next' button...",
-                            "WORKING"
-                        )
+                        overlayHud?.updateStatus("STEP 3/5 • EDITOR ($nextClickCount)", "Tapping 'Next'...", "WORKING")
                         VideoQueueManager.appendLog(this@AutoTouchService, "👆 Trimmer/Editor Screen: Clicking 'Next' (#$nextClickCount)...")
                         animateAndTapNode(nextBtn, "Tap: Next")
                         delay(3800)
                         continue
                     }
 
-                    // STEP B: 'Add details' स्क्रीन पर 'Caption your Short' / Title भरें
+                    // STEP B: 'Add details' screen par 'Caption your Short' fill karein
                     if (!titleFilled && (isOnAddDetailsScreen || nextClickCount >= 2)) {
-                        overlayHud?.updateStatus("STEP 4/5 • CAPTION", "Tapping 'Caption your Short' box...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Focusing 'Caption your Short' box...")
+                        copyToClipboard(metadata.title)
 
                         val captionNode = nodes.firstOrNull {
                             val combined = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
                             combined.contains("Caption your Short", true) ||
                             combined.contains("Create a title", true) ||
                             combined.contains("Add a title", true) ||
-                            combined.contains("caption", true) ||
-                            combined.contains("title_edit", true)
+                            combined.contains("caption", true)
                         } ?: nodes.firstOrNull {
-                            it.isEditable || it.className.contains("EditText", true)
+                            it.isEditable || it.supportsSetText
                         }
 
-                        if (captionNode != null) {
-                            animateAndTapNode(captionNode, "Tap: Caption Box")
-                        } else {
-                            // YouTube Shorts 'Add details' पेज पर थंबनेल के बगल में 'Caption your Short' का सटीक स्थान
-                            val capX = screenW * 0.54f
-                            val capY = screenH * 0.135f
-                            animateAndTapXY(capX, capY, "Tap: Caption Box")
-                        }
+                        val capX = captionNode?.centerX ?: (screenW * 0.54f)
+                        val capY = captionNode?.centerY ?: (screenH * 0.135f)
+
+                        // Pehle bina keyboard khole bhi direct set text try karein
+                        captionNode?.node?.let { tryDirectSetOrPaste(it, metadata.title) }
+
+                        overlayHud?.updateStatus("STEP 4/5 • CAPTION", "Tapping 'Caption your Short'...", "WORKING")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Tapping 'Caption your Short' box...")
+                        animateAndTapXY(capX, capY, "Tap: Caption")
                         delay(2200)
 
-                        // अब कीबोर्ड और इनपुट बॉक्स खुल चुका है, इसमें AI Title टाइप/पेस्ट करें
-                        overlayHud?.updateStatus("STEP 4/5 • TYPING", "Typing: ${metadata.title.take(28)}...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Typing AI Title: ${metadata.title}")
+                        // Ab Keyboard khul chuka hai -> Multi-Layer Paste/Type chalayein
+                        overlayHud?.updateStatus("STEP 4/5 • TYPING", "Inserting AI Title...", "WORKING")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Inserting AI Title: ${metadata.title}")
 
-                        val updatedNodes = captureScreenNodes()
-                        val focusedEdit = findFocusedOrEditableNode(updatedNodes) ?: captionNode?.node
-                        typeOrPasteTextEverywhere(focusedEdit, metadata.title)
+                        val inserted = insertCaptionWithAllMethods(metadata.title, capX, capY)
+                        VideoQueueManager.appendLog(this@AutoTouchService, "✅ Title Insert Method Completed (Success=$inserted)")
 
                         titleFilled = true
-                        delay(2000)
+                        delay(1800)
 
-                        // कीबोर्ड बंद करने के लिए एक बार Back दबाएं ताकि नीचे का 'Upload Short' बटन साफ दिखे
-                        overlayHud?.updateStatus("STEP 4/5 • KEYBOARD", "Closing keyboard to view Upload button...", "WORKING")
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(2200)
+                        // Agar Keyboard khula hai, toh Back dabakar keyboard band karein taaki Upload Short button dikhe
+                        if (isKeyboardOpen() || !isBottomUploadButtonVisible(screenH)) {
+                            overlayHud?.updateStatus("STEP 4/5 • KEYBOARD", "Closing keyboard...", "WORKING")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "⌨️ Closing keyboard...")
+                            performGlobalAction(GLOBAL_ACTION_BACK)
+                            delay(2400)
+                        }
                         continue
                     }
 
-                    // STEP C: यदि Long Video है और 'Add description' दिख रहा है, तो Description भरें
+                    // STEP C: Long Video ke liye Description (Shorts mein skip ho jayega)
                     if (titleFilled && !descFilled) {
                         val addDescNode = nodes.firstOrNull {
                             val combined = "${it.text} ${it.contentDesc} ${it.hintText}"
@@ -217,49 +222,74 @@ class AutoTouchService : AccessibilityService() {
                             overlayHud?.updateStatus("STEP 4/5 • DESCRIPTION", "Filling AI Description...", "WORKING")
                             animateAndTapNode(addDescNode, "Tap: Description")
                             delay(2000)
-                            val descEdit = findFocusedOrEditableNode(captureScreenNodes())
-                            typeOrPasteTextEverywhere(descEdit, metadata.description)
+                            insertCaptionWithAllMethods(metadata.description, screenW * 0.5f, screenH * 0.25f)
                             descFilled = true
                             delay(1800)
                             performGlobalAction(GLOBAL_ACTION_BACK)
-                            delay(1800)
+                            delay(2000)
                             continue
                         } else {
                             descFilled = true
                         }
                     }
 
-                    // STEP D: फाइनल 'Upload Short' या 'Upload' बटन पर टैप करें
+                    // STEP D: Final 'Upload Short' / 'Upload' button par tap karein aur verify karein
                     if (titleFilled) {
-                        val uploadBtn = nodes.firstOrNull {
-                            val combined = "${it.text} ${it.contentDesc} ${it.hintText}"
-                            combined.contains("Upload Short", true) ||
-                            it.text.equals("Upload", true) ||
-                            it.contentDesc.equals("Upload", true) ||
-                            combined.contains("Upload video", true) ||
-                            it.text.equals("Publish", true)
+                        // Agar abhi bhi keyboard khula reh gaya ho toh pehle band karein
+                        if (isKeyboardOpen()) {
+                            performGlobalAction(GLOBAL_ACTION_BACK)
+                            delay(2000)
                         }
 
-                        overlayHud?.updateStatus("STEP 5/5 • PUBLISHING", "Tapping 'Upload Short' button!", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "🎯 Tapping Final 'Upload Short' Button!")
+                        var uploadConfirmed = false
+                        for (tryUpload in 1..3) {
+                            val freshNodes = captureScreenNodes()
+                            val stillOnAddDetails = freshNodes.any {
+                                val c = "${it.text} ${it.contentDesc} ${it.hintText}"
+                                c.contains("Add details", true) ||
+                                c.contains("Upload Short", true) ||
+                                c.contains("Select audience", true)
+                            }
 
-                        if (uploadBtn != null) {
-                            animateAndTapNode(uploadBtn, "Tap: Upload Short")
-                        } else {
-                            // YouTube Shorts के 'Add details' पेज पर सबसे नीचे सफेद 'Upload Short' बटन का सटीक स्थान
-                            val upX = screenW * 0.50f
-                            val upY = screenH * 0.958f
-                            animateAndTapXY(upX, upY, "Tap: Upload Short")
+                            if (!stillOnAddDetails && tryUpload > 1) {
+                                uploadConfirmed = true
+                                break
+                            }
+
+                            // Screen ke bottom hisse mein 'Upload Short' button dhoondhein
+                            val uploadBtn = freshNodes.firstOrNull {
+                                val c = "${it.text} ${it.contentDesc} ${it.hintText}"
+                                it.centerY > screenH * 0.70f && (
+                                    c.contains("Upload Short", true) ||
+                                    it.text.equals("Upload", true) ||
+                                    it.contentDesc.equals("Upload", true) ||
+                                    c.contains("Upload video", true) ||
+                                    it.text.equals("Publish", true)
+                                )
+                            }
+
+                            overlayHud?.updateStatus("STEP 5/5 • UPLOAD (#$tryUpload)", "Tapping 'Upload Short'...", "WORKING")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "🎯 Tapping 'Upload Short' Button (Attempt #$tryUpload)...")
+
+                            if (uploadBtn != null) {
+                                animateAndTapNode(uploadBtn, "Tap: Upload Short")
+                            } else {
+                                // White 'Upload Short' button center coordinates at bottom of screen
+                                val upX = screenW * 0.50f
+                                val upY = screenH * 0.955f
+                                animateAndTapXY(upX, upY, "Tap: Upload Short")
+                            }
+
+                            delay(3200)
                         }
 
-                        delay(2000)
                         VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
-                        overlayHud?.updateStatus("🎉 UPLOAD SUCCESS!", "'${nextVideo.name.take(20)}' Published!", "DONE")
+                        overlayHud?.updateStatus("🎉 UPLOAD SUCCESS!", "'${nextVideo.name.take(18)}' Uploaded!", "DONE")
                         VideoQueueManager.appendLog(
                             this@AutoTouchService,
                             "🎉 REPORT: '${nextVideo.name}' successfully uploaded with Title: '${metadata.title}'!"
                         )
-                        delay(4000)
+                        delay(3500)
                         break
                     }
 
@@ -275,6 +305,145 @@ class AutoTouchService : AccessibilityService() {
                 isJobRunning = false
             }
         }
+    }
+
+    /**
+     * 4-Layer Guaranteed Text Entry for YouTube Litho / EditText:
+     * Layer 1: Direct ACTION_SET_TEXT & ACTION_PASTE on all focused/editable/Litho nodes
+     * Layer 2: Check if Gboard/Keyboard clipboard suggestion chip has the text and tap it
+     * Layer 3: Long-press on the caption box to trigger native Android 'Paste' popup and click it
+     */
+    private suspend fun insertCaptionWithAllMethods(text: String, boxX: Float, boxY: Float): Boolean {
+        copyToClipboard(text)
+
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+
+        // Layer 1: Try ACTION_SET_TEXT and ACTION_PASTE on every candidate node (without breaking early!)
+        val allNodes = captureScreenNodes()
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+
+        rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { candidates.add(it) }
+        try {
+            for (win in windows) {
+                win.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let {
+                    if (it !in candidates) candidates.add(it)
+                }
+            }
+        } catch (_: Exception) {}
+
+        for (snap in allNodes) {
+            if (snap.windowType == AccessibilityWindowInfo.TYPE_APPLICATION) {
+                val combined = "${snap.text} ${snap.contentDesc} ${snap.hintText} ${snap.viewId}"
+                if (snap.isFocused || snap.isEditable || snap.supportsSetText ||
+                    snap.className.contains("EditText", true) ||
+                    combined.contains("Caption your Short", true) ||
+                    combined.contains("caption", true) ||
+                    combined.contains("title", true)
+                ) {
+                    if (snap.node !in candidates) candidates.add(snap.node)
+                }
+            }
+        }
+
+        for (node in candidates) {
+            try {
+                node.refresh()
+                node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            } catch (_: Exception) {}
+        }
+
+        delay(1000)
+        if (isTextVisuallyEntered(text)) return true
+
+        // Layer 2: Check if Keyboard (Gboard) shows Clipboard Suggestion Pill with our text
+        val keyboardSnapshots = captureScreenNodes().filter {
+            it.windowType == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+        }
+        val titlePrefix = text.take(12).trim()
+        val clipboardChip = keyboardSnapshots.firstOrNull {
+            (titlePrefix.isNotEmpty() && (it.text.contains(titlePrefix, true) || it.contentDesc.contains(titlePrefix, true))) ||
+            it.text.equals("Paste", true) ||
+            it.contentDesc.equals("Paste", true) ||
+            it.text.contains("चिपकाएं")
+        }
+        if (clipboardChip != null) {
+            VideoQueueManager.appendLog(this@AutoTouchService, "📋 Tapping Keyboard Clipboard Chip...")
+            animateAndTapNode(clipboardChip, "Tap: Clipboard")
+            delay(1200)
+            if (isTextVisuallyEntered(text)) return true
+        }
+
+        // Layer 3: Long-press inside the Caption Box to bring up Android's native 'Paste' button
+        VideoQueueManager.appendLog(this@AutoTouchService, "📋 Long-pressing Caption box for Paste menu...")
+        overlayHud?.moveBotAndShowTap(boxX, boxY, "Hold: Paste")
+        performLongPressGesture(boxX, boxY, 720L)
+        delay(1400)
+
+        val afterLongPressNodes = captureScreenNodes()
+        val pastePopupBtn = afterLongPressNodes.firstOrNull {
+            it.text.equals("Paste", true) ||
+            it.contentDesc.equals("Paste", true) ||
+            it.text.contains("Paste", true) ||
+            it.text.contains("चिपकाएं", true) ||
+            it.contentDesc.contains("चिपकाएं", true)
+        }
+
+        if (pastePopupBtn != null) {
+            VideoQueueManager.appendLog(this@AutoTouchService, "👆 Clicking native 'Paste' popup button!")
+            animateAndTapNode(pastePopupBtn, "Tap: Paste")
+            delay(1200)
+            return true
+        } else {
+            // Dobara sabhi focused nodes par ACTION_PASTE bhejein
+            val focusedNow = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            focusedNow?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            focusedNow?.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        }
+
+        return isTextVisuallyEntered(text)
+    }
+
+    private fun isTextVisuallyEntered(expectedTitle: String): Boolean {
+        val prefix = expectedTitle.take(10).trim()
+        if (prefix.isEmpty()) return true
+        val nodes = captureScreenNodes()
+        return nodes.any {
+            it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION &&
+            (it.text.contains(prefix, true) || it.contentDesc.contains(prefix, true))
+        }
+    }
+
+    private fun isKeyboardOpen(): Boolean {
+        return try {
+            windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isBottomUploadButtonVisible(screenH: Float): Boolean {
+        return captureScreenNodes().any {
+            val c = "${it.text} ${it.contentDesc}"
+            it.centerY > screenH * 0.75f && (c.contains("Upload Short", true) || it.text.equals("Upload", true))
+        }
+    }
+
+    private fun copyToClipboard(text: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("ai_title", text))
+    }
+
+    private fun tryDirectSetOrPaste(node: AccessibilityNodeInfo, text: String) {
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
     }
 
     fun startUniversalAiTask(apiKey: String, model: String, userGoal: String) {
@@ -366,12 +535,12 @@ class AutoTouchService : AccessibilityService() {
             "CLICK_XY" -> animateAndTapXY(decision.x, decision.y, "Tap XY")
             "TYPE" -> {
                 val target = nodes.firstOrNull { it.index == decision.nodeIndex }
-                    ?: nodes.firstOrNull { it.isEditable }
-                if (target != null) {
-                    animateAndTapNode(target, "Focus Input")
-                    delay(800)
-                }
-                typeOrPasteTextEverywhere(target?.node, decision.textToType)
+                    ?: nodes.firstOrNull { it.isEditable || it.supportsSetText }
+                val tx = target?.centerX ?: 540f
+                val ty = target?.centerY ?: 400f
+                animateAndTapXY(tx, ty, "Focus Input")
+                delay(1200)
+                insertCaptionWithAllMethods(decision.textToType, tx, ty)
             }
             "SCROLL" -> performScrollDownGesture()
             "BACK" -> performGlobalAction(GLOBAL_ACTION_BACK)
@@ -382,20 +551,26 @@ class AutoTouchService : AccessibilityService() {
         val list = mutableListOf<UiNodeSnapshot>()
         var counter = 0
 
-        val roots = mutableListOf<AccessibilityNodeInfo>()
-        rootInActiveWindow?.let { roots.add(it) }
+        val windowRoots = mutableListOf<Pair<Int, AccessibilityNodeInfo>>()
         try {
             for (win in windows) {
                 val r = win.root
-                if (r != null && r.packageName?.toString() != packageName && r !in roots) {
-                    roots.add(r)
+                if (r != null && r.packageName?.toString() != packageName) {
+                    windowRoots.add(Pair(win.type, r))
                 }
             }
         } catch (_: Exception) {}
 
-        fun traverse(node: AccessibilityNodeInfo?) {
+        if (windowRoots.isEmpty()) {
+            rootInActiveWindow?.let {
+                if (it.packageName?.toString() != packageName) {
+                    windowRoots.add(Pair(AccessibilityWindowInfo.TYPE_APPLICATION, it))
+                }
+            }
+        }
+
+        fun traverse(node: AccessibilityNodeInfo?, winType: Int) {
             if (node == null) return
-            // अपने खुद के ओवरले (com.auradroid.agent) को स्कैन से बाहर रखें
             if (node.packageName?.toString() == packageName) return
 
             val cls = node.className?.toString() ?: ""
@@ -406,9 +581,13 @@ class AutoTouchService : AccessibilityService() {
             } else ""
             val viewId = node.viewIdResourceName?.substringAfter("/") ?: ""
             val clickable = node.isClickable
-            val editable = node.isEditable || cls.contains("EditText", true)
+            val focused = node.isFocused || node.isAccessibilityFocused
+            val actionIds = node.actionList?.map { it.id } ?: emptyList()
+            val canSetText = actionIds.contains(AccessibilityNodeInfo.ACTION_SET_TEXT) ||
+                             actionIds.contains(AccessibilityNodeInfo.ACTION_PASTE)
+            val editable = node.isEditable || cls.contains("EditText", true) || canSetText
 
-            if (text.isNotEmpty() || desc.isNotEmpty() || hint.isNotEmpty() || clickable || editable) {
+            if (text.isNotEmpty() || desc.isNotEmpty() || hint.isNotEmpty() || clickable || editable || focused) {
                 val rect = Rect()
                 node.getBoundsInScreen(rect)
                 if (rect.width() > 0 && rect.height() > 0) {
@@ -416,13 +595,16 @@ class AutoTouchService : AccessibilityService() {
                         UiNodeSnapshot(
                             index = counter++,
                             node = node,
+                            windowType = winType,
                             className = cls,
                             text = text,
                             contentDesc = desc,
                             hintText = hint,
                             viewId = viewId,
                             isEditable = editable,
+                            isFocused = focused,
                             isClickable = clickable,
+                            supportsSetText = canSetText,
                             centerX = rect.exactCenterX(),
                             centerY = rect.exactCenterY()
                         )
@@ -430,31 +612,20 @@ class AutoTouchService : AccessibilityService() {
                 }
             }
 
-            // हमेशा सभी चाइल्ड नोड्स के अंदर जाएं (चाहे पैरेंट का isVisibleToUser कुछ भी हो)
             for (i in 0 until node.childCount) {
-                traverse(node.getChild(i))
+                traverse(node.getChild(i), winType)
             }
         }
 
-        for (r in roots) {
-            traverse(r)
+        for ((wType, root) in windowRoots) {
+            traverse(root, wType)
         }
         return list
     }
 
-    private fun findFocusedOrEditableNode(nodes: List<UiNodeSnapshot>): AccessibilityNodeInfo? {
-        rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { return it }
-        try {
-            for (win in windows) {
-                win.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { return it }
-            }
-        } catch (_: Exception) {}
-        return nodes.firstOrNull { it.isEditable || it.className.contains("EditText", true) }?.node
-    }
-
     private suspend fun animateAndTapNode(snapshot: UiNodeSnapshot, label: String) {
         overlayHud?.moveBotAndShowTap(snapshot.centerX, snapshot.centerY, label)
-        delay(500) // Cute AI Bot को उड़कर उस बटन तक पहुंचने का समय दें
+        delay(450)
 
         var clicked = snapshot.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         if (!clicked) {
@@ -469,60 +640,15 @@ class AutoTouchService : AccessibilityService() {
                 depth++
             }
         }
-        performTapGesture(snapshot.centerX, snapshot.centerY)
+        if (!clicked) {
+            performTapGesture(snapshot.centerX, snapshot.centerY)
+        }
     }
 
     private suspend fun animateAndTapXY(x: Float, y: Float, label: String) {
         overlayHud?.moveBotAndShowTap(x, y, label)
-        delay(500) // Cute AI Bot को उड़कर टारगेट कोऑर्डिनेट तक पहुंचने का समय दें
+        delay(450)
         performTapGesture(x, y)
-    }
-
-    private fun typeOrPasteTextEverywhere(targetNode: AccessibilityNodeInfo?, text: String) {
-        // 1. पहले क्लिपबोर्ड में टेक्स्ट कॉपी करें
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("ai_text", text))
-
-        val args = Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        }
-
-        val candidates = mutableListOf<AccessibilityNodeInfo>()
-        targetNode?.let { candidates.add(it) }
-        rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let {
-            if (it !in candidates) candidates.add(it)
-        }
-        try {
-            for (win in windows) {
-                win.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let {
-                    if (it !in candidates) candidates.add(it)
-                }
-            }
-        } catch (_: Exception) {}
-
-        var typedSuccess = false
-        for (node in candidates) {
-            node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
-                typedSuccess = true
-                break
-            }
-            if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
-                typedSuccess = true
-                break
-            }
-        }
-
-        // यदि किसी चाइल्ड EditText में अभी भी सेट न हुआ हो, तो स्क्रीन के सभी Editable नोड्स पर प्रयास करें
-        if (!typedSuccess) {
-            for (snap in captureScreenNodes().filter { it.isEditable || it.className.contains("EditText", true) }) {
-                if (snap.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) ||
-                    snap.node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                ) {
-                    break
-                }
-            }
-        }
     }
 
     fun performTapGesture(x: Float, y: Float) {
@@ -534,6 +660,19 @@ class AutoTouchService : AccessibilityService() {
 
         val path = Path().apply { moveTo(safeX, safeY) }
         val stroke = GestureDescription.StrokeDescription(path, 0, 140)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, null, null)
+    }
+
+    private fun performLongPressGesture(x: Float, y: Float, durationMs: Long) {
+        val dm = resources.displayMetrics
+        val maxX = (dm.widthPixels - 10).toFloat().coerceAtLeast(100f)
+        val maxY = (dm.heightPixels - 10).toFloat().coerceAtLeast(100f)
+        val safeX = x.coerceIn(10f, maxX)
+        val safeY = y.coerceIn(10f, maxY)
+
+        val path = Path().apply { moveTo(safeX, safeY) }
+        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
