@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AuraDroid" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#00E5FF</item>
+        <item name="colorPrimaryVariant">#00B8D4</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorSecondary">#7C4DFF</item>
+        <item name="android:statusBarColor">#070A12</item>
+        <item name="android:windowBackground">#070A12</item>
+    </style>
+</resources>
