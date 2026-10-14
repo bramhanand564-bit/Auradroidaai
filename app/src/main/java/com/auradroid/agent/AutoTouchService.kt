@@ -244,21 +244,20 @@ class AutoTouchService : AccessibilityService() {
             overlayHud?.setCursorOverlayVisible(false)
 
             try {
-                val countToMake = dailyVideoCount.coerceIn(1, 3)
                 overlayHud?.updateStatus(
-                    "Flow 8s (1/$countToMake)",
-                    "Creating fresh 8s story prompt...",
+                    "Flow 8s (Credit Lock: 1)",
+                    "Creating policy-safe 8s prompt...",
                     "THINKING"
                 )
                 val freshPrompt = GeminiBrain.generateDailyFlowPrompt(apiKey, model, topicIdea)
-                VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Flow 8s Prompt: $freshPrompt")
+                VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Safe Flow 8s Prompt: $freshPrompt")
 
                 val goal = """
                     We are on Google Flow ($flowUrl).
                     1. If on landing page, click '+ New project'.
-                    2. Type this exact 8-second video prompt into the 'What do you want to create?' prompt box: "$freshPrompt"
-                    3. Click the 'arrow_forward' (Create/Send) button once the prompt text is inside the box.
-                    4. Wait while the 8-second video renders, then trigger DOWNLOAD_VIDEO and CHAIN_YOUTUBE.
+                    2. Ensure mode is set to 'Video • 720p • 8s • x1' (NOT Nano Banana Image mode).
+                    3. Type this exact 8-second video prompt ONCE into 'What do you want to create?': "$freshPrompt"
+                    4. Wait while the 1 video renders from 0% to 100%, then open the finished video card, download it (DOWNLOAD_VIDEO) and CHAIN_YOUTUBE.
                 """.trimIndent()
 
                 isJobRunning = false
@@ -269,7 +268,8 @@ class AutoTouchService : AccessibilityService() {
                     userGoal = goal,
                     folderPath = folderPath,
                     chainYouTubeAfterDownload = true,
-                    forceChainYouTube = true
+                    forceChainYouTube = true,
+                    exactFlowPrompt = freshPrompt
                 )
             } catch (e: CancellationException) {
                 // Normal stop
@@ -282,7 +282,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (With Canvas Screenshot + Badges!)
+    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (With 1-Video Credit Lock!)
     // ========================================================================
     fun startBackgroundWebTask(
         apiKey: String,
@@ -291,7 +291,8 @@ class AutoTouchService : AccessibilityService() {
         userGoal: String,
         folderPath: String,
         chainYouTubeAfterDownload: Boolean = false,
-        forceChainYouTube: Boolean = false
+        forceChainYouTube: Boolean = false,
+        exactFlowPrompt: String = ""
     ) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
@@ -314,6 +315,10 @@ class AutoTouchService : AccessibilityService() {
             val stepDelay = VideoQueueManager.getStepDelayMs(this@AutoTouchService)
             val maxSteps = if (unstoppable) 2000 else 60
 
+            // STRICT SINGLE-VIDEO CREDIT LOCK: Once true, agent CANNOT type or submit another prompt!
+            var flowPromptSubmitted = false
+            var downloadAttempts = 0
+
             try {
                 val currentLoadedUrl = webView?.url ?: ""
                 val alreadyOnSameDomain = currentLoadedUrl.contains("labs.google/fx", true) &&
@@ -333,6 +338,7 @@ class AutoTouchService : AccessibilityService() {
                 for (step in 1..maxSteps) {
                     if (!isActive) break
 
+                    // Check if a newly downloaded .mp4 video file has arrived in AutoVideos / Downloads!
                     val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
                     if (newlyDownloaded != null && (shouldChainYt || userGoal.contains("youtube", true))) {
                         VideoQueueManager.appendLog(
@@ -345,17 +351,58 @@ class AutoTouchService : AccessibilityService() {
                     }
 
                     val currentUrl = webView?.url ?: initialUrl
-                    // 1. Tag all buttons/inputs with Visual Yellow/Red Number Badges [0], [1], [2]...
-                    val domSnapshot = extractWebDomAndDrawBadges(webView)
-                    delay(180) // Allow badges to paint onto WebView canvas
 
-                    // 2. Capture Live Internal Canvas Screenshot of the Background Browser!
+                    // If we are on Google Flow and haven't submitted the prompt yet, auto-switch Nano Banana -> Video 8s x1!
+                    if (!flowPromptSubmitted && currentUrl.contains("labs.google/fx", true)) {
+                        val modeFix = ensureGoogleFlowVideo8sMode(webView)
+                        if (modeFix.startsWith("SWITCHED")) {
+                            VideoQueueManager.appendLog(this@AutoTouchService, "⚙️ Auto-Configured Google Flow Mode: $modeFix")
+                            delay(1800)
+                        }
+                    }
+
+                    val domSnapshot = extractWebDomAndDrawBadges(webView)
+                    delay(180)
+
                     val webCanvasScreenshotB64 = if (VideoQueueManager.isScreenVisionEnabled(this@AutoTouchService)) {
                         overlayHud?.captureWebViewScreenshotBase64()
                     } else null
 
-                    // 3. Remove visual badges after screenshot so the user's page looks clean
                     clearWebVisualBadges(webView)
+
+                    // HARD CREDIT LOCK: If prompt was already submitted, DO NOT let Gemini click Create/Type again!
+                    if (flowPromptSubmitted) {
+                        val isStillRendering = Regex("\\b([1-9]?[0-9])%\\b").find(domSnapshot)
+                        if (isStillRendering != null) {
+                            val pct = isStillRendering.value
+                            overlayHud?.updateStatus("Flow Rendering ($pct)", "Waiting for 8s video to finish...", "WAITING")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "⏳ Video rendering at $pct (Credit Lock Active)...")
+                            delay(6000)
+                            continue
+                        } else {
+                            // Rendering % is gone (100% finished)! Open the video card & download it!
+                            downloadAttempts++
+                            overlayHud?.updateStatus("Flow 100% • Download", "Opening video card & saving MP4 (#$downloadAttempts)...", "WORKING")
+                            val dlStatus = triggerVideoDownloadInWebView(webView, "")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "📥 Auto-Download Status (#$downloadAttempts): $dlStatus")
+                            delay(5000)
+
+                            val downloadedNow = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
+                            if (downloadedNow != null) {
+                                VideoQueueManager.appendLog(this@AutoTouchService, "✅ Video Saved: ${downloadedNow.name}!")
+                                isJobRunning = false
+                                startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
+                                return@launch
+                            }
+                            if (downloadAttempts >= 5) {
+                                VideoQueueManager.appendLog(this@AutoTouchService, "⚠️ Download took too long, checking folder queue...")
+                                isJobRunning = false
+                                startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
+                                return@launch
+                            }
+                            continue
+                        }
+                    }
 
                     overlayHud?.updateStatus("Web • Step $step", "Vision inspecting page...", "THINKING")
                     val decision = GeminiBrain.decideNextWebAction(
@@ -377,11 +424,23 @@ class AutoTouchService : AccessibilityService() {
                         "CLICK_EL" -> {
                             val clickRes = performWebJsClick(webView, decision.elementIndex)
                             history.add("Step $step: CLICK_EL(${decision.elementIndex}) -> $clickRes - ${decision.reason}")
+                            if (clickRes.contains("arrow_forward", true) || clickRes.contains("Create", true)) {
+                                flowPromptSubmitted = true
+                                VideoQueueManager.appendLog(this@AutoTouchService, "🔒 1-Video Credit Lock Activated!")
+                            }
                         }
                         "TYPE_EL" -> {
-                            val typeRes = performWebJsTypeAndSubmit(webView, decision.elementIndex, decision.textToType)
+                            val promptToUse = exactFlowPrompt.ifBlank { decision.textToType }
+                            ensureGoogleFlowVideo8sMode(webView)
+                            delay(800)
+                            val typeRes = performWebJsTypeAndSubmit(webView, decision.elementIndex, promptToUse)
                             VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Web Type Result: $typeRes")
                             history.add("Step $step: TYPE_EL(${decision.elementIndex}) -> $typeRes")
+                            if (typeRes.startsWith("SUBMITTED_OK") || typeRes.contains("TYPED_LEN:")) {
+                                flowPromptSubmitted = true
+                                VideoQueueManager.appendLog(this@AutoTouchService, "🔒 Prompt Submitted Once! 1-Video Credit Lock Activated.")
+                                delay(4000)
+                            }
                         }
                         "SCROLL" -> {
                             webView?.evaluateJavascript("window.scrollBy(0, 550);", null)
@@ -395,13 +454,13 @@ class AutoTouchService : AccessibilityService() {
                             history.add("Step $step: LOAD_URL ${decision.url}")
                         }
                         "DOWNLOAD_VIDEO", "DOWNLOAD_URL" -> {
-                            triggerVideoDownloadInWebView(webView, decision.url)
+                            val dlRes = triggerVideoDownloadInWebView(webView, decision.url)
+                            VideoQueueManager.appendLog(this@AutoTouchService, "📥 Download Trigger: $dlRes")
                             delay(4500)
-                            history.add("Step $step: DOWNLOAD_VIDEO")
+                            history.add("Step $step: DOWNLOAD_VIDEO ($dlRes)")
                         }
                         "WAIT" -> {
                             if (domSnapshot.contains("HAS_VIDEO_ELEMENT: YES")) {
-                                VideoQueueManager.appendLog(this@AutoTouchService, "🎥 Video element detected on page! Auto-downloading...")
                                 triggerVideoDownloadInWebView(webView, "")
                             }
                             delay(6000)
@@ -438,15 +497,73 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    private fun triggerVideoDownloadInWebView(webView: WebView?, directUrl: String) {
-        if (directUrl.startsWith("http")) {
-            webView?.loadUrl(directUrl)
-            return
+    /**
+     * Automatically checks if Google Flow is stuck in "Nano Banana" (Image) or "x2/x4" mode,
+     * and switches it to "Video • 9:16 • 8s • x1" automatically!
+     */
+    private suspend fun ensureGoogleFlowVideo8sMode(webView: WebView?): String = suspendCancellableCoroutine { cont ->
+        if (webView == null) {
+            cont.resume("NO_WEBVIEW")
+            return@suspendCancellableCoroutine
         }
         val js = """
             (function() {
-                var dlBtn = document.querySelector('a[download], button[aria-label*="Download" i], button[title*="Download" i]');
-                if (dlBtn) { dlBtn.click(); }
+                var allBtns = document.querySelectorAll('button, [role="button"], div');
+                var modePill = null;
+                for (var i = 0; i < allBtns.length; i++) {
+                    var t = (allBtns[i].innerText || '').trim();
+                    if ((t.indexOf('Nano Banana') !== -1 || t.indexOf('Image') !== -1 || t.indexOf('x2') !== -1 || t.indexOf('x4') !== -1) && allBtns[i].getBoundingClientRect().top > 250) {
+                        modePill = allBtns[i];
+                        break;
+                    }
+                }
+                if (modePill) {
+                    modePill.click();
+                    setTimeout(function() {
+                        var opts = document.querySelectorAll('button, [role="tab"], [role="button"], span, div');
+                        for (var j = 0; j < opts.length; j++) {
+                            var ot = (opts[j].innerText || '').trim();
+                            if (ot === 'Video' || ot === '9:16' || ot === '8s' || ot === 'x1') {
+                                opts[j].click();
+                            }
+                        }
+                    }, 350);
+                    return 'SWITCHED_TO_VIDEO_8S_X1';
+                }
+                return 'ALREADY_VIDEO_MODE';
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js) { res ->
+            if (cont.isActive) cont.resume(res?.trim('"') ?: "OK")
+        }
+    }
+
+    /**
+     * Smart Google Flow Video Opener & Downloader:
+     * 1. If a <video> player is already open on screen, downloads its MP4 or clicks the 3-dot Download button.
+     * 2. If we are on the Google Flow project grid where the video finished rendering (100%), it clicks the newest
+     *    completed video thumbnail card to open the player first!
+     */
+    private suspend fun triggerVideoDownloadInWebView(webView: WebView?, directUrl: String): String = suspendCancellableCoroutine { cont ->
+        if (webView == null) {
+            cont.resume("NO_WEBVIEW")
+            return@suspendCancellableCoroutine
+        }
+        if (directUrl.startsWith("http")) {
+            webView.loadUrl(directUrl)
+            cont.resume("DIRECT_URL_LOADED")
+            return@suspendCancellableCoroutine
+        }
+        val js = """
+            (function() {
+                // 1. Check if a direct Download button or menu item is visible
+                var dlBtn = document.querySelector('a[download], button[aria-label*="Download" i], button[title*="Download" i], [role="menuitem"]');
+                if (dlBtn && (dlBtn.innerText || dlBtn.getAttribute('aria-label') || '').toLowerCase().indexOf('download') !== -1) {
+                    dlBtn.click();
+                    return 'CLICKED_DOWNLOAD_BTN';
+                }
+
+                // 2. Check if a <video> element with a valid src is currently loaded
                 var vids = document.querySelectorAll('video');
                 for (var i = vids.length - 1; i >= 0; i--) {
                     var src = vids[i].currentSrc || vids[i].src;
@@ -465,19 +582,32 @@ class AutoTouchService : AccessibilityService() {
                         a.download = 'flow_8s_' + Date.now() + '.mp4';
                         document.body.appendChild(a);
                         a.click();
-                        return 'HTTP_DOWNLOADED';
+                        return 'HTTP_VIDEO_DOWNLOADED';
                     }
                 }
-                return 'NO_VIDEO_FOUND';
+
+                // 3. If no <video> is loaded yet, we are on the Google Flow thumbnail grid!
+                // Find the newest completed video card (which does NOT say "Failed" and does NOT have "%") and click it to open the player!
+                var cards = document.querySelectorAll('a[href*="/edit/"], [role="button"], button, img');
+                for (var c = 0; c < cards.length; c++) {
+                    var el = cards[c];
+                    var rect = el.getBoundingClientRect();
+                    var txt = (el.innerText || el.getAttribute('aria-label') || '').trim();
+                    if (rect.top > 110 && rect.top < 650 && rect.width > 60 && rect.height > 60) {
+                        if (txt.indexOf('Failed') === -1 && txt.indexOf('%') === -1) {
+                            el.click();
+                            return 'OPENED_VIDEO_CARD';
+                        }
+                    }
+                }
+                return 'WAITING_FOR_VIDEO_PLAYER';
             })();
         """.trimIndent()
-        webView?.evaluateJavascript(js, null)
+        webView.evaluateJavascript(js) { res ->
+            if (cont.isActive) cont.resume(res?.trim('"') ?: "DONE")
+        }
     }
 
-    /**
-     * Scans DOM AND draws bright yellow/red visual number badges `[0]`, `[1]`, `[2]` onto the webpage
-     * right before `captureWebViewScreenshotBase64()` takes a photo!
-     */
     private suspend fun extractWebDomAndDrawBadges(webView: WebView?): String = suspendCancellableCoroutine { cont ->
         if (webView == null) {
             cont.resume("Empty WebView")
@@ -518,7 +648,6 @@ class AutoTouchService : AccessibilityService() {
                             : '';
                         out.push('[' + i + '] <' + tag + '> ' + txt + valInfo);
 
-                        // Draw visual number sticker [i] for Gemini Vision screenshot!
                         try {
                             var badge = document.createElement('div');
                             badge.className = 'aura-vision-badge';
@@ -613,6 +742,7 @@ class AutoTouchService : AccessibilityService() {
                 target.click();
                 target.focus();
 
+                // Clear any old text first so we never duplicate prompts
                 try {
                     if (target.select) target.select();
                     else document.execCommand('selectAll', false, null);
@@ -638,25 +768,31 @@ class AutoTouchService : AccessibilityService() {
                     } catch (e2) {}
                 }
 
+                // Click arrow_forward ONCE after 500ms
                 setTimeout(function() {
                     var btns = document.querySelectorAll('button, [role="button"]');
                     for (var b = 0; b < btns.length; b++) {
                         var bTxt = (btns[b].innerText || btns[b].getAttribute('aria-label') || '').trim();
-                        if (bTxt === 'arrow_forward' || bTxt.toLowerCase() === 'create' || bTxt.toLowerCase() === 'generate') {
+                        if (bTxt.indexOf('arrow_forward') !== -1 || bTxt.toLowerCase() === 'create' || bTxt.toLowerCase() === 'generate') {
                             if (!btns[b].disabled) {
+                                var opts = { bubbles: true, cancelable: true, view: window };
+                                btns[b].dispatchEvent(new PointerEvent('pointerdown', opts));
+                                btns[b].dispatchEvent(new MouseEvent('mousedown', opts));
+                                btns[b].dispatchEvent(new PointerEvent('pointerup', opts));
+                                btns[b].dispatchEvent(new MouseEvent('mouseup', opts));
                                 btns[b].click();
                                 break;
                             }
                         }
                     }
-                }, 450);
+                }, 500);
 
                 var finalVal = (target.value !== undefined ? target.value : target.innerText) || '';
-                return 'TYPED_LEN:' + finalVal.length;
+                return 'SUBMITTED_OK_TYPED_LEN:' + finalVal.length;
             })();
         """.trimIndent()
         webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res ?: "TYPED")
+            if (cont.isActive) cont.resume(res?.trim('"') ?: "TYPED")
         }
     }
 
@@ -860,7 +996,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 4: UNIVERSAL PHONE AGENT + CONTINUOUS LIVE CHAT MONITOR
+    // ENGINE 4: UNIVERSAL PHONE AGENT + WHATSAPP AUTO-SEND FIX
     // ========================================================================
     fun startUniversalAiTask(
         apiKey: String,
@@ -912,6 +1048,32 @@ class AutoTouchService : AccessibilityService() {
                 for (step in 1..maxSteps) {
                     if (!isActive) break
                     val nodes = captureScreenNodes()
+
+                    // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
+                    // If a reply is already typed inside the message input box AND the Send button is visible on screen,
+                    // tap the Send button immediately so messages NEVER get stuck unsent in the input box!
+                    val unsentInputNode = nodes.firstOrNull {
+                        it.isEditable && it.text.isNotBlank() &&
+                        !it.text.equals("Message", true) &&
+                        !it.text.equals("Type a message", true) &&
+                        !it.text.equals("Search...", true)
+                    }
+                    val sendBtnNode = nodes.firstOrNull {
+                        it.contentDesc.equals("Send", true) ||
+                        it.contentDesc.equals("भेजें", true) ||
+                        it.viewId.equals("send", true) ||
+                        it.viewId.contains("send_btn", true)
+                    }
+                    if (unsentInputNode != null && sendBtnNode != null) {
+                        overlayHud?.setCursorOverlayVisible(true)
+                        overlayHud?.updateStatus("Step $step • Sending", "Tapping Send button...", "WORKING")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "📨 Auto-Sending typed message via Send button at (${sendBtnNode.centerX.toInt()}, ${sendBtnNode.centerY.toInt()})!")
+                        animateAndPhysicalTapNode(sendBtnNode, "Tap: Send")
+                        history.add("Step $step: Auto-Tapped Send button for '${unsentInputNode.text.take(20)}'")
+                        delay(2500)
+                        continue
+                    }
+
                     val screenDump = nodes.joinToString("\n") {
                         "[${it.index}] text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
                     }
@@ -1019,6 +1181,21 @@ class AutoTouchService : AccessibilityService() {
                 }
             }
             "CLICK_NODE", "CLICK_XY" -> {
+                // 1. Semantic Check: If AI wants to click Send in WhatsApp/Chat, snap directly to Send node!
+                if (reasonLower.contains("send") || reasonLower.contains("reply")) {
+                    val sendNode = nodes.firstOrNull {
+                        it.contentDesc.equals("Send", true) ||
+                        it.contentDesc.equals("भेजें", true) ||
+                        it.viewId.equals("send", true)
+                    }
+                    if (sendNode != null) {
+                        onTapRecorded(sendNode.centerX, sendNode.centerY)
+                        animateAndPhysicalTapNode(sendNode, "Tap: Send")
+                        return "Tapped Send Node (${sendNode.centerX.toInt()},${sendNode.centerY.toInt()})"
+                    }
+                }
+
+                // 2. Semantic Check for 3-Dot Menu
                 val wantsThreeDotMenu = reasonLower.contains("three-dot") ||
                         reasonLower.contains("3-dot") ||
                         reasonLower.contains("three dot") ||
@@ -1094,6 +1271,20 @@ class AutoTouchService : AccessibilityService() {
                 animateAndTapXY(tx, ty, "Focus Input")
                 delay(1200)
                 insertCaptionSingleClean(decision.textToType, tx, ty)
+                delay(900)
+
+                // Immediately check if a Send button (like in WhatsApp) is now visible, and tap it automatically!
+                val freshNodes = captureScreenNodes()
+                val sendBtn = freshNodes.firstOrNull {
+                    it.contentDesc.equals("Send", true) ||
+                    it.contentDesc.equals("भेजें", true) ||
+                    it.viewId.equals("send", true)
+                }
+                if (sendBtn != null) {
+                    animateAndPhysicalTapNode(sendBtn, "Tap: Send")
+                    return "Typed & Sent '${decision.textToType.take(18)}'"
+                }
+
                 return "Typed '${decision.textToType.take(18)}'"
             }
             "SCROLL" -> {
