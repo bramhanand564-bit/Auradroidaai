@@ -14,16 +14,35 @@ class TaskSchedulerReceiver : BroadcastReceiver() {
         val apiKey = prefs.getString("api_key", "") ?: ""
         val model = prefs.getString("model_name", "gemini-2.5-flash") ?: "gemini-2.5-flash"
         val folderPath = prefs.getString("folder_path", "/storage/emulated/0/Download/AutoVideos") ?: ""
-        val command = prefs.getString("ai_command", "Upload next video with viral title and tags") ?: ""
+        val flowUrl = VideoQueueManager.getPinnedFlowUrl(context)
+        val flowTopic = VideoQueueManager.getFlowTopic(context)
+        val dailyLimit = VideoQueueManager.getDailyVideoLimit(context)
+        val autoFlowFirst = prefs.getBoolean("auto_flow_first", true)
+        val hour = prefs.getInt("sched_hour", 19)
+        val minute = prefs.getInt("sched_min", 0)
 
-        VideoQueueManager.appendLog(context, "⏰ Scheduled Automation Triggered!")
+        VideoQueueManager.appendLog(context, "⏰ Scheduled Daily 7/8 PM Pipeline Triggered!")
 
         val service = AutoTouchService.instance
         if (service != null) {
-            service.startYouTubeAutoUpload(apiKey, model, folderPath, command)
+            if (autoFlowFirst) {
+                service.startGoogleFlowToYouTubePipeline(
+                    apiKey = apiKey,
+                    model = model,
+                    flowUrl = flowUrl,
+                    topicIdea = flowTopic,
+                    dailyVideoCount = dailyLimit,
+                    folderPath = folderPath
+                )
+            } else {
+                service.startYouTubeAutoUpload(apiKey, model, folderPath, flowTopic)
+            }
         } else {
             VideoQueueManager.appendLog(context, "⚠️ Cannot auto-run: Enable Auto-Touch Service in Settings.")
         }
+
+        // Automatically schedule for the next day at the exact same time!
+        scheduleDailyUpload(context, hour, minute)
     }
 
     companion object {
