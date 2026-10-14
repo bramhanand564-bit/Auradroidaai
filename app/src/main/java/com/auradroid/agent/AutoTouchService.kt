@@ -74,6 +74,13 @@ class AutoTouchService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        // Persist the enabled state for diagnostics only; Android remains in control
+        // of AccessibilityService lifecycle and may disconnect it at any time.
+        getSharedPreferences("auradroid_service_state", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("accessibility_connected", true)
+            .putLong("accessibility_last_connected_at", System.currentTimeMillis())
+            .apply()
         postKeepAliveNotification("AuraDroid Companion Active & Ready")
         overlayHud = AiOverlayHud(this)
         overlayHud?.show()
@@ -82,16 +89,35 @@ class AutoTouchService : AccessibilityService() {
         VideoQueueManager.appendLog(this, "✅ Universal Companion Connected (24/7 Protected)!")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // Events are not needed for the current agent workflow.
+    }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        // Android may interrupt the service temporarily. Do not assume this means
+        // the user disabled it; avoid destructive cleanup here.
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        getSharedPreferences("auradroid_service_state", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("accessibility_connected", false)
+            .putLong("accessibility_last_disconnected_at", System.currentTimeMillis())
+            .apply()
+        return super.onUnbind(intent)
+    }
 
     override fun onDestroy() {
         releaseWakeLock()
         overlayHud?.hide()
-        super.onDestroy()
-        instance = null
+        getSharedPreferences("auradroid_service_state", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("accessibility_connected", false)
+            .putLong("accessibility_last_destroyed_at", System.currentTimeMillis())
+            .apply()
+        if (instance === this) instance = null
         serviceScope.cancel()
+        super.onDestroy()
     }
 
     private fun postKeepAliveNotification(statusText: String) {
