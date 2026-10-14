@@ -1,5 +1,6 @@
 package com.auradroid.agent
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -117,7 +118,7 @@ object GeminiBrain {
                         val payload = JSONObject().apply {
                             put("contents", JSONArray().put(JSONObject().put("parts", partsArray)))
                             put("generationConfig", JSONObject().apply {
-                                put("temperature", 0.25)
+                                put("temperature", 0.2)
                                 put("responseMimeType", "application/json")
                             })
                         }
@@ -147,6 +148,8 @@ object GeminiBrain {
                                 break
                             }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         lastError = e.message ?: "Network error"
                         delay(1000L)
@@ -166,9 +169,6 @@ object GeminiBrain {
         throw Exception("Gemini API Busy/Error ($lastError)")
     }
 
-    /**
-     * Generates a fresh, unique 8-second cinematic video prompt for Google Flow every day
-     */
     suspend fun generateDailyFlowPrompt(
         apiKey: String,
         model: String,
@@ -178,7 +178,7 @@ object GeminiBrain {
             You are an expert AI Video Prompt Director for Google Flow (Veo 8-second video generator).
             User's core topic/theme: "$userTopic"
             
-            Create ONE fresh, vivid, cinematic 8-second video generation prompt in English with clear camera movement, lighting, and action.
+            Create ONE fresh, vivid, cinematic 8-second video generation prompt in English (around 35 to 55 words) with clear camera movement, lighting, and action.
             Respond strictly in valid JSON:
             {
               "videoPrompt": "Detailed 8-second cinematic prompt..."
@@ -189,14 +189,13 @@ object GeminiBrain {
             val raw = callGeminiApi(apiKey, model, prompt)
             val clean = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             JSONObject(clean).optString("videoPrompt", userTopic).ifBlank { userTopic }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             userTopic
         }
     }
 
-    /**
-     * TAB 1: Interactive AI Chat & Universal Task Planner
-     */
     suspend fun chatAndBuildPlan(
         apiKey: String,
         model: String,
@@ -245,6 +244,8 @@ object GeminiBrain {
                 suggestedMode = obj.optString("suggestedMode", "PHONE").uppercase(),
                 targetUrl = obj.optString("targetUrl", "")
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ChatPlanResponse(
                 replyText = "⚠️ AI Plan banane mein dikkat aayi: ${e.message}",
@@ -256,9 +257,6 @@ object GeminiBrain {
         }
     }
 
-    /**
-     * Viral Title & Description Generator for YouTube Shorts Uploads
-     */
     suspend fun generateYouTubeMetadata(
         apiKey: String,
         model: String,
@@ -286,6 +284,8 @@ object GeminiBrain {
                 title = obj.optString("title", fileName.substringBeforeLast(".")).take(95),
                 description = obj.optString("description", "#shorts #viral #trending")
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val baseName = fileName.substringBeforeLast(".").replace("_", " ").replace("-", " ")
             VideoMetadata(
@@ -296,7 +296,7 @@ object GeminiBrain {
     }
 
     /**
-     * Background Web Studio Agent Brain (Google Flow 8s Video Generator, Credit Saver, Web Forms, Any Site)
+     * Background Web Studio Agent Brain (With Strict Verification for Google Flow Prompt Typing & Submission!)
      */
     suspend fun decideNextWebAction(
         apiKey: String,
@@ -321,28 +321,35 @@ object GeminiBrain {
             $pageTextAndElements
             
             CRITICAL RULES FOR GOOGLE FLOW & VIDEO GENERATION WEBSITES:
-            1. Do NOT click Generate more than once per video! Respect the user's 1000 credits.
-            2. First, find the prompt textarea/input box, use "TYPE_EL" to enter the 8-second video prompt.
-            3. Next, click the Generate / Create / Arrow Send button ONCE using "CLICK_EL".
-            4. While the video is generating (15s to 120s), the page will show loading/progress or generating text. You MUST return action="WAIT" until the video element (<video>) or Download button appears!
-            5. As soon as a <video> element or Download icon/button appears on the page, choose action="DOWNLOAD_VIDEO" (or click the Download button) to save the 8-second video!
-            6. Once downloaded, if the goal includes uploading to YouTube, return "CHAIN_YOUTUBE", otherwise return "DONE".
+            1. Look at CURRENT WEBPAGE INTERACTIVE ELEMENTS:
+               - If you are on the landing page and see "+ New project" (and do NOT see "What do you want to create?"), click "+ New project" using "CLICK_EL".
+               - Once inside a project, look for the prompt input box (usually labeled/placeholder "What do you want to create?" or <textarea> or [contenteditable]). NEVER type into the top search bar!
+            2. VERIFY BEFORE WAITING:
+               - Check the CURRENT_VALUE of the "What do you want to create?" box in ELEMENTS.
+               - If CURRENT_VALUE is empty ("") AND the page still says "Start creating or drop media", the prompt has NOT been entered yet! You MUST use "TYPE_EL" on the "What do you want to create?" element!
+               - Once CURRENT_VALUE shows the prompt text is inside the box, click the submit button ("arrow_forward" / "Create" / "Generate") using "CLICK_EL".
+               - NEVER return "WAIT" if the page still says "Start creating or drop media" and no generation is happening!
+            3. WHILE VIDEO IS ACTUALLY GENERATING:
+               - When generation has truly started (you see a progress percentage, spinner, or generating card), return action="WAIT".
+            4. DOWNLOAD & YOUTUBE CHAIN:
+               - As soon as a <video> element (`HAS_VIDEO_ELEMENT: YES`) or Download button appears on the page, return action="DOWNLOAD_VIDEO".
+               - After downloading, if the goal mentions YouTube, return "CHAIN_YOUTUBE", otherwise "DONE".
             
             Available actions:
             - "CLICK_EL": Click interactive webpage element by its elementIndex.
-            - "TYPE_EL": Type/fill text into input/textarea at elementIndex (provide textToType).
+            - "TYPE_EL": Type/fill text into input/textarea/editor at elementIndex (provide textToType).
             - "SCROLL": Scroll down the webpage.
             - "LOAD_URL": Navigate directly to a specific URL (provide url).
-            - "DOWNLOAD_VIDEO": Automatically extract and download the generated <video> or MP4 file from the page.
-            - "WAIT": Wait 6 seconds (use while AI video is generating or page is loading).
+            - "DOWNLOAD_VIDEO": Extract and download the generated <video> or MP4 file from the page.
+            - "WAIT": Wait 6 seconds (ONLY use when video generation or page loading is actively in progress).
             - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
             - "DONE": Goal is 100% completed.
             
             Respond strictly in valid JSON:
             {
-              "action": "CLICK_EL",
-              "elementIndex": 2,
-              "textToType": "",
+              "action": "TYPE_EL",
+              "elementIndex": 4,
+              "textToType": "Your prompt text here",
               "url": "",
               "reason": "Short clear status message"
             }
@@ -359,14 +366,13 @@ object GeminiBrain {
                 url = obj.optString("url", ""),
                 reason = obj.optString("reason", "Analyzing webpage...")
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             WebAgentDecision(action = "WAIT", reason = "Waiting for webpage...")
         }
     }
 
-    /**
-     * Universal Phone Screen Agent Brain (With Continuous Chat Monitoring Support!)
-     */
     suspend fun decideNextUiAction(
         apiKey: String,
         model: String,
@@ -383,18 +389,18 @@ object GeminiBrain {
             """
             CONTINUOUS CHAT MONITORING MODE IS ACTIVE:
             - NEVER return "DONE"! You must keep monitoring the chat continuously until the user stops you.
-            - Look at the chat messages on screen (and in the screenshot):
-              * Messages on the RIGHT side (centerX > ${screenWidth / 2}, green bubbles) were sent by YOU.
-              * Messages on the LEFT side (centerX < ${screenWidth / 2}, dark/white bubbles) are INCOMING messages from the other person.
+            - Messages on the RIGHT side (centerX > ${screenWidth / 2}) were sent by YOU.
+            - Messages on the LEFT side (centerX < ${screenWidth / 2}) are INCOMING messages from the other person.
             - If the lowest/latest message in the chat is on the RIGHT side (your own message), DO NOT send another message! Return action="WAIT" with reason="Waiting for new incoming reply...".
-            - As soon as a NEW incoming message appears at the bottom on the LEFT side (like 'Hello bro kaise ho'), use action="TYPE" to type a friendly contextual reply in the 'Message' input box, and then click the Send button!
-            - After clicking Send, go back to action="WAIT" to wait for their next reply!
+            - As soon as a NEW incoming message appears at the bottom on the LEFT side, use action="TYPE" to type a friendly reply in the 'Message' input box, and then click Send!
             """.trimIndent()
         } else ""
 
         val prompt = """
             You are a Universal Autonomous Android UI Agent controlling a phone with EXACT screen resolution ${screenWidth}x${screenHeight} pixels.
-            OVERALL GOAL: $goal$monitorRules
+            OVERALL GOAL: $goal
+            
+            $monitorRules
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
@@ -407,19 +413,11 @@ object GeminiBrain {
             
             CRITICAL RULES FOR ACCURATE TAPPING:
             1. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
-               - Top-right 3-dot menu has desc='More options' or desc='अधिक विकल्प'. Use "CLICK_NODE" with its nodeIndex.
             2. NEVER tap inside the top Android Status Bar (y < 120 pixels).
             3. If you use "CLICK_XY", output exact pixel coordinates for ${screenWidth}x${screenHeight}.
             
             Available actions:
-            - "CLICK_NODE": Click a specific UI node by its nodeIndex.
-            - "CLICK_XY": Tap exact pixel coordinates (x, y).
-            - "TYPE": Type text into an editable field (specify nodeIndex and textToType).
-            - "SCROLL": Scroll down.
-            - "BACK": Press Android Back button.
-            - "OPEN_APP": Open an Android Setting or App directly ("SETTINGS", "BATTERY", "WIFI", "DISPLAY", "STORAGE", "WHATSAPP", or package name).
-            - "WAIT": Wait 4 seconds (use when waiting for a new chat reply or loading).
-            - "DONE": Goal is completely finished (NEVER use if Continuous Monitoring Mode is active).
+            - "CLICK_NODE", "CLICK_XY", "TYPE", "SCROLL", "BACK", "OPEN_APP", "WAIT", "DONE".
             
             Return strictly valid JSON:
             {
@@ -446,6 +444,8 @@ object GeminiBrain {
                 appPackageOrSetting = obj.optString("appPackageOrSetting", ""),
                 reason = obj.optString("reason", "Proceeding")
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AgentDecision(action = "WAIT", reason = "Waiting for response...")
         }
