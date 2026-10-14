@@ -461,8 +461,22 @@ class MainActivity : AppCompatActivity() {
     // ====================================================================
     private fun setupTab5Settings() {
         findViewById<Button>(R.id.btnEnableAccessibility).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(this, "Turn ON 'AuraDroid AI Universal Companion'", Toast.LENGTH_LONG).show()
+            // Open this app's accessibility page when supported; fall back to
+            // the general accessibility settings screen on OEM-customized Android.
+            val appAccessibilityIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                putExtra(":settings:fragment_args_key", "com.auradroid.agent/com.auradroid.agent.AutoTouchService")
+                putExtra("android.provider.extra.SETTINGS_FRAGMENT_ARG_KEY", "com.auradroid.agent/com.auradroid.agent.AutoTouchService")
+            }
+            try {
+                startActivity(appAccessibilityIntent)
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            }
+            Toast.makeText(
+                this,
+                "Enable AuraDroid AI Universal Companion, then return to AuraDroid.",
+                Toast.LENGTH_LONG
+            ).show()
         }
 
         findViewById<Button>(R.id.btnEnableStorage).setOnClickListener {
