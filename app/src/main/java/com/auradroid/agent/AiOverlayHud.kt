@@ -28,8 +28,11 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -56,14 +59,16 @@ class AiOverlayHud(private val context: Context) {
     private var btnExpandFullToggle: TextView? = null
     private var podWebFrame: FrameLayout? = null
 
+    // 1x1 Invisible Parking Frame so WebView stays rendered & screenshot-ready in background!
+    private var hiddenWebParkingFrame: FrameLayout? = null
+
     private var sharedWebView: WebView? = null
     private var isDesktopMode = false
     private var isAdded = false
     private var isPodVisible = true
     private var isSideBarExpanded = false
-    private var currentStage = 1 // 1 = Floating Bot/Pill, 2 = Mini Window, 3 = Full Screen
+    private var currentStage = 1 // 1 = Floating Bot, 2 = Mini Window, 3 = Full Screen
 
-    // Auto-hide timer: hides the side text & red button so ONLY the cute round bot head remains!
     private val autoCollapseSideBarRunnable = Runnable {
         if (!AutoTouchService.isJobRunning && currentStage == 1) {
             setSideBarExpanded(false)
@@ -95,7 +100,6 @@ class AiOverlayHud(private val context: Context) {
                 settings.builtInZoomControls = true
                 settings.displayZoomControls = false
 
-                // Clean Chrome User-Agent so Google Login / Gmail / Google Flow never blocks sign-in!
                 settings.userAgentString =
                     "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
@@ -103,7 +107,6 @@ class AiOverlayHud(private val context: Context) {
                 cookieManager.setAcceptCookie(true)
                 cookieManager.setAcceptThirdPartyCookies(this, true)
 
-                // Bridge to save blob: URLs (used by Google Flow / AI video generators) directly to AutoVideos folder
                 addJavascriptInterface(object {
                     @JavascriptInterface
                     fun saveBase64Video(base64Data: String, fileName: String) {
@@ -182,6 +185,45 @@ class AiOverlayHud(private val context: Context) {
         return sharedWebView!!
     }
 
+    /**
+     * Captures a high-clarity Screenshot directly from the WebView's internal canvas (`webView.draw`),
+     * even when the browser is running invisibly in the background!
+     */
+    suspend fun captureWebViewScreenshotBase64(): String? = suspendCancellableCoroutine { cont ->
+        mainHandler.post {
+            try {
+                val wv = getOrCreateSharedWebView()
+                val captureW = if (wv.width > 100) wv.width else 540
+                val captureH = if (wv.height > 100) wv.height else 960
+
+                if (wv.width <= 10 || wv.height <= 10) {
+                    wv.measure(
+                        View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY)
+                    )
+                    wv.layout(0, 0, 540, 960)
+                }
+
+                val bmp = Bitmap.createBitmap(captureW, captureH, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                canvas.drawColor(Color.parseColor("#121316"))
+                wv.draw(canvas)
+
+                val scaled = Bitmap.createScaledBitmap(bmp, 540, 960, true)
+                if (scaled != bmp) bmp.recycle()
+
+                val baos = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, 68, baos)
+                scaled.recycle()
+
+                val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+                if (cont.isActive) cont.resume(b64)
+            } catch (e: Exception) {
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+    }
+
     fun toggleDesktopMode(): Boolean {
         isDesktopMode = !isDesktopMode
         val wv = getOrCreateSharedWebView()
@@ -207,6 +249,18 @@ class AiOverlayHud(private val context: Context) {
                 )
             )
             wv.requestFocus()
+        }
+    }
+
+    private fun parkWebViewInBackgroundIfDetached() {
+        mainHandler.post {
+            val wv = getOrCreateSharedWebView()
+            val parking = hiddenWebParkingFrame ?: return@post
+            if (wv.parent == null || wv.parent == podWebFrame) {
+                (wv.parent as? ViewGroup)?.removeView(wv)
+                parking.removeAllViews()
+                parking.addView(wv, FrameLayout.LayoutParams(540, 960))
+            }
         }
     }
 
@@ -246,7 +300,6 @@ class AiOverlayHud(private val context: Context) {
                 windowManager.addView(podRootLayout, podLayoutParams)
                 isAdded = true
                 setPodStage(1)
-                // Default when idle: show ONLY the cute round bot face!
                 setSideBarExpanded(AutoTouchService.isJobRunning)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -262,6 +315,7 @@ class AiOverlayHud(private val context: Context) {
                 pointerCanvasView?.stopAnimations()
                 pointerCanvasView?.let { windowManager.removeView(it) }
                 podWebFrame?.removeAllViews()
+                hiddenWebParkingFrame?.removeAllViews()
                 podRootLayout?.let { windowManager.removeView(it) }
             } catch (_: Exception) {
             } finally {
@@ -285,10 +339,6 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-    /**
-     * Expands or collapses the side status bar next to the cute round bot head.
-     * When collapsed (false), ONLY the round emoji face remains on screen!
-     */
     private fun setSideBarExpanded(expanded: Boolean, autoHideAfterMs: Long = 0L) {
         mainHandler.post {
             mainHandler.removeCallbacks(autoCollapseSideBarRunnable)
@@ -309,8 +359,6 @@ class AiOverlayHud(private val context: Context) {
                     mainHandler.postDelayed(autoCollapseSideBarRunnable, autoHideAfterMs)
                 }
             } else {
-                // IDLE / FINISHED: Hide side text, hide red stop dot, hide dark pill box!
-                // Leave ONLY the cute round Soft-White Companion Head!
                 sideInfoContainer?.visibility = View.GONE
                 root.background = GradientDrawable().apply {
                     setColor(Color.TRANSPARENT)
@@ -337,11 +385,9 @@ class AiOverlayHud(private val context: Context) {
             val isFinishedOrIdle = upperMood in listOf("DONE", "IDLE", "STOPPED", "ERROR", "SAD") && !AutoTouchService.isJobRunning
 
             if (AutoTouchService.isJobRunning) {
-                // Keep side bar open continuously while working!
                 stopBadge?.visibility = View.VISIBLE
                 setSideBarExpanded(true, 0L)
             } else if (isFinishedOrIdle) {
-                // Show final message briefly for 2.2 seconds, then hide side bar so ONLY the round emoji remains!
                 stopBadge?.visibility = View.GONE
                 setSideBarExpanded(true, 2200L)
             }
@@ -366,7 +412,7 @@ class AiOverlayHud(private val context: Context) {
             when (stage) {
                 1 -> {
                     expandedContainer?.visibility = View.GONE
-                    podWebFrame?.removeAllViews()
+                    parkWebViewInBackgroundIfDetached()
                     params.width = WindowManager.LayoutParams.WRAP_CONTENT
                     params.height = WindowManager.LayoutParams.WRAP_CONTENT
                     params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -380,7 +426,6 @@ class AiOverlayHud(private val context: Context) {
                     btnExpandFullToggle?.text = "⛶ Full Screen"
                     params.width = (dm.widthPixels * 0.88f).toInt()
                     params.height = (dm.heightPixels * 0.46f).toInt()
-                    // Allow touch & typing inside Mini Window too!
                     params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                     podWebFrame?.let { attachWebViewToContainer(it) }
@@ -412,18 +457,23 @@ class AiOverlayHud(private val context: Context) {
             gravity = Gravity.CENTER_VERTICAL
         }
 
+        // 1x1 Invisible Parking Frame so WebView keeps rendering in Stage 1
+        hiddenWebParkingFrame = FrameLayout(context).apply {
+            alpha = 0.01f
+            layoutParams = LinearLayout.LayoutParams(1, 1)
+        }
+        root.addView(hiddenWebParkingFrame)
+
         compactRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        // Cute Round Soft-White Bot Face with BIG Expressive Eyes
         botAvatarView = ExpressiveCompanionAvatar(context).apply {
             layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(46))
         }
         compactRow?.addView(botAvatarView)
 
-        // Side Info Container (Automatically hides when idle/finished!)
         sideInfoContainer = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -460,7 +510,6 @@ class AiOverlayHud(private val context: Context) {
         textCol.addView(tvPodSubtitle)
         sideInfoContainer?.addView(textCol)
 
-        // Quick Mini Browser Open Button inside the 3-second peek bar
         btnQuickMiniBrowser = TextView(context).apply {
             text = "🌐"
             setTextColor(Color.WHITE)
@@ -482,7 +531,6 @@ class AiOverlayHud(private val context: Context) {
         }
         sideInfoContainer?.addView(btnQuickMiniBrowser)
 
-        // Red Stop Button (Only shown when a task is actively running!)
         stopBadge = TextView(context).apply {
             text = "■"
             visibility = View.GONE
@@ -508,7 +556,6 @@ class AiOverlayHud(private val context: Context) {
         compactRow?.addView(sideInfoContainer)
         root.addView(compactRow)
 
-        // Expanded Mini/Full Browser Container
         expandedContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -623,10 +670,8 @@ class AiOverlayHud(private val context: Context) {
                         if (currentStage > 1) {
                             setPodStage(1)
                         } else if (!isSideBarExpanded) {
-                            // User tapped the cute round bot head! Pop out the side bar for 3 seconds!
                             setSideBarExpanded(true, 3000L)
                         } else {
-                            // Tapping again while side bar is open opens Stage 2 Mini Window
                             setPodStage(2)
                         }
                     }
@@ -647,9 +692,6 @@ class AiOverlayHud(private val context: Context) {
         ).toInt()
     }
 
-    /**
-     * Cute Round Soft-White Companion Head with BIG Expressive Eyes!
-     */
     private class ExpressiveCompanionAvatar(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var phase = 0f
@@ -683,12 +725,10 @@ class AiOverlayHud(private val context: Context) {
             val h = height.toFloat()
             val bobY = sin(phase * 0.65f) * 1.8f
 
-            // Soft Drop Shadow under the Round Head so it looks great even when floating alone
             paint.style = Paint.Style.FILL
             paint.color = Color.argb(65, 0, 0, 0)
             canvas.drawRoundRect(RectF(3f, 5f + bobY, w - 3f, h - 1f + bobY), h * 0.48f, h * 0.48f, paint)
 
-            // 1. Soft Marshmallow Round-Squircle Head
             val headRect = RectF(2f, 3f + bobY, w - 2f, h - 4f + bobY)
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#F8FAFC")
@@ -714,7 +754,6 @@ class AiOverlayHud(private val context: Context) {
             val leftEyeX = w * 0.31f + lookOffsetX
             val rightEyeX = w * 0.69f + lookOffsetX
 
-            // 2. Cute Pink Blush on Cheeks
             if (mood != "ERROR" && mood != "SAD") {
                 paint.style = Paint.Style.FILL
                 paint.color = Color.argb(95, 244, 114, 182)
@@ -722,13 +761,11 @@ class AiOverlayHud(private val context: Context) {
                 canvas.drawOval(RectF(w * 0.73f, eyeY + 5f, w * 0.89f, eyeY + 11.5f), paint)
             }
 
-            // 3. Subtle Bridge Line
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.8f
             paint.color = Color.parseColor("#E2E8F0")
             canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, paint)
 
-            // 4. BIG Expressive Color-Changing Eyes! (Radius 7.2f x 8.2f oval!)
             val isBlinking = sin(phase * 0.82f) > 0.93f
             val eyeColor = when (mood) {
                 "ERROR", "SAD", "FAILED" -> Color.parseColor("#DC2626")
@@ -753,14 +790,12 @@ class AiOverlayHud(private val context: Context) {
                 canvas.drawLine(leftEyeX - 6.5f, eyeY, leftEyeX + 6.5f, eyeY, paint)
                 canvas.drawLine(rightEyeX - 6.5f, eyeY, rightEyeX + 6.5f, eyeY, paint)
             } else {
-                // BIG Glossy Oval Eyes!
                 paint.style = Paint.Style.FILL
                 val rx = 6.8f
                 val ry = 7.8f
                 canvas.drawOval(RectF(leftEyeX - rx, eyeY - ry, leftEyeX + rx, eyeY + ry), paint)
                 canvas.drawOval(RectF(rightEyeX - rx, eyeY - ry, rightEyeX + rx, eyeY + ry), paint)
 
-                // Big Cute Anime-style White Sparkles inside the big eyes
                 paint.color = Color.WHITE
                 canvas.drawCircle(leftEyeX - 2.2f, eyeY - 2.4f, 2.5f, paint)
                 canvas.drawCircle(rightEyeX - 2.2f, eyeY - 2.4f, 2.5f, paint)
@@ -776,7 +811,6 @@ class AiOverlayHud(private val context: Context) {
                 }
             }
 
-            // 5. Cute Mouth Below the Big Eyes
             val mouthCenterX = w * 0.50f + lookOffsetX * 0.4f
             val mouthTopY = h * 0.67f + bobY
             paint.color = eyeColor
@@ -812,9 +846,6 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-    /**
-     * Super Cute Plump Soft-White Baymax Hand Cursor for Tapping
-     */
     private class CuteBaymaxHandCursorCanvas(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -936,7 +967,6 @@ class AiOverlayHud(private val context: Context) {
             val handFillColor = Color.parseColor("#F8FAFC")
             val handStrokeColor = Color.parseColor("#334155")
 
-            // Cute Chubby Thumb
             val thumbRect = RectF(-34f, 28f, -6f, 52f)
             paint.style = Paint.Style.FILL
             paint.color = handFillColor
@@ -948,7 +978,6 @@ class AiOverlayHud(private val context: Context) {
             canvas.drawRoundRect(thumbRect, 14f, 14f, paint)
             canvas.rotate(22f, -20f, 40f)
 
-            // Middle & Ring Fingers
             val midFingerRect = RectF(6f, 10f, 22f, 38f)
             val ringFingerRect = RectF(18f, 16f, 33f, 42f)
 
@@ -966,7 +995,6 @@ class AiOverlayHud(private val context: Context) {
             paint.color = handStrokeColor
             canvas.drawRoundRect(midFingerRect, 10f, 10f, paint)
 
-            // Pointing Index Finger
             val indexFingerRect = RectF(-9f, -2f, 10f, 36f)
             paint.style = Paint.Style.FILL
             paint.color = handFillColor
@@ -975,7 +1003,6 @@ class AiOverlayHud(private val context: Context) {
             paint.color = handStrokeColor
             canvas.drawRoundRect(indexFingerRect, 11f, 11f, paint)
 
-            // Puffy Palm
             val palmRect = RectF(-20f, 22f, 32f, 70f)
             paint.style = Paint.Style.FILL
             paint.color = handFillColor
@@ -985,7 +1012,6 @@ class AiOverlayHud(private val context: Context) {
             paint.color = handStrokeColor
             canvas.drawRoundRect(palmRect, 24f, 24f, paint)
 
-            // Wrist Cuff
             val cuffRect = RectF(-12f, 64f, 24f, 75f)
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#E2E8F0")
