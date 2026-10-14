@@ -18,12 +18,12 @@ data class ChatPlanResponse(
     val replyText: String,
     val planGoal: String,
     val planSteps: String,
-    val suggestedMode: String, // "WEB" or "PHONE" or "YOUTUBE"
+    val suggestedMode: String, // "WEB" or "PHONE"
     val targetUrl: String
 )
 
 data class AgentDecision(
-    val action: String,      // CLICK_NODE, CLICK_XY, TYPE, SCROLL, BACK, WAIT, OPEN_APP, DONE
+    val action: String,      // CLICK_NODE, CLICK_XY, TYPE, SCROLL, BACK, OPEN_APP, WAIT, DONE
     val nodeIndex: Int = -1,
     val x: Float = 0f,
     val y: Float = 0f,
@@ -33,7 +33,7 @@ data class AgentDecision(
 )
 
 data class WebAgentDecision(
-    val action: String,      // CLICK_EL, TYPE_EL, SCROLL, LOAD_URL, WAIT, DOWNLOAD_URL, CHAIN_YOUTUBE, DONE
+    val action: String,      // CLICK_EL, TYPE_EL, SCROLL, LOAD_URL, DOWNLOAD_URL, CHAIN_YOUTUBE, WAIT, DONE
     val elementIndex: Int = -1,
     val textToType: String = "",
     val url: String = "",
@@ -167,7 +167,7 @@ object GeminiBrain {
     }
 
     /**
-     * TAB 1: Interactive AI Chat & Step-by-Step Task Planner
+     * TAB 1: Interactive AI Chat & Universal Task Planner
      */
     suspend fun chatAndBuildPlan(
         apiKey: String,
@@ -177,7 +177,8 @@ object GeminiBrain {
         memoryVault: String
     ): ChatPlanResponse {
         val prompt = """
-            You are AuraDroid Companion Bot, a friendly, smart Hindi/Hinglish speaking Autonomous Android & Web AI Assistant.
+            You are Aura Companion, a friendly, smart Hindi/Hinglish speaking Universal Autonomous AI Assistant.
+            You can perform ANY task on the user's phone or in the background web browser.
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
@@ -189,12 +190,11 @@ object GeminiBrain {
             "$userMessage"
             
             Your job:
-            1. Talk naturally to the user in clear Hindi/Hinglish. Answer questions or clarify any confusion.
-            2. Create a clear, numbered Step-by-Step Execution Plan so the user can verify how you will perform the task.
-            3. Decide the best execution mode:
-               - "WEB": If the task involves websites, filling web forms, checking daily free video credit limits, generating/downloading AI videos from a website, or GitHub web actions.
-               - "YOUTUBE": If the task is uploading pending folder videos to YouTube.
-               - "PHONE": If the task involves fixing phone settings (Battery, Wi-Fi, Display, Storage) or controlling native Android apps.
+            1. Talk naturally to the user in clear Hindi/Hinglish. Clarify any doubts if needed, or confirm you are ready.
+            2. Create a clear, numbered Step-by-Step Execution Plan so the user sees exactly how you will do the task.
+            3. Choose suggestedMode:
+               - "WEB": If the task involves websites, filling web forms, checking daily free video credit limits, generating/downloading AI videos, or GitHub web tasks.
+               - "PHONE": If the task involves controlling native Android apps, fixing phone settings, or uploading local folder videos to the YouTube app.
             4. If a website is mentioned or needed, provide its full URL in targetUrl (or "https://www.google.com" if searching).
             
             Respond strictly in valid JSON:
@@ -230,7 +230,7 @@ object GeminiBrain {
     }
 
     /**
-     * TAB 3: YouTube Viral Title & Description Generator
+     * Viral Title & Description Generator for Video Uploads
      */
     suspend fun generateYouTubeMetadata(
         apiKey: String,
@@ -239,7 +239,7 @@ object GeminiBrain {
         userInstruction: String
     ): VideoMetadata {
         val prompt = """
-            You are an expert YouTube Shorts & Video SEO Manager.
+            You are an expert Social Media & YouTube SEO Manager.
             Video file name: "$fileName"
             User instruction: "$userInstruction"
             
@@ -269,7 +269,7 @@ object GeminiBrain {
     }
 
     /**
-     * TAB 2: Background Web Studio Agent Brain (Forms, Free Video Limits, AI Video Download, GitHub)
+     * Background Web Studio Agent Brain (Forms, Free Credits Check, Video Generation, GitHub, Any Website)
      */
     suspend fun decideNextWebAction(
         apiKey: String,
@@ -297,9 +297,9 @@ object GeminiBrain {
             
             Rules:
             - If checking daily free video credit/limit, inspect the page text and proceed if credits exist.
-            - If generating a story/film video, type a detailed prompt into the prompt input/textarea and click Generate/Create.
-            - If the webpage says "Generating...", "Processing...", or "Loading...", choose action "WAIT" so we wait patiently until the video is ready!
-            - If a video or file is ready to download (or you see a .mp4 link or Download button), click the Download button or return "DOWNLOAD_URL".
+            - If generating a story/film video or filling a form, type into the appropriate input/textarea and click the submit/generate button.
+            - If the webpage says "Generating...", "Processing...", or "Loading...", choose action "WAIT" so we wait patiently until the task/video is ready!
+            - If a video or file is ready to download, click the Download button or return "DOWNLOAD_URL".
             - If the goal also asks to upload the downloaded video to YouTube after downloading, return "CHAIN_YOUTUBE" once download is triggered.
             
             Available actions:
@@ -308,7 +308,7 @@ object GeminiBrain {
             - "SCROLL": Scroll down the webpage to see more fields/buttons.
             - "LOAD_URL": Navigate directly to a specific URL (provide url).
             - "DOWNLOAD_URL": Direct download of a video/file URL found on page (provide url).
-            - "WAIT": Wait 5 seconds (use when AI video is generating or page is loading).
+            - "WAIT": Wait 5 seconds (use when AI video/code is generating or page is loading).
             - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
             - "DONE": Goal is 100% completed.
             
@@ -339,7 +339,7 @@ object GeminiBrain {
     }
 
     /**
-     * TAB 4 & UNIVERSAL: Phone Screen & Settings Doctor Brain (Supports Screenshot Vision!)
+     * Universal Phone Screen & Settings Agent Brain (Supports Real Screenshot Vision!)
      */
     suspend fun decideNextUiAction(
         apiKey: String,
@@ -351,7 +351,7 @@ object GeminiBrain {
         screenshotBase64: String? = null
     ): AgentDecision {
         val prompt = """
-            You are an Autonomous Android UI & Phone Doctor Agent controlling an Android phone.
+            You are a Universal Autonomous Android UI Agent controlling an Android phone.
             OVERALL GOAL: $goal
             
             USER'S SAVED MEMORY VAULT:
@@ -365,9 +365,9 @@ object GeminiBrain {
             
             Available actions:
             - "CLICK_NODE": Click a specific UI node by its nodeIndex.
-            - "CLICK_XY": Tap exact screen coordinates (x, y) (especially useful if you see an unlabeled icon in the screenshot).
+            - "CLICK_XY": Tap exact screen coordinates (x, y) (useful if you see an unlabeled icon in the screenshot).
             - "TYPE": Type text into an editable field (specify nodeIndex and textToType).
-            - "SCROLL": Scroll down to see more settings or options.
+            - "SCROLL": Scroll down to see more options.
             - "BACK": Press Android Back button.
             - "OPEN_APP": Open an Android System Setting or App directly. Set appPackageOrSetting to one of:
                 "SETTINGS", "BATTERY", "WIFI", "DISPLAY", "STORAGE", "SOUND", "BLUETOOTH", "APPS", or a package name like "com.whatsapp", "com.android.chrome", "com.google.android.youtube".
