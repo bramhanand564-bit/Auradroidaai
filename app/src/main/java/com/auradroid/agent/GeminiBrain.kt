@@ -117,7 +117,7 @@ object GeminiBrain {
                         val payload = JSONObject().apply {
                             put("contents", JSONArray().put(JSONObject().put("parts", partsArray)))
                             put("generationConfig", JSONObject().apply {
-                                put("temperature", 0.25)
+                                put("temperature", 0.2)
                                 put("responseMimeType", "application/json")
                             })
                         }
@@ -166,9 +166,6 @@ object GeminiBrain {
         throw Exception("Gemini API Busy/Error ($lastError)")
     }
 
-    /**
-     * TAB 1: Interactive AI Chat & Universal Task Planner
-     */
     suspend fun chatAndBuildPlan(
         apiKey: String,
         model: String,
@@ -190,20 +187,20 @@ object GeminiBrain {
             "$userMessage"
             
             Your job:
-            1. Talk naturally to the user in clear Hindi/Hinglish. Clarify any doubts if needed, or confirm you are ready.
-            2. Create a clear, numbered Step-by-Step Execution Plan so the user sees exactly how you will do the task.
+            1. Talk naturally to the user in clear Hindi/Hinglish.
+            2. Create a clear, numbered Step-by-Step Execution Plan.
             3. Choose suggestedMode:
                - "WEB": If the task involves websites, filling web forms, checking daily free video credit limits, generating/downloading AI videos, or GitHub web tasks.
-               - "PHONE": If the task involves controlling native Android apps, fixing phone settings, or uploading local folder videos to the YouTube app.
-            4. If a website is mentioned or needed, provide its full URL in targetUrl (or "https://www.google.com" if searching).
+               - "PHONE": If the task involves controlling native Android apps (like WhatsApp, Gallery, Settings, Instagram, YouTube App).
+            4. If a website is mentioned or needed, provide its full URL in targetUrl.
             
             Respond strictly in valid JSON:
             {
               "replyText": "Friendly Hindi/Hinglish reply explaining how you understood the task",
               "planGoal": "Complete concise instruction of the overall goal for the execution engine",
               "planSteps": "1. Step one...\n2. Step two...\n3. Step three...",
-              "suggestedMode": "WEB",
-              "targetUrl": "https://..."
+              "suggestedMode": "PHONE",
+              "targetUrl": ""
             }
         """.trimIndent()
 
@@ -214,8 +211,8 @@ object GeminiBrain {
             ChatPlanResponse(
                 replyText = obj.optString("replyText", "Maine aapka kaam samajh liya hai aur plan taiyar kar diya hai."),
                 planGoal = obj.optString("planGoal", userMessage),
-                planSteps = obj.optString("planSteps", "1. Task analyze karein\n2. Action execute karein\n3. Report dein"),
-                suggestedMode = obj.optString("suggestedMode", "WEB").uppercase(),
+                planSteps = obj.optString("planSteps", "1. Task analyze karein\n2. Action execute karein"),
+                suggestedMode = obj.optString("suggestedMode", "PHONE").uppercase(),
                 targetUrl = obj.optString("targetUrl", "")
             )
         } catch (e: Exception) {
@@ -223,15 +220,12 @@ object GeminiBrain {
                 replyText = "⚠️ AI Plan banane mein dikkat aayi: ${e.message}",
                 planGoal = userMessage,
                 planSteps = "1. Execute: $userMessage",
-                suggestedMode = "WEB",
+                suggestedMode = "PHONE",
                 targetUrl = ""
             )
         }
     }
 
-    /**
-     * Viral Title & Description Generator for Video Uploads
-     */
     suspend fun generateYouTubeMetadata(
         apiKey: String,
         model: String,
@@ -268,9 +262,6 @@ object GeminiBrain {
         }
     }
 
-    /**
-     * Background Web Studio Agent Brain (Forms, Free Credits Check, Video Generation, GitHub, Any Website)
-     */
     suspend fun decideNextWebAction(
         apiKey: String,
         model: String,
@@ -285,9 +276,7 @@ object GeminiBrain {
             You are an Autonomous Background Web Browser Agent running inside AuraDroid OS.
             OVERALL GOAL: $goal
             CURRENT URL: $pageUrl
-            
-            USER'S PERSONAL MEMORY VAULT (Use this data for filling forms, emails, topics, GitHub urls):
-            $memoryVault
+            MEMORY VAULT: $memoryVault
             
             RECENT ACTIONS TAKEN:
             ${history.takeLast(8).joinToString("\n")}
@@ -295,19 +284,12 @@ object GeminiBrain {
             CURRENT WEBPAGE INTERACTIVE ELEMENTS & VISIBLE TEXT:
             $pageTextAndElements
             
-            Rules:
-            - If checking daily free video credit/limit, inspect the page text and proceed if credits exist.
-            - If generating a story/film video or filling a form, type into the appropriate input/textarea and click the submit/generate button.
-            - If the webpage says "Generating...", "Processing...", or "Loading...", choose action "WAIT" so we wait patiently until the task/video is ready!
-            - If a video or file is ready to download, click the Download button or return "DOWNLOAD_URL".
-            - If the goal also asks to upload the downloaded video to YouTube after downloading, return "CHAIN_YOUTUBE" once download is triggered.
-            
             Available actions:
             - "CLICK_EL": Click interactive webpage element by its elementIndex.
             - "TYPE_EL": Type/fill text into input/textarea at elementIndex (provide textToType).
-            - "SCROLL": Scroll down the webpage to see more fields/buttons.
+            - "SCROLL": Scroll down the webpage.
             - "LOAD_URL": Navigate directly to a specific URL (provide url).
-            - "DOWNLOAD_URL": Direct download of a video/file URL found on page (provide url).
+            - "DOWNLOAD_URL": Direct download of a video/file URL (provide url).
             - "WAIT": Wait 5 seconds (use when AI video/code is generating or page is loading).
             - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
             - "DONE": Goal is 100% completed.
@@ -318,7 +300,7 @@ object GeminiBrain {
               "elementIndex": 2,
               "textToType": "",
               "url": "",
-              "reason": "Short clear status message for the user"
+              "reason": "Short clear status message"
             }
         """.trimIndent()
 
@@ -339,7 +321,7 @@ object GeminiBrain {
     }
 
     /**
-     * Universal Phone Screen & Settings Agent Brain (Supports Real Screenshot Vision!)
+     * Universal Phone Screen & Settings Agent Brain (Resolution-Aware + Node-First Priority!)
      */
     suspend fun decideNextUiAction(
         apiKey: String,
@@ -348,10 +330,12 @@ object GeminiBrain {
         screenSummary: String,
         history: List<String>,
         memoryVault: String = "",
-        screenshotBase64: String? = null
+        screenshotBase64: String? = null,
+        screenWidth: Int = 1080,
+        screenHeight: Int = 2408
     ): AgentDecision {
         val prompt = """
-            You are a Universal Autonomous Android UI Agent controlling an Android phone.
+            You are a Universal Autonomous Android UI Agent controlling a phone with EXACT screen resolution ${screenWidth}x${screenHeight} pixels.
             OVERALL GOAL: $goal
             
             USER'S SAVED MEMORY VAULT:
@@ -360,14 +344,21 @@ object GeminiBrain {
             RECENT ACTIONS HISTORY:
             ${history.takeLast(8).joinToString("\n")}
             
-            CURRENT SCREEN UI ELEMENTS (Index | Text | ContentDesc | ViewId | Editable | Clickable | CenterXY):
+            CURRENT SCREEN UI ELEMENTS (Index | Text | ContentDesc | ViewId | Editable | Clickable | ExactPixelCenterXY):
             $screenSummary
             
+            CRITICAL RULES FOR ACCURATE TAPPING:
+            1. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button or icon exists in CURRENT SCREEN UI ELEMENTS!
+               - Note: In WhatsApp and Android apps, the top-right three-dot menu icon is listed in UI ELEMENTS with desc='More options' or desc='अधिक विकल्प' (usually around y=160 to 210). Choose action="CLICK_NODE" with that element's exact nodeIndex!
+            2. NEVER tap inside the top Android Status Bar (y < 120 pixels). App buttons are always at y >= 130 pixels.
+            3. If you must use "CLICK_XY", output exact pixel coordinates for a ${screenWidth}x${screenHeight} screen (NOT 0-1000 normalized coordinates).
+            4. If your previous action did not change the screen, do NOT repeat the exact same failing coordinate—try a different nodeIndex or element.
+            
             Available actions:
-            - "CLICK_NODE": Click a specific UI node by its nodeIndex.
-            - "CLICK_XY": Tap exact screen coordinates (x, y) (useful if you see an unlabeled icon in the screenshot).
+            - "CLICK_NODE": Click a specific UI node by its nodeIndex (BEST & MOST ACCURATE).
+            - "CLICK_XY": Tap exact pixel screen coordinates (x, y) on ${screenWidth}x${screenHeight}.
             - "TYPE": Type text into an editable field (specify nodeIndex and textToType).
-            - "SCROLL": Scroll down to see more options.
+            - "SCROLL": Scroll down to see more options/photos.
             - "BACK": Press Android Back button.
             - "OPEN_APP": Open an Android System Setting or App directly. Set appPackageOrSetting to one of:
                 "SETTINGS", "BATTERY", "WIFI", "DISPLAY", "STORAGE", "SOUND", "BLUETOOTH", "APPS", or a package name like "com.whatsapp", "com.android.chrome", "com.google.android.youtube".
@@ -378,8 +369,8 @@ object GeminiBrain {
             {
               "action": "CLICK_NODE",
               "nodeIndex": 3,
-              "x": 540,
-              "y": 1200,
+              "x": 1018,
+              "y": 182,
               "textToType": "",
               "appPackageOrSetting": "",
               "reason": "Brief explanation of this step"
