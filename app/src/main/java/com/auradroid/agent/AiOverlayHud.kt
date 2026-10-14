@@ -7,6 +7,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -39,6 +40,16 @@ import kotlin.math.sin
 
 class AiOverlayHud(private val context: Context) {
 
+    companion object {
+        init {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                try {
+                    WebView.enableSlowWholeDocumentDraw()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -58,9 +69,6 @@ class AiOverlayHud(private val context: Context) {
     private var tvExpandedStepInfo: TextView? = null
     private var btnExpandFullToggle: TextView? = null
     private var podWebFrame: FrameLayout? = null
-
-    // 1x1 Invisible Parking Frame so WebView stays rendered & screenshot-ready in background!
-    private var hiddenWebParkingFrame: FrameLayout? = null
 
     private var sharedWebView: WebView? = null
     private var isDesktopMode = false
@@ -178,6 +186,12 @@ class AiOverlayHud(private val context: Context) {
                     }
                 }
 
+                // Pre-size offscreen so canvas screenshot works even when detached
+                measure(
+                    View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY)
+                )
+                layout(0, 0, 540, 960)
                 loadUrl(VideoQueueManager.getPinnedFlowUrl(context))
             }
             sharedWebView = wv
@@ -186,16 +200,12 @@ class AiOverlayHud(private val context: Context) {
     }
 
     /**
-     * Captures a high-clarity Screenshot directly from the WebView's internal canvas (`webView.draw`),
-     * even when the browser is running invisibly in the background!
+     * Offscreen & Onscreen WebView Canvas Screenshot
      */
     suspend fun captureWebViewScreenshotBase64(): String? = suspendCancellableCoroutine { cont ->
         mainHandler.post {
             try {
                 val wv = getOrCreateSharedWebView()
-                val captureW = if (wv.width > 100) wv.width else 540
-                val captureH = if (wv.height > 100) wv.height else 960
-
                 if (wv.width <= 10 || wv.height <= 10) {
                     wv.measure(
                         View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY),
@@ -203,6 +213,9 @@ class AiOverlayHud(private val context: Context) {
                     )
                     wv.layout(0, 0, 540, 960)
                 }
+
+                val captureW = wv.width.coerceAtLeast(540)
+                val captureH = wv.height.coerceAtLeast(960)
 
                 val bmp = Bitmap.createBitmap(captureW, captureH, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bmp)
@@ -252,22 +265,19 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-    private fun parkWebViewInBackgroundIfDetached() {
-        mainHandler.post {
-            val wv = getOrCreateSharedWebView()
-            val parking = hiddenWebParkingFrame ?: return@post
-            if (wv.parent == null || wv.parent == podWebFrame) {
-                (wv.parent as? ViewGroup)?.removeView(wv)
-                parking.removeAllViews()
-                parking.addView(wv, FrameLayout.LayoutParams(540, 960))
-            }
-        }
-    }
-
     fun show() {
         mainHandler.post {
             if (!isPodVisible) return@post
-            if (isAdded) return@post
+            if (isAdded && podRootLayout?.windowToken != null) return@post
+
+            // Clean up any stale references before adding fresh overlay views
+            try {
+                pointerCanvasView?.let { windowManager.removeView(it) }
+            } catch (_: Exception) {}
+            try {
+                podRootLayout?.let { windowManager.removeView(it) }
+            } catch (_: Exception) {}
+
             try {
                 val canvasParams = WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT,
@@ -279,7 +289,9 @@ class AiOverlayHud(private val context: Context) {
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT
                 )
-                pointerCanvasView = CuteBaymaxHandCursorCanvas(context)
+                pointerCanvasView = CuteBaymaxHandCursorCanvas(context).apply {
+                    visibility = View.GONE
+                }
                 windowManager.addView(pointerCanvasView, canvasParams)
 
                 podLayoutParams = WindowManager.LayoutParams(
@@ -293,43 +305,48 @@ class AiOverlayHud(private val context: Context) {
                 ).apply {
                     gravity = Gravity.TOP or Gravity.START
                     x = dpToPx(16)
-                    y = dpToPx(42)
+                    y = dpToPx(48)
                 }
 
                 podRootLayout = buildThreeStagePodUi()
                 windowManager.addView(podRootLayout, podLayoutParams)
                 isAdded = true
-                setPodStage(1)
+                currentStage = 1
                 setSideBarExpanded(AutoTouchService.isJobRunning)
             } catch (e: Exception) {
-                e.printStackTrace()
+                isAdded = false
+                VideoQueueManager.appendLog(context, "⚠️ Overlay Show Error: ${e.message}")
             }
         }
     }
 
     fun hide() {
         mainHandler.post {
-            if (!isAdded) return@post
+            mainHandler.removeCallbacks(autoCollapseSideBarRunnable)
             try {
-                mainHandler.removeCallbacks(autoCollapseSideBarRunnable)
                 pointerCanvasView?.stopAnimations()
                 pointerCanvasView?.let { windowManager.removeView(it) }
+            } catch (_: Exception) {}
+            try {
                 podWebFrame?.removeAllViews()
-                hiddenWebParkingFrame?.removeAllViews()
                 podRootLayout?.let { windowManager.removeView(it) }
-            } catch (_: Exception) {
-            } finally {
-                pointerCanvasView = null
-                podRootLayout = null
-                isAdded = false
-                currentStage = 1
-            }
+            } catch (_: Exception) {}
+
+            pointerCanvasView = null
+            podRootLayout = null
+            isAdded = false
+            currentStage = 1
         }
     }
 
     fun togglePodVisibility(): Boolean {
         isPodVisible = !isPodVisible
-        if (isPodVisible) show() else hide()
+        if (isPodVisible) {
+            isAdded = false
+            show()
+        } else {
+            hide()
+        }
         return isPodVisible
     }
 
@@ -350,7 +367,7 @@ class AiOverlayHud(private val context: Context) {
                 sideInfoContainer?.visibility = View.VISIBLE
                 root.background = GradientDrawable().apply {
                     setColor(Color.parseColor("#F2181A20"))
-                    cornerRadius = dpToPx(28).toFloat()
+                    cornerRadius = dpToPx(32).toFloat()
                     setStroke(dpToPx(1), Color.parseColor("#334155"))
                 }
                 root.setPadding(dpToPx(8), dpToPx(6), dpToPx(12), dpToPx(6))
@@ -359,11 +376,12 @@ class AiOverlayHud(private val context: Context) {
                     mainHandler.postDelayed(autoCollapseSideBarRunnable, autoHideAfterMs)
                 }
             } else {
+                // IDLE / FINISHED: Hide side text & red button so ONLY the cute round bot face remains!
                 sideInfoContainer?.visibility = View.GONE
                 root.background = GradientDrawable().apply {
                     setColor(Color.TRANSPARENT)
                 }
-                root.setPadding(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2))
+                root.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
             }
 
             try {
@@ -374,7 +392,9 @@ class AiOverlayHud(private val context: Context) {
 
     fun updateStatus(stepBadge: String, detailMessage: String, mood: String = "WORKING") {
         mainHandler.post {
-            if (isPodVisible && !isAdded) show()
+            if (isPodVisible && (!isAdded || podRootLayout?.windowToken == null)) {
+                show()
+            }
             tvPodTitle?.text = stepBadge
             tvPodSubtitle?.text = detailMessage
             tvExpandedStepInfo?.text = "$stepBadge • $detailMessage"
@@ -396,7 +416,9 @@ class AiOverlayHud(private val context: Context) {
 
     fun moveBotAndShowTap(targetX: Float, targetY: Float, actionLabel: String) {
         mainHandler.post {
-            if (isPodVisible && !isAdded) show()
+            if (isPodVisible && (!isAdded || podRootLayout?.windowToken == null)) {
+                show()
+            }
             pointerCanvasView?.visibility = View.VISIBLE
             pointerCanvasView?.animateHandToTap(targetX, targetY, actionLabel)
         }
@@ -412,7 +434,15 @@ class AiOverlayHud(private val context: Context) {
             when (stage) {
                 1 -> {
                     expandedContainer?.visibility = View.GONE
-                    parkWebViewInBackgroundIfDetached()
+                    podWebFrame?.removeAllViews()
+                    // Re-measure WebView offscreen so background screenshots keep working
+                    sharedWebView?.let { wv ->
+                        wv.measure(
+                            View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY)
+                        )
+                        wv.layout(0, 0, 540, 960)
+                    }
                     params.width = WindowManager.LayoutParams.WRAP_CONTENT
                     params.height = WindowManager.LayoutParams.WRAP_CONTENT
                     params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -455,22 +485,21 @@ class AiOverlayHud(private val context: Context) {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
         }
-
-        // 1x1 Invisible Parking Frame so WebView keeps rendering in Stage 1
-        hiddenWebParkingFrame = FrameLayout(context).apply {
-            alpha = 0.01f
-            layoutParams = LinearLayout.LayoutParams(1, 1)
-        }
-        root.addView(hiddenWebParkingFrame)
 
         compactRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         }
 
+        // Plump Soft-White Bot Face with 4x HUGE Solid Eyes (62dp x 58dp)
         botAvatarView = ExpressiveCompanionAvatar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(46))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(62), dpToPx(58))
         }
         compactRow?.addView(botAvatarView)
 
@@ -488,7 +517,7 @@ class AiOverlayHud(private val context: Context) {
 
         val textCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(dpToPx(150), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(148), LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
         tvPodTitle = TextView(context).apply {
@@ -692,6 +721,9 @@ class AiOverlayHud(private val context: Context) {
         ).toInt()
     }
 
+    /**
+     * Cute Round Soft-White Companion Head with 4x HUGE Pure Solid Eyes (Zero White Reflection!)
+     */
     private class ExpressiveCompanionAvatar(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var phase = 0f
@@ -723,13 +755,16 @@ class AiOverlayHud(private val context: Context) {
             super.onDraw(canvas)
             val w = width.toFloat()
             val h = height.toFloat()
-            val bobY = sin(phase * 0.65f) * 1.8f
+            if (w <= 0f || h <= 0f) return
+            val bobY = sin(phase * 0.65f) * 2.2f
 
+            // Soft Drop Shadow
             paint.style = Paint.Style.FILL
-            paint.color = Color.argb(65, 0, 0, 0)
-            canvas.drawRoundRect(RectF(3f, 5f + bobY, w - 3f, h - 1f + bobY), h * 0.48f, h * 0.48f, paint)
+            paint.color = Color.argb(80, 0, 0, 0)
+            canvas.drawRoundRect(RectF(4f, 6f + bobY, w - 4f, h - 1f + bobY), h * 0.48f, h * 0.48f, paint)
 
-            val headRect = RectF(2f, 3f + bobY, w - 2f, h - 4f + bobY)
+            // 1. Soft Marshmallow White Head
+            val headRect = RectF(3f, 4f + bobY, w - 3f, h - 4f + bobY)
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#F8FAFC")
             canvas.drawRoundRect(headRect, h * 0.48f, h * 0.48f, paint)
@@ -743,104 +778,92 @@ class AiOverlayHud(private val context: Context) {
             }
 
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.5f
+            paint.strokeWidth = 3f
             paint.color = accentColor
             canvas.drawRoundRect(headRect, h * 0.48f, h * 0.48f, paint)
 
-            val lookOffsetX = if (mood == "THINKING") sin(phase * 1.5f) * 3.5f else 0f
-            val lookOffsetY = if (mood == "THINKING") cos(phase * 1.1f) * 1.6f else 0f
+            val lookOffsetX = if (mood == "THINKING") sin(phase * 1.5f) * (w * 0.05f) else 0f
+            val lookOffsetY = if (mood == "THINKING") cos(phase * 1.1f) * (h * 0.03f) else 0f
 
             val eyeY = h * 0.44f + bobY + lookOffsetY
-            val leftEyeX = w * 0.31f + lookOffsetX
-            val rightEyeX = w * 0.69f + lookOffsetX
+            val leftEyeX = w * 0.30f + lookOffsetX
+            val rightEyeX = w * 0.70f + lookOffsetX
 
-            if (mood != "ERROR" && mood != "SAD") {
-                paint.style = Paint.Style.FILL
-                paint.color = Color.argb(95, 244, 114, 182)
-                canvas.drawOval(RectF(w * 0.11f, eyeY + 5f, w * 0.27f, eyeY + 11.5f), paint)
-                canvas.drawOval(RectF(w * 0.73f, eyeY + 5f, w * 0.89f, eyeY + 11.5f), paint)
-            }
-
+            // 2. Subtle Baymax-style Connector Line Between the 4x Eyes
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.8f
-            paint.color = Color.parseColor("#E2E8F0")
+            paint.strokeWidth = 3.2f
+            paint.color = Color.parseColor("#CBD5E1")
             canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, paint)
 
+            // 3. 4x HUGE Pure Solid Color-Changing Eyes (NO White Reflection Dots!)
             val isBlinking = sin(phase * 0.82f) > 0.93f
             val eyeColor = when (mood) {
-                "ERROR", "SAD", "FAILED" -> Color.parseColor("#DC2626")
-                "THINKING", "PROCESSING" -> Color.parseColor("#2563EB")
-                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#059669")
-                "WAITING" -> Color.parseColor("#D97706")
-                else -> Color.parseColor("#0F172A")
+                "ERROR", "SAD", "FAILED" -> Color.parseColor("#DC2626") // Pure Red
+                "THINKING", "PROCESSING" -> Color.parseColor("#1D4ED8") // Pure Deep Blue
+                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#059669") // Pure Emerald
+                "WAITING" -> Color.parseColor("#D97706") // Pure Amber
+                else -> Color.parseColor("#0F172A") // Pure Deep Black/Charcoal
             }
 
             paint.color = eyeColor
 
+            // 4x Eye Dimensions proportional to the head size
+            val rx = w * 0.135f
+            val ry = h * 0.165f
+
             if (mood == "DONE" || mood == "HAPPY") {
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 3.8f
+                paint.strokeWidth = 5.5f
                 paint.strokeCap = Paint.Cap.ROUND
-                canvas.drawArc(RectF(leftEyeX - 7f, eyeY - 6f, leftEyeX + 7f, eyeY + 5f), 190f, 160f, false, paint)
-                canvas.drawArc(RectF(rightEyeX - 7f, eyeY - 6f, rightEyeX + 7f, eyeY + 5f), 190f, 160f, false, paint)
+                canvas.drawArc(RectF(leftEyeX - rx, eyeY - ry * 0.8f, leftEyeX + rx, eyeY + ry * 0.8f), 190f, 160f, false, paint)
+                canvas.drawArc(RectF(rightEyeX - rx, eyeY - ry * 0.8f, rightEyeX + rx, eyeY + ry * 0.8f), 190f, 160f, false, paint)
             } else if (isBlinking) {
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 3.6f
+                paint.strokeWidth = 5.2f
                 paint.strokeCap = Paint.Cap.ROUND
-                canvas.drawLine(leftEyeX - 6.5f, eyeY, leftEyeX + 6.5f, eyeY, paint)
-                canvas.drawLine(rightEyeX - 6.5f, eyeY, rightEyeX + 6.5f, eyeY, paint)
+                canvas.drawLine(leftEyeX - rx, eyeY, leftEyeX + rx, eyeY, paint)
+                canvas.drawLine(rightEyeX - rx, eyeY, rightEyeX + rx, eyeY, paint)
             } else {
+                // 100% Pure Solid 4x Huge Oval Eyes — Zero White Reflection!
                 paint.style = Paint.Style.FILL
-                val rx = 6.8f
-                val ry = 7.8f
                 canvas.drawOval(RectF(leftEyeX - rx, eyeY - ry, leftEyeX + rx, eyeY + ry), paint)
                 canvas.drawOval(RectF(rightEyeX - rx, eyeY - ry, rightEyeX + rx, eyeY + ry), paint)
 
-                paint.color = Color.WHITE
-                canvas.drawCircle(leftEyeX - 2.2f, eyeY - 2.4f, 2.5f, paint)
-                canvas.drawCircle(rightEyeX - 2.2f, eyeY - 2.4f, 2.5f, paint)
-                canvas.drawCircle(leftEyeX + 2.2f, eyeY + 2.2f, 1.2f, paint)
-                canvas.drawCircle(rightEyeX + 2.2f, eyeY + 2.2f, 1.2f, paint)
-
                 if (mood == "ERROR" || mood == "SAD") {
                     paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 2.6f
+                    paint.strokeWidth = 3.5f
                     paint.color = Color.parseColor("#DC2626")
-                    canvas.drawLine(leftEyeX - 6f, eyeY - 8f, leftEyeX + 5f, eyeY - 10.5f, paint)
-                    canvas.drawLine(rightEyeX - 5f, eyeY - 10.5f, rightEyeX + 6f, eyeY - 8f, paint)
+                    canvas.drawLine(leftEyeX - rx, eyeY - ry - 2f, leftEyeX + rx * 0.8f, eyeY - ry - 6f, paint)
+                    canvas.drawLine(rightEyeX - rx * 0.8f, eyeY - ry - 6f, rightEyeX + rx, eyeY - ry - 2f, paint)
                 }
             }
 
+            // 4. Cute Expressive Smile / Mouth Below the 4x Eyes
             val mouthCenterX = w * 0.50f + lookOffsetX * 0.4f
-            val mouthTopY = h * 0.67f + bobY
+            val mouthTopY = h * 0.72f + bobY
             paint.color = eyeColor
             paint.strokeCap = Paint.Cap.ROUND
 
             when (mood) {
                 "ERROR", "SAD", "FAILED" -> {
                     paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3f
-                    canvas.drawArc(RectF(mouthCenterX - 6.5f, mouthTopY, mouthCenterX + 6.5f, mouthTopY + 7.5f), 200f, 140f, false, paint)
-
-                    val tearY = eyeY + 7f + (phase % 3f) * 2.2f
-                    paint.style = Paint.Style.FILL
-                    paint.color = Color.parseColor("#38BDF8")
-                    canvas.drawCircle(rightEyeX + 6.5f, tearY, 2.5f, paint)
+                    paint.strokeWidth = 3.8f
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.13f, mouthTopY, mouthCenterX + w * 0.13f, mouthTopY + h * 0.13f), 200f, 140f, false, paint)
                 }
                 "THINKING", "PROCESSING" -> {
                     paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 2.6f
-                    val r = 3.2f + sin(phase * 2.2f) * 0.8f
-                    canvas.drawCircle(mouthCenterX, mouthTopY + 2.5f, r, paint)
+                    paint.strokeWidth = 3.5f
+                    val r = (w * 0.06f) + sin(phase * 2.2f) * 1.2f
+                    canvas.drawCircle(mouthCenterX, mouthTopY + h * 0.04f, r, paint)
                 }
                 "DONE", "HAPPY", "SUCCESS" -> {
                     paint.style = Paint.Style.FILL
-                    canvas.drawArc(RectF(mouthCenterX - 7.5f, mouthTopY - 2f, mouthCenterX + 7.5f, mouthTopY + 7f), 0f, 180f, true, paint)
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.15f, mouthTopY - 3f, mouthCenterX + w * 0.15f, mouthTopY + h * 0.14f), 0f, 180f, true, paint)
                 }
                 else -> {
                     paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3f
-                    canvas.drawArc(RectF(mouthCenterX - 6.5f, mouthTopY - 2f, mouthCenterX + 6.5f, mouthTopY + 5.5f), 15f, 150f, false, paint)
+                    paint.strokeWidth = 3.8f
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.13f, mouthTopY - 3f, mouthCenterX + w * 0.13f, mouthTopY + h * 0.11f), 15f, 150f, false, paint)
                 }
             }
         }
