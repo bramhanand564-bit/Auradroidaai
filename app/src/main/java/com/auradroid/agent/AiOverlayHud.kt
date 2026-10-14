@@ -38,13 +38,11 @@ class AiOverlayHud(private val context: Context) {
     private var podRootLayout: LinearLayout? = null
     private var podLayoutParams: WindowManager.LayoutParams? = null
 
-    // Stage 1 Views (Compact Draggable Pod)
     private var compactRow: LinearLayout? = null
     private var tvPodTitle: TextView? = null
     private var tvPodSubtitle: TextView? = null
     private var botAvatarView: SoftWhiteCompanionAvatar? = null
 
-    // Stage 2 & Stage 3 Views (Mini Pop-out & Full Screen Live Workspace)
     private var expandedContainer: LinearLayout? = null
     private var tvExpandedStepInfo: TextView? = null
     private var btnExpandFullToggle: TextView? = null
@@ -72,7 +70,6 @@ class AiOverlayHud(private val context: Context) {
                 webViewClient = object : WebViewClient() {}
                 webChromeClient = WebChromeClient()
 
-                // Auto-Download Listener for AI Videos & APKs into Download/AutoVideos
                 setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
                     try {
                         val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
@@ -121,7 +118,6 @@ class AiOverlayHud(private val context: Context) {
             if (!isPodVisible) return@post
             if (isAdded) return@post
             try {
-                // 1. Full-screen transparent touch ripple & Soft-White Bot cursor layer
                 val canvasParams = WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT,
@@ -135,7 +131,6 @@ class AiOverlayHud(private val context: Context) {
                 pointerCanvasView = SoftCompanionCursorCanvas(context)
                 windowManager.addView(pointerCanvasView, canvasParams)
 
-                // 2. 3-Stage Movable Floating Aura Pod
                 podLayoutParams = WindowManager.LayoutParams(
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT,
@@ -208,12 +203,6 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-    /**
-     * Switches smoothly between:
-     * Stage 1: Compact Movable Pod
-     * Stage 2: Mini Pop-out Window (Live Web/Task Peek)
-     * Stage 3: Full Screen Workspace
-     */
     private fun setPodStage(stage: Int) {
         mainHandler.post {
             currentStage = stage
@@ -223,7 +212,6 @@ class AiOverlayHud(private val context: Context) {
 
             when (stage) {
                 1 -> {
-                    // Stage 1: Compact Draggable Pill
                     expandedContainer?.visibility = View.GONE
                     podWebFrame?.removeAllViews()
                     params.width = WindowManager.LayoutParams.WRAP_CONTENT
@@ -233,7 +221,6 @@ class AiOverlayHud(private val context: Context) {
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 }
                 2 -> {
-                    // Stage 2: Mini Live Pop-out Window
                     expandedContainer?.visibility = View.VISIBLE
                     btnExpandFullToggle?.text = "⛶ Full Screen"
                     params.width = (dm.widthPixels * 0.86f).toInt()
@@ -244,14 +231,12 @@ class AiOverlayHud(private val context: Context) {
                     podWebFrame?.let { attachWebViewToContainer(it) }
                 }
                 3 -> {
-                    // Stage 3: Full Screen Interactive Workspace
                     expandedContainer?.visibility = View.VISIBLE
                     btnExpandFullToggle?.text = "↙ Mini Window"
                     params.x = 0
                     params.y = dpToPx(28)
                     params.width = dm.widthPixels
                     params.height = (dm.heightPixels * 0.88f).toInt()
-                    // Allow keyboard input when in Full Screen mode
                     params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                     podWebFrame?.let { attachWebViewToContainer(it) }
@@ -270,21 +255,19 @@ class AiOverlayHud(private val context: Context) {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#F2181A20"))
-                cornerRadius = dpToPx(24).toFloat()
+                cornerRadius = dpToPx(26).toFloat()
                 setStroke(dpToPx(1), Color.parseColor("#334155"))
             }
             setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8))
         }
 
-        // --- TOP COMPACT BAR (Always Visible, Draggable, Tap to Expand/Collapse) ---
         compactRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        // Soft-White Blinking Companion Head
         botAvatarView = SoftWhiteCompanionAvatar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dpToPx(38), dpToPx(38)).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(42), dpToPx(38)).apply {
                 marginEnd = dpToPx(10)
             }
         }
@@ -296,7 +279,7 @@ class AiOverlayHud(private val context: Context) {
         }
 
         tvPodTitle = TextView(context).apply {
-            text = "AuraDroid Companion"
+            text = "Aura Companion"
             setTextColor(Color.parseColor("#94A3B8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
@@ -304,7 +287,7 @@ class AiOverlayHud(private val context: Context) {
         }
 
         tvPodSubtitle = TextView(context).apply {
-            text = "Tap to view live workspace"
+            text = "Tap to peek live view"
             setTextColor(Color.parseColor("#F8FAFC"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             maxLines = 1
@@ -337,7 +320,6 @@ class AiOverlayHud(private val context: Context) {
         compactRow?.addView(stopBadge)
         root.addView(compactRow)
 
-        // --- EXPANDED STAGE 2 & STAGE 3 CONTAINER (Mini Window & Full Screen) ---
         expandedContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -349,7 +331,6 @@ class AiOverlayHud(private val context: Context) {
             }
         }
 
-        // Control Strip inside Expanded Window
         val controlBar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -402,7 +383,6 @@ class AiOverlayHud(private val context: Context) {
         controlBar.addView(btnMinimizePod)
         expandedContainer?.addView(controlBar)
 
-        // Live WebView Frame inside Pop-out Window
         podWebFrame = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#0D0E11"))
@@ -417,7 +397,6 @@ class AiOverlayHud(private val context: Context) {
         expandedContainer?.addView(podWebFrame)
         root.addView(expandedContainer)
 
-        // Drag anywhere on screen + Single Tap to Toggle Stage 1 <-> Stage 2
         var startX = 0
         var startY = 0
         var touchX = 0f
@@ -472,7 +451,8 @@ class AiOverlayHud(private val context: Context) {
     }
 
     /**
-     * 100% Original Soft-White Blinking Companion Bot Avatar (Friendly Marshmallow Style)
+     * Extra-Cute Soft-White Marshmallow Companion Bot Avatar
+     * Features: Plump rounded white head, rosy cheeks, eye sparkles, smooth blinking & happy (^ ^) eyes!
      */
     private class SoftWhiteCompanionAvatar(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -505,15 +485,15 @@ class AiOverlayHud(private val context: Context) {
             super.onDraw(canvas)
             val w = width.toFloat()
             val h = height.toFloat()
-            val bobY = sin(phase * 0.6f) * 1.8f
+            val bobY = sin(phase * 0.65f) * 2.0f
 
-            // Soft Pill-Shaped White Head
-            val headRect = RectF(4f, 6f + bobY, w - 4f, h - 6f + bobY)
+            // 1. Plump Marshmallow White Head
+            val headRect = RectF(3f, 5f + bobY, w - 3f, h - 5f + bobY)
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#F8FAFC")
-            canvas.drawRoundRect(headRect, h * 0.42f, h * 0.42f, paint)
+            canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
 
-            // Subtle border
+            // Soft Outline
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2f
             paint.color = when (mood) {
@@ -521,36 +501,54 @@ class AiOverlayHud(private val context: Context) {
                 "THINKING" -> Color.parseColor("#3B82F6")
                 else -> Color.parseColor("#CBD5E1")
             }
-            canvas.drawRoundRect(headRect, h * 0.42f, h * 0.42f, paint)
+            canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
 
-            // Gentle Connector Line Between Eyes
-            val eyeY = h / 2f + bobY
-            val leftEyeX = w * 0.34f
-            val rightEyeX = w * 0.66f
+            val eyeY = h * 0.50f + bobY
+            val leftEyeX = w * 0.33f
+            val rightEyeX = w * 0.67f
 
+            // 2. Cute Soft Pinkish Blush on Cheeks
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(75, 244, 114, 182)
+            canvas.drawOval(RectF(leftEyeX - 9f, eyeY + 3f, leftEyeX - 1f, eyeY + 8f), paint)
+            canvas.drawOval(RectF(rightEyeX + 1f, eyeY + 3f, rightEyeX + 9f, eyeY + 8f), paint)
+
+            // 3. Gentle Connector Bridge Line
+            paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2.2f
             paint.color = Color.parseColor("#CBD5E1")
             canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, paint)
 
-            // Natural Blinking Dark Eyes
-            val isBlinking = sin(phase * 0.85f) > 0.93f
-            paint.style = Paint.Style.FILL
+            // 4. Expressive Blinking Eyes
+            val isBlinking = sin(phase * 0.85f) > 0.92f
             paint.color = Color.parseColor("#0F172A")
 
-            if (isBlinking) {
+            if (mood == "DONE") {
+                // Cute Happy Arc Eyes (^  ^)
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 3f
-                canvas.drawLine(leftEyeX - 4f, eyeY, leftEyeX + 4f, eyeY, paint)
-                canvas.drawLine(rightEyeX - 4f, eyeY, rightEyeX + 4f, eyeY, paint)
+                canvas.drawArc(RectF(leftEyeX - 4.5f, eyeY - 4f, leftEyeX + 4.5f, eyeY + 4f), 190f, 160f, false, paint)
+                canvas.drawArc(RectF(rightEyeX - 4.5f, eyeY - 4f, rightEyeX + 4.5f, eyeY + 4f), 190f, 160f, false, paint)
+            } else if (isBlinking) {
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 3f
+                canvas.drawLine(leftEyeX - 4.5f, eyeY, leftEyeX + 4.5f, eyeY, paint)
+                canvas.drawLine(rightEyeX - 4.5f, eyeY, rightEyeX + 4.5f, eyeY, paint)
             } else {
-                canvas.drawCircle(leftEyeX, eyeY, 4.3f, paint)
-                canvas.drawCircle(rightEyeX, eyeY, 4.3f, paint)
+                paint.style = Paint.Style.FILL
+                canvas.drawCircle(leftEyeX, eyeY, 4.6f, paint)
+                canvas.drawCircle(rightEyeX, eyeY, 4.6f, paint)
+
+                // Cute White Eye Sparkle Catchlights
+                paint.color = Color.WHITE
+                canvas.drawCircle(leftEyeX - 1.4f, eyeY - 1.4f, 1.4f, paint)
+                canvas.drawCircle(rightEyeX - 1.4f, eyeY - 1.4f, 1.4f, paint)
             }
         }
     }
 
     /**
-     * Clean On-Screen Soft-White Bot Cursor + Subtle Touch Ripple (No Neon, No Trailing Lines)
+     * Cute On-Screen Marshmallow Companion Cursor + Clean Soft Touch Ripple
      */
     private class SoftCompanionCursorCanvas(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -637,7 +635,7 @@ class AiOverlayHud(private val context: Context) {
             val cx = (botX - ox)
             val cy = (botY - oy) + sin(blinkPhase * 0.7f) * 4f
 
-            // 1. Clean Soft White/Blue Touch Ripple
+            // 1. Soft White Touch Ripple
             if (rippleProgress > 0f && rippleProgress < 1f) {
                 val alpha = ((1f - rippleProgress) * 190).toInt().coerceIn(0, 255)
                 paint.style = Paint.Style.STROKE
@@ -646,38 +644,48 @@ class AiOverlayHud(private val context: Context) {
                 canvas.drawCircle(drawTargetX, drawTargetY, 16f + rippleProgress * 70f, paint)
             }
 
-            // 2. Soft-White Companion Head Cursor
-            val headRect = RectF(cx - 28f, cy - 22f, cx + 28f, cy + 22f)
+            // 2. Cute Plump Soft-White Head Cursor
+            val headRect = RectF(cx - 30f, cy - 22f, cx + 30f, cy + 22f)
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#F8FAFC")
             canvas.drawRoundRect(headRect, 22f, 22f, paint)
 
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2.5f
-            paint.color = Color.parseColor("#334155")
+            paint.color = Color.parseColor("#475569")
             canvas.drawRoundRect(headRect, 22f, 22f, paint)
 
-            // Connector Line & Blinking Dark Eyes
+            // Cheek Blush
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(80, 244, 114, 182)
+            canvas.drawOval(RectF(cx - 21f, cy + 3f, cx - 12f, cy + 9f), paint)
+            canvas.drawOval(RectF(cx + 12f, cy + 3f, cx + 21f, cy + 9f), paint)
+
+            // Gentle Bridge & Blinking Eyes with Sparkles
+            paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2.2f
             paint.color = Color.parseColor("#CBD5E1")
-            canvas.drawLine(cx - 10f, cy, cx + 10f, cy, paint)
+            canvas.drawLine(cx - 11f, cy, cx + 11f, cy, paint)
 
             val blinking = sin(blinkPhase) > 0.92f
-            paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#0F172A")
             if (blinking) {
-                paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 3f
-                canvas.drawLine(cx - 14f, cy, cx - 6f, cy, paint)
-                canvas.drawLine(cx + 6f, cy, cx + 14f, cy, paint)
+                canvas.drawLine(cx - 15f, cy, cx - 7f, cy, paint)
+                canvas.drawLine(cx + 7f, cy, cx + 15f, cy, paint)
             } else {
-                canvas.drawCircle(cx - 10f, cy, 4.2f, paint)
-                canvas.drawCircle(cx + 10f, cy, 4.2f, paint)
+                paint.style = Paint.Style.FILL
+                canvas.drawCircle(cx - 11f, cy, 4.8f, paint)
+                canvas.drawCircle(cx + 11f, cy, 4.8f, paint)
+
+                paint.color = Color.WHITE
+                canvas.drawCircle(cx - 12.5f, cy - 1.5f, 1.5f, paint)
+                canvas.drawCircle(cx + 9.5f, cy - 1.5f, 1.5f, paint)
             }
 
-            // 3. Clean Matte Slate Action Tag
+            // 3. Clean Matte Action Pill
             val textWidth = textPaint.measureText(currentLabel)
-            val tagLeft = (cx + 34f).coerceAtMost(width - textWidth - 36f).coerceAtLeast(16f)
+            val tagLeft = (cx + 36f).coerceAtMost(width - textWidth - 36f).coerceAtLeast(16f)
             val tagTop = (cy - 20f).coerceAtLeast(60f)
             val tagRect = RectF(tagLeft, tagTop, tagLeft + textWidth + 24f, tagTop + 42f)
 
