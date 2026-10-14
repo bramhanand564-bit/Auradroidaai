@@ -33,7 +33,7 @@ data class AgentDecision(
 )
 
 data class WebAgentDecision(
-    val action: String,      // CLICK_EL, TYPE_EL, SCROLL, LOAD_URL, DOWNLOAD_URL, CHAIN_YOUTUBE, WAIT, DONE
+    val action: String,      // CLICK_EL, TYPE_EL, SCROLL, LOAD_URL, DOWNLOAD_VIDEO, CHAIN_YOUTUBE, WAIT, DONE
     val elementIndex: Int = -1,
     val textToType: String = "",
     val url: String = "",
@@ -117,7 +117,7 @@ object GeminiBrain {
                         val payload = JSONObject().apply {
                             put("contents", JSONArray().put(JSONObject().put("parts", partsArray)))
                             put("generationConfig", JSONObject().apply {
-                                put("temperature", 0.2)
+                                put("temperature", 0.25)
                                 put("responseMimeType", "application/json")
                             })
                         }
@@ -166,6 +166,37 @@ object GeminiBrain {
         throw Exception("Gemini API Busy/Error ($lastError)")
     }
 
+    /**
+     * Generates a fresh, unique 8-second cinematic video prompt for Google Flow every day
+     */
+    suspend fun generateDailyFlowPrompt(
+        apiKey: String,
+        model: String,
+        userTopic: String
+    ): String {
+        val prompt = """
+            You are an expert AI Video Prompt Director for Google Flow (Veo 8-second video generator).
+            User's core topic/theme: "$userTopic"
+            
+            Create ONE fresh, vivid, cinematic 8-second video generation prompt in English with clear camera movement, lighting, and action.
+            Respond strictly in valid JSON:
+            {
+              "videoPrompt": "Detailed 8-second cinematic prompt..."
+            }
+        """.trimIndent()
+
+        return try {
+            val raw = callGeminiApi(apiKey, model, prompt)
+            val clean = raw.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            JSONObject(clean).optString("videoPrompt", userTopic).ifBlank { userTopic }
+        } catch (e: Exception) {
+            userTopic
+        }
+    }
+
+    /**
+     * TAB 1: Interactive AI Chat & Universal Task Planner
+     */
     suspend fun chatAndBuildPlan(
         apiKey: String,
         model: String,
@@ -175,7 +206,6 @@ object GeminiBrain {
     ): ChatPlanResponse {
         val prompt = """
             You are Aura Companion, a friendly, smart Hindi/Hinglish speaking Universal Autonomous AI Assistant.
-            You can perform ANY task on the user's phone or in the background web browser.
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
@@ -188,11 +218,11 @@ object GeminiBrain {
             
             Your job:
             1. Talk naturally to the user in clear Hindi/Hinglish.
-            2. Create a clear, numbered Step-by-Step Execution Plan.
+            2. Create a numbered Step-by-Step Execution Plan.
             3. Choose suggestedMode:
-               - "WEB": If the task involves websites, filling web forms, checking daily free video credit limits, generating/downloading AI videos, or GitHub web tasks.
-               - "PHONE": If the task involves controlling native Android apps (like WhatsApp, Gallery, Settings, Instagram, YouTube App).
-            4. If a website is mentioned or needed, provide its full URL in targetUrl.
+               - "WEB": If the task involves Google Flow, websites, filling web forms, checking daily free video credit limits, generating/downloading AI videos, or GitHub web tasks.
+               - "PHONE": If the task involves controlling native Android apps (like WhatsApp live chat monitoring, Gallery, Settings, Instagram, YouTube App).
+            4. If a website is mentioned (like Google Flow), provide its URL in targetUrl (e.g. "[https://labs.google/fx/tools/flow](https://labs.google/fx/tools/flow)").
             
             Respond strictly in valid JSON:
             {
@@ -226,6 +256,9 @@ object GeminiBrain {
         }
     }
 
+    /**
+     * Viral Title & Description Generator for YouTube Shorts Uploads
+     */
     suspend fun generateYouTubeMetadata(
         apiKey: String,
         model: String,
@@ -233,9 +266,9 @@ object GeminiBrain {
         userInstruction: String
     ): VideoMetadata {
         val prompt = """
-            You are an expert Social Media & YouTube SEO Manager.
+            You are an expert Social Media & YouTube Shorts SEO Manager.
             Video file name: "$fileName"
-            User instruction: "$userInstruction"
+            Topic / Instruction: "$userInstruction"
             
             Generate a catchy viral Title/Caption (max 85 chars, include 2 hashtags like #shorts #viral) and a full SEO Description with hashtags.
             Respond strictly in valid JSON:
@@ -262,6 +295,9 @@ object GeminiBrain {
         }
     }
 
+    /**
+     * Background Web Studio Agent Brain (Google Flow 8s Video Generator, Credit Saver, Web Forms, Any Site)
+     */
     suspend fun decideNextWebAction(
         apiKey: String,
         model: String,
@@ -279,18 +315,26 @@ object GeminiBrain {
             MEMORY VAULT: $memoryVault
             
             RECENT ACTIONS TAKEN:
-            ${history.takeLast(8).joinToString("\n")}
+            ${history.takeLast(10).joinToString("\n")}
             
             CURRENT WEBPAGE INTERACTIVE ELEMENTS & VISIBLE TEXT:
             $pageTextAndElements
+            
+            CRITICAL RULES FOR GOOGLE FLOW & VIDEO GENERATION WEBSITES:
+            1. Do NOT click Generate more than once per video! Respect the user's 1000 credits.
+            2. First, find the prompt textarea/input box, use "TYPE_EL" to enter the 8-second video prompt.
+            3. Next, click the Generate / Create / Arrow Send button ONCE using "CLICK_EL".
+            4. While the video is generating (15s to 120s), the page will show loading/progress or generating text. You MUST return action="WAIT" until the video element (<video>) or Download button appears!
+            5. As soon as a <video> element or Download icon/button appears on the page, choose action="DOWNLOAD_VIDEO" (or click the Download button) to save the 8-second video!
+            6. Once downloaded, if the goal includes uploading to YouTube, return "CHAIN_YOUTUBE", otherwise return "DONE".
             
             Available actions:
             - "CLICK_EL": Click interactive webpage element by its elementIndex.
             - "TYPE_EL": Type/fill text into input/textarea at elementIndex (provide textToType).
             - "SCROLL": Scroll down the webpage.
             - "LOAD_URL": Navigate directly to a specific URL (provide url).
-            - "DOWNLOAD_URL": Direct download of a video/file URL (provide url).
-            - "WAIT": Wait 5 seconds (use when AI video/code is generating or page is loading).
+            - "DOWNLOAD_VIDEO": Automatically extract and download the generated <video> or MP4 file from the page.
+            - "WAIT": Wait 6 seconds (use while AI video is generating or page is loading).
             - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
             - "DONE": Goal is 100% completed.
             
@@ -316,12 +360,12 @@ object GeminiBrain {
                 reason = obj.optString("reason", "Analyzing webpage...")
             )
         } catch (e: Exception) {
-            WebAgentDecision(action = "WAIT", reason = "Retrying after network pause...")
+            WebAgentDecision(action = "WAIT", reason = "Waiting for webpage...")
         }
     }
 
     /**
-     * Universal Phone Screen & Settings Agent Brain (Resolution-Aware + Node-First Priority!)
+     * Universal Phone Screen Agent Brain (With Continuous Chat Monitoring Support!)
      */
     suspend fun decideNextUiAction(
         apiKey: String,
@@ -332,45 +376,57 @@ object GeminiBrain {
         memoryVault: String = "",
         screenshotBase64: String? = null,
         screenWidth: Int = 1080,
-        screenHeight: Int = 2408
+        screenHeight: Int = 2408,
+        isContinuousMonitorMode: Boolean = false
     ): AgentDecision {
+        val monitorRules = if (isContinuousMonitorMode) {
+            """
+            CONTINUOUS CHAT MONITORING MODE IS ACTIVE:
+            - NEVER return "DONE"! You must keep monitoring the chat continuously until the user stops you.
+            - Look at the chat messages on screen (and in the screenshot):
+              * Messages on the RIGHT side (centerX > ${screenWidth / 2}, green bubbles) were sent by YOU.
+              * Messages on the LEFT side (centerX < ${screenWidth / 2}, dark/white bubbles) are INCOMING messages from the other person.
+            - If the lowest/latest message in the chat is on the RIGHT side (your own message), DO NOT send another message! Return action="WAIT" with reason="Waiting for new incoming reply...".
+            - As soon as a NEW incoming message appears at the bottom on the LEFT side (like 'Hello bro kaise ho'), use action="TYPE" to type a friendly contextual reply in the 'Message' input box, and then click the Send button!
+            - After clicking Send, go back to action="WAIT" to wait for their next reply!
+            """.trimIndent()
+        } else ""
+
         val prompt = """
             You are a Universal Autonomous Android UI Agent controlling a phone with EXACT screen resolution ${screenWidth}x${screenHeight} pixels.
-            OVERALL GOAL: $goal
+            OVERALL GOAL: $goal$monitorRules
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
             
             RECENT ACTIONS HISTORY:
-            ${history.takeLast(8).joinToString("\n")}
+            ${history.takeLast(10).joinToString("\n")}
             
             CURRENT SCREEN UI ELEMENTS (Index | Text | ContentDesc | ViewId | Editable | Clickable | ExactPixelCenterXY):
             $screenSummary
             
             CRITICAL RULES FOR ACCURATE TAPPING:
-            1. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button or icon exists in CURRENT SCREEN UI ELEMENTS!
-               - Note: In WhatsApp and Android apps, the top-right three-dot menu icon is listed in UI ELEMENTS with desc='More options' or desc='अधिक विकल्प' (usually around y=160 to 210). Choose action="CLICK_NODE" with that element's exact nodeIndex!
-            2. NEVER tap inside the top Android Status Bar (y < 120 pixels). App buttons are always at y >= 130 pixels.
-            3. If you must use "CLICK_XY", output exact pixel coordinates for a ${screenWidth}x${screenHeight} screen (NOT 0-1000 normalized coordinates).
-            4. If your previous action did not change the screen, do NOT repeat the exact same failing coordinate—try a different nodeIndex or element.
+            1. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
+               - Top-right 3-dot menu has desc='More options' or desc='अधिक विकल्प'. Use "CLICK_NODE" with its nodeIndex.
+            2. NEVER tap inside the top Android Status Bar (y < 120 pixels).
+            3. If you use "CLICK_XY", output exact pixel coordinates for ${screenWidth}x${screenHeight}.
             
             Available actions:
-            - "CLICK_NODE": Click a specific UI node by its nodeIndex (BEST & MOST ACCURATE).
-            - "CLICK_XY": Tap exact pixel screen coordinates (x, y) on ${screenWidth}x${screenHeight}.
+            - "CLICK_NODE": Click a specific UI node by its nodeIndex.
+            - "CLICK_XY": Tap exact pixel coordinates (x, y).
             - "TYPE": Type text into an editable field (specify nodeIndex and textToType).
-            - "SCROLL": Scroll down to see more options/photos.
+            - "SCROLL": Scroll down.
             - "BACK": Press Android Back button.
-            - "OPEN_APP": Open an Android System Setting or App directly. Set appPackageOrSetting to one of:
-                "SETTINGS", "BATTERY", "WIFI", "DISPLAY", "STORAGE", "SOUND", "BLUETOOTH", "APPS", or a package name like "com.whatsapp", "com.android.chrome", "com.google.android.youtube".
-            - "WAIT": Wait 3 seconds if screen is loading.
-            - "DONE": Goal is completely finished.
+            - "OPEN_APP": Open an Android Setting or App directly ("SETTINGS", "BATTERY", "WIFI", "DISPLAY", "STORAGE", "WHATSAPP", or package name).
+            - "WAIT": Wait 4 seconds (use when waiting for a new chat reply or loading).
+            - "DONE": Goal is completely finished (NEVER use if Continuous Monitoring Mode is active).
             
             Return strictly valid JSON:
             {
               "action": "CLICK_NODE",
               "nodeIndex": 3,
-              "x": 1018,
-              "y": 182,
+              "x": 540,
+              "y": 1200,
               "textToType": "",
               "appPackageOrSetting": "",
               "reason": "Brief explanation of this step"
