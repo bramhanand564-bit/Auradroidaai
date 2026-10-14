@@ -14,12 +14,29 @@ data class VideoMetadata(
     val description: String
 )
 
+data class ChatPlanResponse(
+    val replyText: String,
+    val planGoal: String,
+    val planSteps: String,
+    val suggestedMode: String, // "WEB" or "PHONE" or "YOUTUBE"
+    val targetUrl: String
+)
+
 data class AgentDecision(
-    val action: String,
+    val action: String,      // CLICK_NODE, CLICK_XY, TYPE, SCROLL, BACK, WAIT, OPEN_APP, DONE
     val nodeIndex: Int = -1,
     val x: Float = 0f,
     val y: Float = 0f,
     val textToType: String = "",
+    val appPackageOrSetting: String = "",
+    val reason: String = ""
+)
+
+data class WebAgentDecision(
+    val action: String,      // CLICK_EL, TYPE_EL, SCROLL, LOAD_URL, WAIT, DOWNLOAD_URL, CHAIN_YOUTUBE, DONE
+    val elementIndex: Int = -1,
+    val textToType: String = "",
+    val url: String = "",
     val reason: String = ""
 )
 
@@ -48,29 +65,33 @@ object GeminiBrain {
                     discovered.add(rawName)
                 }
             }
-            // Flash मॉडल्स को प्राथमिकता दें
             discovered.sortedByDescending { it.contains("flash", true) }
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    private suspend fun callGeminiApi(apiKey: String, userModel: String, prompt: String): String = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) throw Exception("Gemini API Key missing!")
-        val requested = userModel.trim().removePrefix("models/").ifEmpty { "gemini-flash-latest" }
+    private suspend fun callGeminiApi(
+        apiKey: String,
+        userModel: String,
+        prompt: String,
+        base64ImageJpeg: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) throw Exception("Gemini API Key missing! Settings tab mein jaakar API Key daalein.")
+        val requested = userModel.trim().removePrefix("models/").ifEmpty { "gemini-2.5-flash" }
 
         val candidateSet = linkedSetOf<String>()
         cachedWorkingModel?.let { candidateSet.add(it) }
         candidateSet.add(requested)
+        candidateSet.add("gemini-2.5-flash")
         candidateSet.add("gemini-flash-latest")
         candidateSet.add("gemini-3.1-flash-lite-preview")
-        candidateSet.add("gemini-3-flash-preview")
         candidateSet.add("gemini-2.5-flash-lite")
         candidateSet.add("gemini-2.0-flash")
 
         var lastError = ""
 
-        suspend fun tryModelList(models: Collection<String>): String? {
+        suspend fun tryModels(models: Collection<String>): String? {
             for (modelName in models) {
                 for (attempt in 1..2) {
                     try {
@@ -78,19 +99,25 @@ object GeminiBrain {
                         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                             requestMethod = "POST"
                             setRequestProperty("Content-Type", "application/json")
-                            connectTimeout = 20000
-                            readTimeout = 20000
+                            connectTimeout = 25000
+                            readTimeout = 25000
                             doOutput = true
                         }
 
+                        val partsArray = JSONArray().apply {
+                            put(JSONObject().put("text", prompt))
+                            if (!base64ImageJpeg.isNullOrBlank()) {
+                                put(JSONObject().put("inline_data", JSONObject().apply {
+                                    put("mime_type", "image/jpeg")
+                                    put("data", base64ImageJpeg)
+                                }))
+                            }
+                        }
+
                         val payload = JSONObject().apply {
-                            put("contents", JSONArray().put(
-                                JSONObject().put("parts", JSONArray().put(
-                                    JSONObject().put("text", prompt)
-                                ))
-                            ))
+                            put("contents", JSONArray().put(JSONObject().put("parts", partsArray)))
                             put("generationConfig", JSONObject().apply {
-                                put("temperature", 0.2)
+                                put("temperature", 0.25)
                                 put("responseMimeType", "application/json")
                             })
                         }
@@ -117,7 +144,6 @@ object GeminiBrain {
                                 delay(2000L * attempt)
                                 continue
                             } else {
-                                // 404 या अन्य मॉडल एरर पर तुरंत अगला मॉडल आज़माएं
                                 break
                             }
                         }
@@ -130,18 +156,82 @@ object GeminiBrain {
             return null
         }
 
-        // 1. पहले डिफ़ॉल्ट और यूज़र के मॉडल आज़माएं
-        tryModelList(candidateSet)?.let { return@withContext it }
+        tryModels(candidateSet)?.let { return@withContext it }
 
-        // 2. यदि 404/503 आए तो Google के ListModels से चालू मॉडल खोजें
         val liveModels = fetchAvailableFlashModels(apiKey)
         if (liveModels.isNotEmpty()) {
-            tryModelList(liveModels)?.let { return@withContext it }
+            tryModels(liveModels)?.let { return@withContext it }
         }
 
-        throw Exception("All models busy or unavailable ($lastError)")
+        throw Exception("Gemini API Busy/Error ($lastError)")
     }
 
+    /**
+     * TAB 1: Interactive AI Chat & Step-by-Step Task Planner
+     */
+    suspend fun chatAndBuildPlan(
+        apiKey: String,
+        model: String,
+        userMessage: String,
+        chatHistory: String,
+        memoryVault: String
+    ): ChatPlanResponse {
+        val prompt = """
+            You are AuraDroid Companion Bot, a friendly, smart Hindi/Hinglish speaking Autonomous Android & Web AI Assistant.
+            
+            USER'S SAVED MEMORY VAULT:
+            $memoryVault
+            
+            RECENT CHAT CONVERSATION:
+            ${chatHistory.takeLast(2500)}
+            
+            NEW USER MESSAGE:
+            "$userMessage"
+            
+            Your job:
+            1. Talk naturally to the user in clear Hindi/Hinglish. Answer questions or clarify any confusion.
+            2. Create a clear, numbered Step-by-Step Execution Plan so the user can verify how you will perform the task.
+            3. Decide the best execution mode:
+               - "WEB": If the task involves websites, filling web forms, checking daily free video credit limits, generating/downloading AI videos from a website, or GitHub web actions.
+               - "YOUTUBE": If the task is uploading pending folder videos to YouTube.
+               - "PHONE": If the task involves fixing phone settings (Battery, Wi-Fi, Display, Storage) or controlling native Android apps.
+            4. If a website is mentioned or needed, provide its full URL in targetUrl (or "https://www.google.com" if searching).
+            
+            Respond strictly in valid JSON:
+            {
+              "replyText": "Friendly Hindi/Hinglish reply explaining how you understood the task",
+              "planGoal": "Complete concise instruction of the overall goal for the execution engine",
+              "planSteps": "1. Step one...\n2. Step two...\n3. Step three...",
+              "suggestedMode": "WEB",
+              "targetUrl": "https://..."
+            }
+        """.trimIndent()
+
+        return try {
+            val rawJson = callGeminiApi(apiKey, model, prompt)
+            val clean = rawJson.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            val obj = JSONObject(clean)
+            ChatPlanResponse(
+                replyText = obj.optString("replyText", "Maine aapka kaam samajh liya hai aur plan taiyar kar diya hai."),
+                planGoal = obj.optString("planGoal", userMessage),
+                planSteps = obj.optString("planSteps", "1. Task analyze karein\n2. Action execute karein\n3. Report dein"),
+                suggestedMode = obj.optString("suggestedMode", "WEB").uppercase(),
+                targetUrl = obj.optString("targetUrl", "")
+            )
+        } catch (e: Exception) {
+            ChatPlanResponse(
+                replyText = "⚠️ AI Plan banane mein dikkat aayi: ${e.message}",
+                planGoal = userMessage,
+                planSteps = "1. Execute: $userMessage",
+                suggestedMode = "WEB",
+                targetUrl = ""
+            )
+        }
+    }
+
+    /**
+     * TAB 3: YouTube Viral Title & Description Generator
+     */
     suspend fun generateYouTubeMetadata(
         apiKey: String,
         model: String,
@@ -178,31 +268,111 @@ object GeminiBrain {
         }
     }
 
+    /**
+     * TAB 2: Background Web Studio Agent Brain (Forms, Free Video Limits, AI Video Download, GitHub)
+     */
+    suspend fun decideNextWebAction(
+        apiKey: String,
+        model: String,
+        goal: String,
+        pageUrl: String,
+        pageTextAndElements: String,
+        history: List<String>,
+        memoryVault: String,
+        screenshotBase64: String? = null
+    ): WebAgentDecision {
+        val prompt = """
+            You are an Autonomous Background Web Browser Agent running inside AuraDroid OS.
+            OVERALL GOAL: $goal
+            CURRENT URL: $pageUrl
+            
+            USER'S PERSONAL MEMORY VAULT (Use this data for filling forms, emails, topics, GitHub urls):
+            $memoryVault
+            
+            RECENT ACTIONS TAKEN:
+            ${history.takeLast(8).joinToString("\n")}
+            
+            CURRENT WEBPAGE INTERACTIVE ELEMENTS & VISIBLE TEXT:
+            $pageTextAndElements
+            
+            Rules:
+            - If checking daily free video credit/limit, inspect the page text and proceed if credits exist.
+            - If generating a story/film video, type a detailed prompt into the prompt input/textarea and click Generate/Create.
+            - If the webpage says "Generating...", "Processing...", or "Loading...", choose action "WAIT" so we wait patiently until the video is ready!
+            - If a video or file is ready to download (or you see a .mp4 link or Download button), click the Download button or return "DOWNLOAD_URL".
+            - If the goal also asks to upload the downloaded video to YouTube after downloading, return "CHAIN_YOUTUBE" once download is triggered.
+            
+            Available actions:
+            - "CLICK_EL": Click interactive webpage element by its elementIndex.
+            - "TYPE_EL": Type/fill text into input/textarea at elementIndex (provide textToType).
+            - "SCROLL": Scroll down the webpage to see more fields/buttons.
+            - "LOAD_URL": Navigate directly to a specific URL (provide url).
+            - "DOWNLOAD_URL": Direct download of a video/file URL found on page (provide url).
+            - "WAIT": Wait 5 seconds (use when AI video is generating or page is loading).
+            - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
+            - "DONE": Goal is 100% completed.
+            
+            Respond strictly in valid JSON:
+            {
+              "action": "CLICK_EL",
+              "elementIndex": 2,
+              "textToType": "",
+              "url": "",
+              "reason": "Short clear status message for the user"
+            }
+        """.trimIndent()
+
+        return try {
+            val rawJson = callGeminiApi(apiKey, model, prompt, screenshotBase64)
+            val clean = rawJson.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            val obj = JSONObject(clean)
+            WebAgentDecision(
+                action = obj.optString("action", "WAIT").uppercase(),
+                elementIndex = obj.optInt("elementIndex", -1),
+                textToType = obj.optString("textToType", ""),
+                url = obj.optString("url", ""),
+                reason = obj.optString("reason", "Analyzing webpage...")
+            )
+        } catch (e: Exception) {
+            WebAgentDecision(action = "WAIT", reason = "Retrying after network pause...")
+        }
+    }
+
+    /**
+     * TAB 4 & UNIVERSAL: Phone Screen & Settings Doctor Brain (Supports Screenshot Vision!)
+     */
     suspend fun decideNextUiAction(
         apiKey: String,
         model: String,
         goal: String,
         screenSummary: String,
-        history: List<String>
+        history: List<String>,
+        memoryVault: String = "",
+        screenshotBase64: String? = null
     ): AgentDecision {
         val prompt = """
-            You are an Autonomous Android UI Accessibility Agent controlling an Android phone screen.
+            You are an Autonomous Android UI & Phone Doctor Agent controlling an Android phone.
             OVERALL GOAL: $goal
             
-            RECENT ACTIONS HISTORY:
-            ${history.takeLast(6).joinToString("\n")}
+            USER'S SAVED MEMORY VAULT:
+            $memoryVault
             
-            CURRENT SCREEN UI ELEMENTS (Index | Text | ContentDesc | ViewId | Editable | Clickable | BoundsCenterXY):
+            RECENT ACTIONS HISTORY:
+            ${history.takeLast(8).joinToString("\n")}
+            
+            CURRENT SCREEN UI ELEMENTS (Index | Text | ContentDesc | ViewId | Editable | Clickable | CenterXY):
             $screenSummary
             
-            Decide the single next action to complete the GOAL.
             Available actions:
-            - "CLICK_NODE": Click a specific node by its index.
-            - "CLICK_XY": Tap exact screen coordinates (x, y).
+            - "CLICK_NODE": Click a specific UI node by its nodeIndex.
+            - "CLICK_XY": Tap exact screen coordinates (x, y) (especially useful if you see an unlabeled icon in the screenshot).
             - "TYPE": Type text into an editable field (specify nodeIndex and textToType).
-            - "SCROLL": Scroll down to see more UI elements.
+            - "SCROLL": Scroll down to see more settings or options.
+            - "BACK": Press Android Back button.
+            - "OPEN_APP": Open an Android System Setting or App directly. Set appPackageOrSetting to one of:
+                "SETTINGS", "BATTERY", "WIFI", "DISPLAY", "STORAGE", "SOUND", "BLUETOOTH", "APPS", or a package name like "com.whatsapp", "com.android.chrome", "com.google.android.youtube".
             - "WAIT": Wait 3 seconds if screen is loading.
-            - "DONE": Goal is completely finished (e.g. Upload/Publish button was clicked).
+            - "DONE": Goal is completely finished.
             
             Return strictly valid JSON:
             {
@@ -211,24 +381,26 @@ object GeminiBrain {
               "x": 540,
               "y": 1200,
               "textToType": "",
-              "reason": "Brief explanation"
+              "appPackageOrSetting": "",
+              "reason": "Brief explanation of this step"
             }
         """.trimIndent()
 
         return try {
-            val rawJson = callGeminiApi(apiKey, model, prompt)
+            val rawJson = callGeminiApi(apiKey, model, prompt, screenshotBase64)
             val clean = rawJson.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             val obj = JSONObject(clean)
             AgentDecision(
-                action = obj.optString("action", "WAIT"),
+                action = obj.optString("action", "WAIT").uppercase(),
                 nodeIndex = obj.optInt("nodeIndex", -1),
                 x = obj.optDouble("x", 540.0).toFloat(),
                 y = obj.optDouble("y", 1000.0).toFloat(),
                 textToType = obj.optString("textToType", ""),
+                appPackageOrSetting = obj.optString("appPackageOrSetting", ""),
                 reason = obj.optString("reason", "Proceeding")
             )
         } catch (e: Exception) {
-            AgentDecision(action = "WAIT", reason = "API retry wait: ${e.message}")
+            AgentDecision(action = "WAIT", reason = "Waiting for response...")
         }
     }
 }
