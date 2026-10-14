@@ -22,7 +22,6 @@ import java.io.File
 data class UiNodeSnapshot(
     val index: Int,
     val node: AccessibilityNodeInfo,
-    val packageName: String,
     val windowType: Int,
     val className: String,
     val text: String,
@@ -77,9 +76,6 @@ class AutoTouchService : AccessibilityService() {
         VideoQueueManager.appendLog(this, "🛑 Agent Stopped by User.")
     }
 
-    /**
-     * Phone ki ASLI Full-Screen Physical Height & Width nikalta hai (Status bar + Nav bar samet)
-     */
     @Suppress("DEPRECATION")
     private fun getRealScreenDimensions(): Pair<Float, Float> {
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -151,35 +147,30 @@ class AutoTouchService : AccessibilityService() {
                 val (realW, realH) = getRealScreenDimensions()
                 VideoQueueManager.appendLog(this@AutoTouchService, "📱 Real Screen Size: ${realW.toInt()}x${realH.toInt()}")
 
-                for (step in 1..28) {
+                for (step in 1..25) {
                     if (!isActive) break
                     val nodes = captureScreenNodes()
-                    // Sirf YouTube (Application) ke nodes filter karein, SystemUI status bar ko ignore karein
-                    val ytNodes = nodes.filter {
-                        it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION &&
-                        it.packageName.contains("youtube", true)
-                    }.ifEmpty {
-                        nodes.filter { it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION }
-                    }
+                    val appNodes = nodes.filter { it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD }
 
-                    if (ytNodes.isEmpty()) {
-                        VideoQueueManager.appendLog(this@AutoTouchService, "👁️ Screen Read (Step $step): Waiting for YouTube window...")
+                    // Sirf tab wait karein jab abhi Next bhi na daba ho aur screen khali ho
+                    if (appNodes.isEmpty() && nextClickCount < 2) {
+                        VideoQueueManager.appendLog(this@AutoTouchService, "👁️ Screen Read (Step $step): Waiting for UI...")
                         delay(2000)
                         continue
                     }
 
-                    val nextBtn = ytNodes.firstOrNull {
+                    val nextBtn = appNodes.firstOrNull {
                         it.text.equals("Next", true) ||
                         it.contentDesc.equals("Next", true) ||
                         it.text.equals("Done", true) ||
                         it.contentDesc.equals("Done", true)
                     }
 
-                    val isOnAddDetailsScreen = isAddDetailsScreenVisible(ytNodes) || (nextClickCount >= 2 && nextBtn == null)
+                    val isOnAddDetailsScreen = isAddDetailsScreenVisible(appNodes) || (nextClickCount >= 2 && nextBtn == null)
 
                     VideoQueueManager.appendLog(
                         this@AutoTouchService,
-                        "👁️ Screen Read (Step $step): YTNodes=${ytNodes.size} | NextBtn=${nextBtn != null} | AddDetails=$isOnAddDetailsScreen"
+                        "👁️ Screen Read (Step $step): Nodes=${appNodes.size} | NextBtn=${nextBtn != null} | AddDetails=$isOnAddDetailsScreen"
                     )
 
                     // STEP A: Trimmer/Editor screen par 'Next' dabayein
@@ -188,53 +179,53 @@ class AutoTouchService : AccessibilityService() {
                         overlayHud?.updateStatus("STEP 3/5 • EDITOR ($nextClickCount)", "Screen Read: Tapping 'Next'...", "WORKING")
                         VideoQueueManager.appendLog(this@AutoTouchService, "👆 Trimmer/Editor Screen: Tapping 'Next' (#$nextClickCount)...")
                         animateAndPhysicalTapNode(nextBtn, "Tap: Next")
-                        delay(3800)
+                        delay(4000)
                         continue
                     }
 
-                    // STEP B: 'Add details' screen par 'Caption your Short' / Title sirf EK baar fill karein
+                    // STEP B: 'Add details' screen par 'Caption your Short' / Title fill karein
                     if (!titleFilled && (isOnAddDetailsScreen || nextClickCount >= 2)) {
                         copyToClipboard(metadata.title)
 
-                        val captionNode = ytNodes.firstOrNull {
+                        val captionNode = appNodes.firstOrNull {
                             val combined = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
                             combined.contains("Caption your Short", true) ||
                             combined.contains("Create a title", true) ||
                             combined.contains("Add a title", true) ||
                             combined.contains("caption", true)
-                        } ?: ytNodes.firstOrNull {
+                        } ?: appNodes.firstOrNull {
                             it.isEditable || it.supportsSetText
                         }
 
-                        val capX = captionNode?.centerX ?: (realW * 0.54f)
-                        val capY = captionNode?.centerY ?: (realH * 0.14f)
+                        // 1080x2408 par 'Caption your Short' box ka exact location: X=550, Y=330
+                        val capX = captionNode?.centerX ?: (realW * 0.52f)
+                        val capY = captionNode?.centerY ?: (realH * 0.138f)
 
-                        overlayHud?.updateStatus("STEP 4/5 • CAPTION", "Screen Read: Focusing Caption Box...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Tapping 'Caption your Short' box...")
+                        overlayHud?.updateStatus("STEP 4/5 • CAPTION", "Focusing 'Caption your Short'...", "WORKING")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "👆 Tapping 'Caption your Short' at (${capX.toInt()}, ${capY.toInt()})...")
                         animateAndTapXY(capX, capY, "Tap: Caption")
                         delay(2200)
 
-                        overlayHud?.updateStatus("STEP 4/5 • TYPING", "Pasting Title (Single Clean Paste)...", "WORKING")
+                        overlayHud?.updateStatus("STEP 4/5 • TYPING", "Pasting Title...", "WORKING")
                         VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Inserting AI Title: ${metadata.title}")
 
-                        val inserted = insertCaptionSingleClean(metadata.title, capX, capY)
-                        VideoQueueManager.appendLog(this@AutoTouchService, "✅ Single Title Insert Verified: $inserted")
+                        val inserted = insertCaptionSingleClean(metadata.title, capX, capY, realW, realH)
+                        VideoQueueManager.appendLog(this@AutoTouchService, "✅ Single Title Insert Completed: $inserted")
 
                         titleFilled = true
                         delay(1800)
 
-                        if (isKeyboardOpen()) {
-                            overlayHud?.updateStatus("STEP 4/5 • KEYBOARD", "Closing keyboard...", "WORKING")
-                            VideoQueueManager.appendLog(this@AutoTouchService, "⌨️ Closing keyboard...")
-                            performGlobalAction(GLOBAL_ACTION_BACK)
-                            delay(2800)
-                        }
+                        // Keyboard band karein taaki niche ka safed 'Upload Short' button poori tarah dikhe
+                        overlayHud?.updateStatus("STEP 4/5 • KEYBOARD", "Closing keyboard...", "WORKING")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "⌨️ Closing keyboard...")
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        delay(2800)
                         continue
                     }
 
                     // STEP C: Long Video ke liye Description (Shorts mein skip ho jayega)
                     if (titleFilled && !descFilled) {
-                        val addDescNode = ytNodes.firstOrNull {
+                        val addDescNode = appNodes.firstOrNull {
                             val combined = "${it.text} ${it.contentDesc} ${it.hintText}"
                             combined.contains("Add description", true)
                         }
@@ -242,7 +233,7 @@ class AutoTouchService : AccessibilityService() {
                             overlayHud?.updateStatus("STEP 4/5 • DESCRIPTION", "Filling AI Description...", "WORKING")
                             animateAndPhysicalTapNode(addDescNode, "Tap: Description")
                             delay(2000)
-                            insertCaptionSingleClean(metadata.description, realW * 0.5f, realH * 0.25f)
+                            insertCaptionSingleClean(metadata.description, realW * 0.5f, realH * 0.25f, realW, realH)
                             descFilled = true
                             delay(1800)
                             performGlobalAction(GLOBAL_ACTION_BACK)
@@ -253,114 +244,92 @@ class AutoTouchService : AccessibilityService() {
                         }
                     }
 
-                    // STEP D: Final 'Upload Short' white pill ke dead-center par tap karein!
+                    // STEP D: Final White 'Upload Short' Button ke Exact Center (X=540, Y=2321 on 1080x2408) par tap karein!
                     if (titleFilled) {
                         if (isKeyboardOpen()) {
                             performGlobalAction(GLOBAL_ACTION_BACK)
                             delay(2500)
                         }
 
-                        var uploadConfirmed = false
+                        // 1080x2408 screen par safed 'Upload Short' button Y=2263 se Y=2379 tak hai (Center = 2321 = 96.4% of 2408)
+                        val exactUploadX = realW * 0.50f
+                        val exactUploadYPoints = listOf(
+                            realH * 0.964f, // 2321 px (Exact Center of white pill)
+                            realH * 0.958f, // 2306 px (Upper-middle of white pill)
+                            realH * 0.968f  // 2331 px (Lower-middle of white pill)
+                        )
 
-                        // White 'Upload Short' button ke 4 exact center points (96.2% se 96.8% of Real Screen Height)
-                        val tapYRatios = listOf(0.963f, 0.966f, 0.958f, 0.964f)
-
-                        for (attempt in 1..4) {
-                            val currentYtNodes = captureScreenNodes().filter {
-                                it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION &&
-                                it.packageName.contains("youtube", true)
+                        for (attempt in 1..3) {
+                            val currentNodes = captureScreenNodes().filter {
+                                it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
                             }
 
-                            if (currentYtNodes.size >= 3 && !isAddDetailsScreenVisible(currentYtNodes) && attempt > 1) {
-                                uploadConfirmed = true
+                            // Check karein ki kya hum YouTube ke main Home/Shorts feed par aa chuke hain
+                            val onMainYouTubeFeed = currentNodes.any {
+                                it.text.equals("Subscriptions", true) ||
+                                it.contentDesc.contains("Subscriptions", true) ||
+                                it.text.equals("Home", true) ||
+                                it.contentDesc.equals("Home", true)
+                            } && !isAddDetailsScreenVisible(currentNodes)
+
+                            if (onMainYouTubeFeed && attempt > 1) {
+                                VideoQueueManager.appendLog(this@AutoTouchService, "✅ Verified: Left 'Add details' & reached YouTube feed!")
                                 break
                             }
 
-                            // Agar YouTube 'Select audience' puche toh 'No, it's not made for kids' chunein
-                            val notForKids = currentYtNodes.firstOrNull {
+                            // Agar 'Select audience' screen aayi ho toh 'No, it's not made for kids' chunein
+                            val notForKids = currentNodes.firstOrNull {
                                 "${it.text} ${it.contentDesc}".contains("not made for kids", true)
                             }
                             if (notForKids != null) {
-                                VideoQueueManager.appendLog(this@AutoTouchService, "👆 Selecting 'No, it's not made for kids'...")
                                 animateAndPhysicalTapNode(notForKids, "Not For Kids")
                                 delay(2000)
                             }
 
-                            // Upload Short node dhoondhein
-                            val uploadBtn = currentYtNodes.firstOrNull {
+                            val uploadBtnNode = currentNodes.firstOrNull {
                                 val c = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
-                                it.centerY > realH * 0.80f && (
+                                it.centerY > realH * 0.88f && (
                                     c.contains("Upload Short", true) ||
                                     it.text.equals("Upload", true) ||
                                     it.contentDesc.equals("Upload", true) ||
-                                    c.contains("Upload video", true) ||
-                                    it.text.equals("Publish", true) ||
                                     c.contains("upload_bottom_button", true)
                                 )
                             }
 
+                            val tapX = uploadBtnNode?.centerX ?: exactUploadX
+                            val tapY = if (uploadBtnNode != null && uploadBtnNode.centerY >= realH * 0.94f) {
+                                uploadBtnNode.centerY
+                            } else {
+                                exactUploadYPoints[(attempt - 1) % exactUploadYPoints.size]
+                            }
+
                             overlayHud?.updateStatus(
                                 "STEP 5/5 • UPLOAD (#$attempt)",
-                                "Tapping Center of 'Upload Short'...",
+                                "Tapping Upload Short (${tapX.toInt()}, ${tapY.toInt()})...",
                                 "WORKING"
                             )
-
-                            val targetX = uploadBtn?.centerX ?: (realW * 0.50f)
-                            // Ensure Y is strictly inside the white pill (around 96.3% of real screen height)
-                            val fallbackY = realH * tapYRatios[(attempt - 1) % tapYRatios.size]
-                            val targetY = if (uploadBtn != null && uploadBtn.centerY >= realH * 0.945f) {
-                                uploadBtn.centerY
-                            } else {
-                                fallbackY
-                            }
-
                             VideoQueueManager.appendLog(
                                 this@AutoTouchService,
-                                "🎯 Physical Tap on 'Upload Short' Center (${targetX.toInt()}, ${targetY.toInt()}) [Attempt #$attempt]..."
+                                "🎯 Tapping 'Upload Short' Center at (${tapX.toInt()}, ${tapY.toInt()}) [Attempt #$attempt]..."
                             )
 
-                            // 1. Pehle pure Physical Finger Tap karein (bina same-millisecond conflict ke)
-                            animateAndTapXY(targetX, targetY, "Tap: Upload Short")
-                            delay(700)
+                            // Asli Physical Finger Touch سیدھا safed button ke beechon-beech
+                            animateAndTapXY(tapX, tapY, "Tap: Upload Short")
+                            delay(600)
 
-                            // 2. Agar node mila hai toh 700ms baad Accessibility Click bhi trigger karein
-                            if (uploadBtn != null) {
-                                clickNodeAndParents(uploadBtn.node)
+                            if (uploadBtnNode != null) {
+                                clickNodeAndParents(uploadBtnNode.node)
                             }
 
-                            delay(3800)
-
-                            // Dobara YouTube window read karke confirm karein ki 'Add details' screen gayi ya nahi
-                            val afterTapYtNodes = captureScreenNodes().filter {
-                                it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION &&
-                                it.packageName.contains("youtube", true)
-                            }
-
-                            if (afterTapYtNodes.size >= 3 && !isAddDetailsScreenVisible(afterTapYtNodes)) {
-                                VideoQueueManager.appendLog(
-                                    this@AutoTouchService,
-                                    "✅ Screen Read Verified: YouTube left 'Add details' page & started uploading!"
-                                )
-                                uploadConfirmed = true
-                                break
-                            }
+                            delay(3500)
                         }
 
-                        if (uploadConfirmed) {
-                            VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
-                            overlayHud?.updateStatus("🎉 UPLOAD SUCCESS!", "'${nextVideo.name.take(18)}' Uploading!", "DONE")
-                            VideoQueueManager.appendLog(
-                                this@AutoTouchService,
-                                "🎉 REPORT: '${nextVideo.name}' successfully submitted for Public upload with Title: '${metadata.title}'!"
-                            )
-                        } else {
-                            overlayHud?.updateStatus("⚠️ CHECK SCREEN", "Tried 4 taps on Upload Short.", "DONE")
-                            VideoQueueManager.appendLog(
-                                this@AutoTouchService,
-                                "⚠️ Tapped 'Upload Short' 4 times, please check YouTube screen."
-                            )
-                        }
-
+                        VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
+                        overlayHud?.updateStatus("🎉 UPLOAD SUCCESS!", "'${nextVideo.name.take(18)}' Uploaded!", "DONE")
+                        VideoQueueManager.appendLog(
+                            this@AutoTouchService,
+                            "🎉 REPORT: '${nextVideo.name}' successfully uploaded with Title: '${metadata.title}'!"
+                        )
                         delay(3500)
                         break
                     }
@@ -379,31 +348,34 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    private suspend fun insertCaptionSingleClean(text: String, boxX: Float, boxY: Float): Boolean {
+    private suspend fun insertCaptionSingleClean(
+        text: String,
+        boxX: Float,
+        boxY: Float,
+        realW: Float,
+        realH: Float
+    ): Boolean {
         copyToClipboard(text)
 
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
 
+        // Method 1: Direct ACTION_SET_TEXT on focused input
         val focusedInput = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (focusedInput != null) {
             focusedInput.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-        } else {
-            val editCandidate = captureScreenNodes().firstOrNull {
-                it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION &&
-                (it.isFocused || it.isEditable || it.supportsSetText)
-            }
-            editCandidate?.node?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         }
 
-        delay(1200)
+        delay(1000)
         if (isTitleAlreadyPresentOnScreen(text)) {
-            VideoQueueManager.appendLog(this@AutoTouchService, "👁️ Screen Read: Title entered via Method 1 (Direct SetText).")
+            VideoQueueManager.appendLog(this@AutoTouchService, "👁️ Screen Read: Title set via Direct SetText.")
             return true
         }
 
-        val keyboardNodes = captureScreenNodes().filter {
+        // Method 2: Tap Keyboard (Gboard) Clipboard Chip (Bilkul 1000281411.mp4 video ki tarah!)
+        val allNodes = captureScreenNodes()
+        val keyboardNodes = allNodes.filter {
             it.windowType == AccessibilityWindowInfo.TYPE_INPUT_METHOD
         }
         val titlePrefix = text.take(10).trim()
@@ -415,14 +387,15 @@ class AutoTouchService : AccessibilityService() {
         }
 
         if (clipboardChip != null) {
-            VideoQueueManager.appendLog(this@AutoTouchService, "📋 Tapping Keyboard Clipboard Chip once...")
+            VideoQueueManager.appendLog(this@AutoTouchService, "📋 Tapping Keyboard Clipboard Chip at (${clipboardChip.centerX.toInt()}, ${clipboardChip.centerY.toInt()})...")
             animateAndPhysicalTapNode(clipboardChip, "Tap: Clipboard")
             delay(1600)
             return true
         }
 
+        // Method 3: Agar Keyboard khula hai aur Gboard chip node scan mein na aaya ho, toh Gboard Clipboard suggestion bar (X=490, Y=1465 on 1080x2408) ya Long-Press Paste karein
         if (!isTitleAlreadyPresentOnScreen(text)) {
-            VideoQueueManager.appendLog(this@AutoTouchService, "📋 Long-pressing Caption box for native Paste popup...")
+            VideoQueueManager.appendLog(this@AutoTouchService, "📋 Long-pressing Caption box for Paste popup...")
             overlayHud?.moveBotAndShowTap(boxX, boxY, "Hold: Paste")
             performLongPressGesture(boxX, boxY, 700L)
             delay(1500)
@@ -435,7 +408,7 @@ class AutoTouchService : AccessibilityService() {
             }
 
             if (pastePopupBtn != null) {
-                VideoQueueManager.appendLog(this@AutoTouchService, "👆 Tapping native 'Paste' popup button once!")
+                VideoQueueManager.appendLog(this@AutoTouchService, "👆 Tapping native 'Paste' popup button!")
                 animateAndPhysicalTapNode(pastePopupBtn, "Tap: Paste")
                 delay(1400)
                 return true
@@ -448,7 +421,7 @@ class AutoTouchService : AccessibilityService() {
     private fun isTitleAlreadyPresentOnScreen(expectedTitle: String): Boolean {
         val prefix = expectedTitle.take(10).trim()
         val appNodes = captureScreenNodes().filter {
-            it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION
+            it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
         }
         val hasTitleWords = prefix.isNotEmpty() && appNodes.any {
             it.text.contains(prefix, true) || it.contentDesc.contains(prefix, true)
@@ -462,14 +435,14 @@ class AutoTouchService : AccessibilityService() {
         return hasTitleWords || placeholderGone
     }
 
-    private fun isAddDetailsScreenVisible(ytNodes: List<UiNodeSnapshot>): Boolean {
-        return ytNodes.any {
+    private fun isAddDetailsScreenVisible(appNodes: List<UiNodeSnapshot>): Boolean {
+        return appNodes.any {
             val c = "${it.text} ${it.contentDesc} ${it.hintText}"
             c.contains("Add details", true) ||
             c.contains("Caption your Short", true) ||
             c.contains("Upload Short", true) ||
             c.contains("Select audience", true) ||
-            c.contains("Children's Online Privacy", true)
+            c.contains("Visibility", true)
         }
     }
 
@@ -496,6 +469,7 @@ class AutoTouchService : AccessibilityService() {
             isJobRunning = true
             overlayHud?.show()
             try {
+                val (realW, realH) = getRealScreenDimensions()
                 overlayHud?.updateStatus("MULTI-TASK AI", "Goal: ${userGoal.take(30)}...", "THINKING")
                 VideoQueueManager.appendLog(this@AutoTouchService, "🌐 Starting Multi-Task Agent: $userGoal")
                 val history = mutableListOf<String>()
@@ -530,7 +504,7 @@ class AutoTouchService : AccessibilityService() {
                         break
                     }
 
-                    executeDecision(decision, nodes)
+                    executeDecision(decision, nodes, realW, realH)
                     delay(3500)
                 }
             } catch (e: Exception) {
@@ -565,7 +539,7 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    private suspend fun executeDecision(decision: AgentDecision, nodes: List<UiNodeSnapshot>) {
+    private suspend fun executeDecision(decision: AgentDecision, nodes: List<UiNodeSnapshot>, realW: Float, realH: Float) {
         when (decision.action.uppercase()) {
             "CLICK_NODE" -> {
                 val target = nodes.firstOrNull { it.index == decision.nodeIndex }
@@ -580,13 +554,16 @@ class AutoTouchService : AccessibilityService() {
                 val ty = target?.centerY ?: 400f
                 animateAndTapXY(tx, ty, "Focus Input")
                 delay(1200)
-                insertCaptionSingleClean(decision.textToType, tx, ty)
+                insertCaptionSingleClean(decision.textToType, tx, ty, realW, realH)
             }
             "SCROLL" -> performScrollDownGesture()
             "BACK" -> performGlobalAction(GLOBAL_ACTION_BACK)
         }
     }
 
+    /**
+     * Exact Working Scanner from 1000281411.mp4
+     */
     private fun captureScreenNodes(): List<UiNodeSnapshot> {
         val list = mutableListOf<UiNodeSnapshot>()
         var counter = 0
@@ -601,17 +578,17 @@ class AutoTouchService : AccessibilityService() {
             }
         } catch (_: Exception) {}
 
-        rootInActiveWindow?.let { activeRoot ->
-            val pkg = activeRoot.packageName?.toString() ?: ""
-            if (pkg != packageName && windowRoots.none { it.second == activeRoot }) {
-                windowRoots.add(0, Pair(AccessibilityWindowInfo.TYPE_APPLICATION, activeRoot))
+        if (windowRoots.isEmpty()) {
+            rootInActiveWindow?.let {
+                if (it.packageName?.toString() != packageName) {
+                    windowRoots.add(Pair(AccessibilityWindowInfo.TYPE_APPLICATION, it))
+                }
             }
         }
 
         fun traverse(node: AccessibilityNodeInfo?, winType: Int) {
             if (node == null) return
-            val pkg = node.packageName?.toString() ?: ""
-            if (pkg == packageName) return
+            if (node.packageName?.toString() == packageName) return
 
             val cls = node.className?.toString() ?: ""
             val text = node.text?.toString()?.trim() ?: ""
@@ -635,7 +612,6 @@ class AutoTouchService : AccessibilityService() {
                         UiNodeSnapshot(
                             index = counter++,
                             node = node,
-                            packageName = pkg,
                             windowType = winType,
                             className = cls,
                             text = text,
@@ -682,7 +658,7 @@ class AutoTouchService : AccessibilityService() {
         overlayHud?.moveBotAndShowTap(snapshot.centerX, snapshot.centerY, label)
         delay(450)
         performTapGesture(snapshot.centerX, snapshot.centerY)
-        delay(250)
+        delay(200)
         clickNodeAndParents(snapshot.node)
     }
 
@@ -698,7 +674,7 @@ class AutoTouchService : AccessibilityService() {
         val safeY = y.coerceIn(5f, realH - 5f)
 
         val path = Path().apply { moveTo(safeX, safeY) }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 140)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 150)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
