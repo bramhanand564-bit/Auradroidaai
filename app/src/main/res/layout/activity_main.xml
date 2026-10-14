@@ -6,15 +6,15 @@
     android:background="#121316"
     android:orientation="vertical">
 
-    <!-- HEADER -->
+    <!-- HEADER BAR -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="#181A20"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingHorizontal="18dp"
-        android:paddingVertical="14dp">
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp">
 
         <LinearLayout
             android:layout_width="0dp"
@@ -27,7 +27,7 @@
                 android:layout_height="wrap_content"
                 android:text="AuraDroid OS"
                 android:textColor="#F8FAFC"
-                android:textSize="22sp"
+                android:textSize="20sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -37,19 +37,19 @@
                 android:layout_marginTop="2dp"
                 android:text="Universal Autonomous AI Companion"
                 android:textColor="#94A3B8"
-                android:textSize="13sp" />
+                android:textSize="12.5sp" />
         </LinearLayout>
 
         <Button
             android:id="@+id/btnToggleFloatingPod"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
+            android:layout_height="36dp"
             android:layout_marginEnd="8dp"
             android:backgroundTint="#262932"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:paddingHorizontal="12dp"
-            android:text="Pod: ON"
+            android:text="Bot: ON"
             android:textAllCaps="false"
             android:textColor="#F8FAFC"
             android:textSize="12sp" />
@@ -59,11 +59,11 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="#262932"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="7dp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="6dp"
             android:text="TOUCH: OFF"
             android:textColor="#F87171"
-            android:textSize="12sp"
+            android:textSize="11.5sp"
             android:textStyle="bold" />
     </LinearLayout>
 
@@ -72,13 +72,15 @@
         android:layout_height="1dp"
         android:background="#262932" />
 
-    <!-- 5-TAB CONTAINER -->
+    <!-- 5-TAB MAIN CONTAINER -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <!-- TAB 1: UNIVERSAL AI CHAT & PLANNER -->
+        <!-- ========================================================= -->
+        <!-- TAB 1: UNIVERSAL AI CHAT & PLANNER                        -->
+        <!-- ========================================================= -->
         <ScrollView
             android:id="@+id/tabChatLayout"
             android:layout_width="match_parent"
@@ -142,20 +144,20 @@
                             android:layout_marginTop="12dp"
                             android:background="#121316"
                             android:lineSpacingExtra="5dp"
-                            android:minHeight="170dp"
+                            android:minHeight="160dp"
                             android:padding="14dp"
-                            android:text="🤖 Companion Bot:नमस्ते! मैं आपका Universal AI हूँ। आप मुझसे दुनिया का कोई भी काम करवा सकते हैं (जैसे वेबसाइट फॉर्म भरना, वीडियो बनाना, ऐप चलाना, सेटिंग्स ठीक करना या कुछ भी)।\n\nपहले मुझे यहाँ लिखकर या बोलकर अपना काम समझाएं!"
+                            android:text="🤖 Companion Bot: नमस्ते भाई! मुझे कोई भी काम बताइए—चाहे Google Flow से 8-सेकंड की वीडियो बनाकर YouTube पर डालना हो, WhatsApp पर लगातार चैट मॉनिटर करना हो, या कोई वेबसाइट फॉर्म भरना हो।\n\nपहले यहाँ बात करके प्लान लॉक करें!"
                             android:textColor="#E2E8F0"
                             android:textSize="15sp" />
 
                         <EditText
                             android:id="@+id/etChatInput"
                             android:layout_width="match_parent"
-                            android:layout_height="95dp"
+                            android:layout_height="90dp"
                             android:layout_marginTop="12dp"
                             android:background="#22252E"
                             android:gravity="top|start"
-                            android:hint="अपना काम यहाँ बताएं..."
+                            android:hint="अपना काम यहाँ लिखें या माइक से बोलें..."
                             android:padding="14dp"
                             android:textColor="#FFFFFF"
                             android:textColorHint="#64748B"
@@ -240,7 +242,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:checked="true"
-                                android:text="🌐 Background Web Pod (फोन फ्री रहेगा, पॉड में काम चलेगा)"
+                                android:text="🌐 Background Web Browser (फोन फ्री रहेगा, अंदर काम चलेगा)"
                                 android:textColor="#F8FAFC"
                                 android:textSize="14sp" />
 
@@ -288,19 +290,21 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- TAB 2: BACKGROUND WEB STUDIO -->
+        <!-- ========================================================= -->
+        <!-- TAB 2: FULL-CONTROL IN-APP BROWSER (GMAIL & GOOGLE FLOW)  -->
+        <!-- ========================================================= -->
         <LinearLayout
             android:id="@+id/tabWebLayout"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:padding="14dp"
+            android:padding="10dp"
             android:visibility="gone">
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
+                android:layout_marginBottom="8dp"
                 app:cardBackgroundColor="#181A20"
                 app:cardCornerRadius="14dp"
                 app:strokeColor="#262932"
@@ -310,16 +314,124 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="12dp">
+                    android:padding="10dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <!-- Browser Navigation Bar (Back, Forward, Refresh, Desktop, Downloads, Quick Links) -->
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="🌐 Background Web Studio"
-                        android:textColor="#F8FAFC"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
+                        android:scrollbars="none">
 
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnBrowserBack"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minWidth="48dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="⬅ Back"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserForward"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minWidth="48dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="Next ➡"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserRefresh"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="🔄 Reload"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserFlow"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#2563EB"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="12dp"
+                                android:text="🎬 Google Flow"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12.5sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnBrowserGmail"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="🔑 Google Login"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserDesktop"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="🖥️ Desktop: OFF"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserDownloads"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="📥 Downloads"
+                                android:textAllCaps="false"
+                                android:textColor="#10B981"
+                                android:textSize="12.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </HorizontalScrollView>
+
+                    <!-- URL Bar + Save Target Button -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -329,64 +441,86 @@
                         <EditText
                             android:id="@+id/etWebUrl"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="42dp"
                             android:layout_weight="1"
                             android:background="#22252E"
-                            android:hint="https://..."
+                            android:hint="https://labs.google/fx/tools/flow"
                             android:inputType="textUri"
                             android:paddingHorizontal="12dp"
                             android:singleLine="true"
-                            android:text="https://gemini.google.com"
+                            android:text="https://labs.google/fx/tools/flow"
                             android:textColor="#FFFFFF"
                             android:textColorHint="#64748B"
-                            android:textSize="14sp" />
+                            android:textSize="13.5sp" />
 
                         <Button
                             android:id="@+id/btnWebGo"
                             android:layout_width="wrap_content"
-                            android:layout_height="44dp"
+                            android:layout_height="42dp"
                             android:layout_marginStart="6dp"
                             android:backgroundTint="#3B82F6"
-                            android:text="खोलें"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minWidth="56dp"
+                            android:text="Go"
                             android:textAllCaps="false"
                             android:textColor="#FFFFFF"
-                            android:textSize="14sp" />
+                            android:textSize="13.5sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            android:id="@+id/btnPinFlowUrl"
+                            android:layout_width="wrap_content"
+                            android:layout_height="42dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#262932"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="10dp"
+                            android:text="📌 Pin"
+                            android:textAllCaps="false"
+                            android:textColor="#10B981"
+                            android:textSize="13sp" />
                     </LinearLayout>
 
+                    <!-- Optional AI Web Task Trigger (Only runs when YOU click ▶ AI चलाएं) -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="6dp"
                         android:orientation="horizontal">
 
                         <EditText
                             android:id="@+id/etWebTaskGoal"
                             android:layout_width="0dp"
-                            android:layout_height="44dp"
+                            android:layout_height="40dp"
                             android:layout_weight="1"
                             android:background="#22252E"
-                            android:hint="वेबसाइट पर क्या करना है?"
+                            android:hint="पहले खुद लॉगिन करें, फिर चाहें तो AI को काम दें..."
                             android:paddingHorizontal="12dp"
                             android:singleLine="true"
                             android:textColor="#FFFFFF"
                             android:textColorHint="#64748B"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
 
                         <Button
                             android:id="@+id/btnRunWebAgent"
                             android:layout_width="wrap_content"
-                            android:layout_height="44dp"
+                            android:layout_height="40dp"
                             android:layout_marginStart="6dp"
                             android:backgroundTint="#10B981"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
                             android:text="▶ AI चलाएं"
                             android:textAllCaps="false"
                             android:textColor="#FFFFFF"
-                            android:textSize="14sp"
+                            android:textSize="13sp"
                             android:textStyle="bold" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Interactive Manual & AI WebView Container -->
             <FrameLayout
                 android:id="@+id/webPreviewContainer"
                 android:layout_width="match_parent"
@@ -395,7 +529,9 @@
                 android:background="#0D0E11" />
         </LinearLayout>
 
-        <!-- TAB 3: UNIVERSAL AUTOMATIONS & SCHEDULES -->
+        <!-- ========================================================= -->
+        <!-- TAB 3: GOOGLE FLOW 8s VIDEO -> DAILY 7/8 PM YOUTUBE       -->
+        <!-- ========================================================= -->
         <ScrollView
             android:id="@+id/tabPipelinesLayout"
             android:layout_width="match_parent"
@@ -409,6 +545,173 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
+                <!-- Google Flow + YouTube Daily Automation Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🎬 Google Flow (8s Video) ➔ YouTube डेली पाइपलाइन"
+                            android:textColor="#F8FAFC"
+                            android:textSize="17sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="1. पहले 'Web Pod' टैब में जाकर अपना Gmail लॉगिन करके Google Flow खोल लें।\n2. यहाँ अपना टॉपिक और शाम 7:00 या 8:00 बजे का टाइम सेट कर दें:"
+                            android:textColor="#94A3B8"
+                            android:textSize="13.5sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="डेली वीडियो का टॉपिक / स्टोरी आइडिया (AI रोज़ नया सीन बनाएगा):"
+                            android:textColor="#CBD5E1"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etFlowTopic"
+                            android:layout_width="match_parent"
+                            android:layout_height="75dp"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:gravity="top|start"
+                            android:hint="जैसे: Futuristic AI Boy cinematic 8-second story in hyper-realistic 4K..."
+                            android:padding="12dp"
+                            android:text="Cinematic 8-second hyper-realistic story of a futuristic AI boy exploring a glowing sci-fi world"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14.5sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="डेली कितनी वीडियो बनाएं? (1000 क्रेडिट सेवर):"
+                                android:textColor="#CBD5E1"
+                                android:textSize="14sp" />
+
+                            <EditText
+                                android:id="@+id/etDailyVideoLimit"
+                                android:layout_width="65dp"
+                                android:layout_height="44dp"
+                                android:background="#22252E"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="1"
+                                android:textColor="#10B981"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <CheckBox
+                            android:id="@+id/cbAutoGenerateFlowFirst"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:checked="true"
+                            android:text="शेड्यूल टाइम पर पहले Google Flow से नई 8s वीडियो बनाए, डाउनलोड करे और फिर सीधा YouTube पर डाले"
+                            android:textColor="#F8FAFC"
+                            android:textSize="13.5sp" />
+
+                        <!-- Daily Schedule Time (Default 19:00 = 7:00 PM) -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="डेली टाइम (24h): "
+                                android:textColor="#F8FAFC"
+                                android:textSize="14.5sp" />
+
+                            <EditText
+                                android:id="@+id/etHour"
+                                android:layout_width="56dp"
+                                android:layout_height="46dp"
+                                android:background="#22252E"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="19"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:paddingHorizontal="6dp"
+                                android:text=":"
+                                android:textColor="#FFFFFF"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <EditText
+                                android:id="@+id/etMinute"
+                                android:layout_width="56dp"
+                                android:layout_height="46dp"
+                                android:background="#22252E"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="00"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnSaveSchedule"
+                                android:layout_width="match_parent"
+                                android:layout_height="46dp"
+                                android:layout_marginStart="10dp"
+                                android:backgroundTint="#3B82F6"
+                                android:text="⏰ डेली सेट करें"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnRunFlowToYouTubeNow"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="14dp"
+                            android:backgroundTint="#2563EB"
+                            android:text="✨ अभी Google Flow से 8s वीडियो बनाएं ➔ YouTube अपलोड"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14.5sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Local Folder Queue & Direct YouTube Upload Card -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -426,90 +729,84 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🔄 Universal Automations &amp; Scheduler"
+                            android:text="📂 डाउनलोड फोल्डर और डायरेक्ट YouTube अपलोड"
                             android:textColor="#F8FAFC"
-                            android:textSize="18sp"
+                            android:textSize="16.5sp"
                             android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="वीडियो फोल्डर का रास्ता (Folder Path):"
-                            android:textColor="#94A3B8"
-                            android:textSize="14sp" />
 
                         <EditText
                             android:id="@+id/etFolderPath"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginTop="8dp"
                             android:background="#22252E"
-                            android:padding="14dp"
+                            android:padding="12dp"
                             android:text="/storage/emulated/0/Download/AutoVideos"
                             android:textColor="#FFFFFF"
-                            android:textSize="15sp" />
+                            android:textSize="14sp" />
 
                         <TextView
                             android:id="@+id/tvQueueStatus"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="8dp"
                             android:background="#121316"
                             android:padding="12dp"
                             android:text="Total: 0 | Pending: 0 | Uploaded: 0"
                             android:textColor="#10B981"
-                            android:textSize="15sp"
+                            android:textSize="14sp"
                             android:textStyle="bold" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="8dp"
                             android:orientation="horizontal">
 
                             <Button
                                 android:id="@+id/btnScanFolder"
                                 android:layout_width="0dp"
-                                android:layout_height="48dp"
+                                android:layout_height="46dp"
                                 android:layout_marginEnd="6dp"
                                 android:layout_weight="1"
                                 android:backgroundTint="#262932"
                                 android:text="📂 Scan Folder"
                                 android:textAllCaps="false"
                                 android:textColor="#F8FAFC"
-                                android:textSize="14sp" />
+                                android:textSize="13.5sp" />
 
                             <Button
                                 android:id="@+id/btnResetHistory"
                                 android:layout_width="0dp"
-                                android:layout_height="48dp"
+                                android:layout_height="46dp"
                                 android:layout_marginStart="6dp"
                                 android:layout_weight="1"
                                 android:backgroundTint="#262932"
                                 android:text="🔄 Reset History"
                                 android:textAllCaps="false"
                                 android:textColor="#F87171"
-                                android:textSize="14sp" />
+                                android:textSize="13.5sp" />
                         </LinearLayout>
 
                         <Button
                             android:id="@+id/btnRunYouTubeNow"
                             android:layout_width="match_parent"
-                            android:layout_height="54dp"
-                            android:layout_marginTop="14dp"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="10dp"
                             android:backgroundTint="#10B981"
-                            android:text="▶ YouTube पर वीडियो अपलोड करें"
+                            android:text="▶ फोल्डर में रखी अगली वीडियो अभी YouTube पर डालें"
                             android:textAllCaps="false"
                             android:textColor="#FFFFFF"
-                            android:textSize="16sp"
+                            android:textSize="14.5sp"
                             android:textStyle="bold" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
         </ScrollView>
 
-        <!-- TAB 4: PERSONAL MEMORY VAULT -->
+        <!-- ========================================================= -->
+        <!-- TAB 4: PERSONAL MEMORY VAULT                              -->
+        <!-- ========================================================= -->
         <ScrollView
             android:id="@+id/tabDoctorLayout"
             android:layout_width="match_parent"
@@ -549,18 +846,18 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
-                            android:text="यहाँ फॉर्म्स और वेबसाइट्स के लिए अपनी जानकारी सेव रखें:"
+                            android:text="यहाँ अपनी जानकारी, नियम या पसंदीदा डिटेल्स सेव रखें:"
                             android:textColor="#94A3B8"
                             android:textSize="14sp" />
 
                         <EditText
                             android:id="@+id/etMemoryVault"
                             android:layout_width="match_parent"
-                            android:layout_height="150dp"
+                            android:layout_height="160dp"
                             android:layout_marginTop="10dp"
                             android:background="#22252E"
                             android:gravity="top|start"
-                            android:hint="Name: \nEmail: \nGitHub URL: \nPreferences: "
+                            android:hint="Name: \nEmail: \nChannel Style: \nCustom Instructions: "
                             android:padding="12dp"
                             android:textColor="#FFFFFF"
                             android:textColorHint="#64748B"
@@ -582,7 +879,9 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- TAB 5: SETTINGS & LIVE LOGS -->
+        <!-- ========================================================= -->
+        <!-- TAB 5: SETTINGS, KEEP-ALIVE LOCK & LIVE LOGS              -->
+        <!-- ========================================================= -->
         <ScrollView
             android:id="@+id/tabSettingsLayout"
             android:layout_width="match_parent"
@@ -614,9 +913,9 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="⚙️ सिस्टम सेटिंग्स और परमिशन"
+                            android:text="⚙️ सिस्टम सेटिंग्स और 24/7 एक्सेसिबिलिटी लॉक"
                             android:textColor="#F8FAFC"
-                            android:textSize="18sp"
+                            android:textSize="17.5sp"
                             android:textStyle="bold" />
 
                         <LinearLayout
@@ -635,7 +934,7 @@
                                 android:text="Enable Auto-Touch"
                                 android:textAllCaps="false"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp" />
+                                android:textSize="13.5sp" />
 
                             <Button
                                 android:id="@+id/btnEnableStorage"
@@ -647,8 +946,20 @@
                                 android:text="Allow Folder"
                                 android:textAllCaps="false"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp" />
+                                android:textSize="13.5sp" />
                         </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnDisableBatteryOptimization"
+                            android:layout_width="match_parent"
+                            android:layout_height="46dp"
+                            android:layout_marginTop="8dp"
+                            android:backgroundTint="#059669"
+                            android:text="🛡️ Keep Accessibility Always ON (Disable Battery Kill)"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13.5sp"
+                            android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -796,7 +1107,7 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackground"
-            android:text="🌐\nWeb Pod"
+            android:text="🌐\nBrowser"
             android:textAllCaps="false"
             android:textColor="#94A3B8"
             android:textSize="12sp" />
@@ -807,7 +1118,7 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackground"
-            android:text="🔄\nTasks"
+            android:text="🎬\nFlow &amp; YT"
             android:textAllCaps="false"
             android:textColor="#94A3B8"
             android:textSize="12sp" />
