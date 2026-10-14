@@ -59,6 +59,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     private val crashGuard = CoroutineExceptionHandler { _, throwable ->
+        if (throwable is CancellationException) return@CoroutineExceptionHandler
         VideoQueueManager.appendLog(this, "⚠️ Handled Error: ${throwable.message}")
         isJobRunning = false
         overlayHud?.setCursorOverlayVisible(false)
@@ -74,13 +75,7 @@ class AutoTouchService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        // Persist the enabled state for diagnostics only; Android remains in control
-        // of AccessibilityService lifecycle and may disconnect it at any time.
-        getSharedPreferences("auradroid_service_state", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("accessibility_connected", true)
-            .putLong("accessibility_last_connected_at", System.currentTimeMillis())
-            .apply()
+        recordServiceState(true)
         postKeepAliveNotification("AuraDroid Companion Active & Ready")
         overlayHud = AiOverlayHud(this)
         overlayHud?.show()
@@ -89,35 +84,32 @@ class AutoTouchService : AccessibilityService() {
         VideoQueueManager.appendLog(this, "✅ Universal Companion Connected (24/7 Protected)!")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Events are not needed for the current agent workflow.
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
-    override fun onInterrupt() {
-        // Android may interrupt the service temporarily. Do not assume this means
-        // the user disabled it; avoid destructive cleanup here.
-    }
+    override fun onInterrupt() {}
 
     override fun onUnbind(intent: Intent?): Boolean {
-        getSharedPreferences("auradroid_service_state", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("accessibility_connected", false)
-            .putLong("accessibility_last_disconnected_at", System.currentTimeMillis())
-            .apply()
+        recordServiceState(false)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        recordServiceState(false)
         releaseWakeLock()
         overlayHud?.hide()
-        getSharedPreferences("auradroid_service_state", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("accessibility_connected", false)
-            .putLong("accessibility_last_destroyed_at", System.currentTimeMillis())
-            .apply()
-        if (instance === this) instance = null
-        serviceScope.cancel()
         super.onDestroy()
+        instance = null
+        serviceScope.cancel()
+    }
+
+    private fun recordServiceState(connected: Boolean) {
+        try {
+            getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("service_connected", connected)
+                .putLong("service_timestamp", System.currentTimeMillis())
+                .apply()
+        } catch (_: Exception) {}
     }
 
     private fun postKeepAliveNotification(statusText: String) {
@@ -161,11 +153,11 @@ class AutoTouchService : AccessibilityService() {
     }
 
     fun stopCurrentJob() {
-        activeJob?.cancel()
         isJobRunning = false
+        activeJob?.cancel()
         releaseWakeLock()
         overlayHud?.setCursorOverlayVisible(false)
-        overlayHud?.updateStatus("Stopped", "Task stopped", "DONE")
+        overlayHud?.updateStatus("Stopped", "Task stopped by user", "DONE")
         postKeepAliveNotification("Ready for next instruction")
         VideoQueueManager.appendLog(this, "🛑 All active tasks stopped by user.")
     }
@@ -229,6 +221,9 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
+    // ========================================================================
+    // ENGINE 1: GOOGLE FLOW (1000 CREDITS) 8s VIDEO ➔ YOUTUBE DAILY PIPELINE
+    // ========================================================================
     fun startGoogleFlowToYouTubePipeline(
         apiKey: String,
         model: String,
@@ -260,10 +255,10 @@ class AutoTouchService : AccessibilityService() {
 
                 val goal = """
                     We are on Google Flow ($flowUrl).
-                    1. Type this exact 8-second video prompt into the prompt input box: "$freshPrompt"
-                    2. Click the Generate / Create button ONCE (do not waste credits).
-                    3. Wait patiently while the 8-second video generates.
-                    4. Once the video is ready, download it or trigger DOWNLOAD_VIDEO, then CHAIN_YOUTUBE.
+                    1. If on landing page, click '+ New project'.
+                    2. Type this exact 8-second video prompt into the 'What do you want to create?' prompt box: "$freshPrompt"
+                    3. Click the 'arrow_forward' (Create/Send) button once the prompt text is inside the box.
+                    4. Wait while the 8-second video renders, then trigger DOWNLOAD_VIDEO and CHAIN_YOUTUBE.
                 """.trimIndent()
 
                 isJobRunning = false
@@ -276,6 +271,8 @@ class AutoTouchService : AccessibilityService() {
                     chainYouTubeAfterDownload = true,
                     forceChainYouTube = true
                 )
+            } catch (e: CancellationException) {
+                // Normal stop by user
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.updateStatus("Flow Error", e.message ?: "Error", "ERROR")
@@ -284,6 +281,9 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
+    // ========================================================================
+    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (With Google Flow Editor Fix!)
+    // ========================================================================
     fun startBackgroundWebTask(
         apiKey: String,
         model: String,
@@ -315,9 +315,13 @@ class AutoTouchService : AccessibilityService() {
             val maxSteps = if (unstoppable) 2000 else 60
 
             try {
+                // Do NOT reload if we are already inside labs.google/fx/tools/flow project page!
                 val currentLoadedUrl = webView?.url ?: ""
-                if (initialUrl.isNotBlank() && initialUrl.startsWith("http") &&
-                    !currentLoadedUrl.startsWith(initialUrl.take(24), true)
+                val alreadyOnSameDomain = currentLoadedUrl.contains("labs.google/fx", true) &&
+                        initialUrl.contains("labs.google/fx", true)
+
+                if (initialUrl.isNotBlank() && initialUrl.startsWith("http") && !alreadyOnSameDomain &&
+                    !currentLoadedUrl.startsWith(initialUrl.take(22), true)
                 ) {
                     overlayHud?.updateStatus("Web Pod • Opening", initialUrl, "WORKING")
                     VideoQueueManager.appendLog(this@AutoTouchService, "🌐 Opening in Browser: $initialUrl")
@@ -358,23 +362,42 @@ class AutoTouchService : AccessibilityService() {
                     val mood = if (decision.action == "WAIT") "WAITING" else "WORKING"
                     overlayHud?.updateStatus("Web • ${decision.action}", decision.reason, mood)
                     VideoQueueManager.appendLog(this@AutoTouchService, "🌐 Web Step $step [${decision.action}]: ${decision.reason}")
-                    history.add("Step $step: ${decision.action} - ${decision.reason}")
 
                     when (decision.action) {
-                        "CLICK_EL" -> performWebJsClick(webView, decision.elementIndex)
-                        "TYPE_EL" -> performWebJsType(webView, decision.elementIndex, decision.textToType)
-                        "SCROLL" -> webView?.evaluateJavascript("window.scrollBy(0, 550);", null)
+                        "CLICK_EL" -> {
+                            val clickRes = performWebJsClick(webView, decision.elementIndex)
+                            history.add("Step $step: CLICK_EL(${decision.elementIndex}) -> $clickRes - ${decision.reason}")
+                        }
+                        "TYPE_EL" -> {
+                            val typeRes = performWebJsTypeAndSubmit(webView, decision.elementIndex, decision.textToType)
+                            VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Web Type Result: $typeRes")
+                            history.add("Step $step: TYPE_EL(${decision.elementIndex}) -> $typeRes")
+                        }
+                        "SCROLL" -> {
+                            webView?.evaluateJavascript("window.scrollBy(0, 550);", null)
+                            history.add("Step $step: SCROLL")
+                        }
                         "LOAD_URL" -> {
                             if (decision.url.startsWith("http")) {
                                 webView?.loadUrl(decision.url)
                                 delay(4000)
                             }
+                            history.add("Step $step: LOAD_URL ${decision.url}")
                         }
                         "DOWNLOAD_VIDEO", "DOWNLOAD_URL" -> {
                             triggerVideoDownloadInWebView(webView, decision.url)
                             delay(4500)
+                            history.add("Step $step: DOWNLOAD_VIDEO")
                         }
-                        "WAIT" -> delay(6000)
+                        "WAIT" -> {
+                            // If a <video> is already rendered on the page while waiting, auto-download it!
+                            if (domSnapshot.contains("HAS_VIDEO_ELEMENT: YES")) {
+                                VideoQueueManager.appendLog(this@AutoTouchService, "🎥 Video element detected on page! Auto-downloading...")
+                                triggerVideoDownloadInWebView(webView, "")
+                            }
+                            delay(6000)
+                            history.add("Step $step: WAIT - ${decision.reason}")
+                        }
                         "CHAIN_YOUTUBE" -> {
                             triggerVideoDownloadInWebView(webView, "")
                             delay(4000)
@@ -392,6 +415,8 @@ class AutoTouchService : AccessibilityService() {
 
                     delay(stepDelay)
                 }
+            } catch (e: CancellationException) {
+                // Clean user stop — do NOT log as error!
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.updateStatus("Web Error", e.message ?: "Failed", "ERROR")
@@ -439,6 +464,10 @@ class AutoTouchService : AccessibilityService() {
         webView?.evaluateJavascript(js, null)
     }
 
+    /**
+     * Deep DOM Scanner that pierces Shadow DOM, detects contenteditable editors,
+     * shows CURRENT_VALUE of inputs so AI knows if text was truly entered, and flags <video> elements!
+     */
     private suspend fun extractWebDomSummary(webView: WebView?): String = suspendCancellableCoroutine { cont ->
         if (webView == null) {
             cont.resume("Empty WebView")
@@ -446,20 +475,39 @@ class AutoTouchService : AccessibilityService() {
         }
         val js = """
             (function() {
-                var items = document.querySelectorAll('a, button, input, textarea, select, [role="button"], video');
+                function queryAllDeep(root) {
+                    var res = [];
+                    var nodes = root.querySelectorAll('a, button, input, textarea, select, [role="button"], [role="textbox"], [contenteditable="true"], video');
+                    for (var i = 0; i < nodes.length; i++) res.push(nodes[i]);
+                    var all = root.querySelectorAll('*');
+                    for (var j = 0; j < all.length; j++) {
+                        if (all[j].shadowRoot) {
+                            res = res.concat(queryAllDeep(all[j].shadowRoot));
+                        }
+                    }
+                    return res;
+                }
+                var items = queryAllDeep(document);
                 var out = [];
-                for (var i = 0; i < items.length && out.length < 70; i++) {
+                var hasVideo = document.querySelectorAll('video').length > 0 ? 'YES' : 'NO';
+                for (var i = 0; i < items.length && out.length < 75; i++) {
                     var el = items[i];
                     var rect = el.getBoundingClientRect();
                     if (rect.width > 5 && rect.height > 5) {
                         el.setAttribute('data-aura-idx', i);
                         var tag = el.tagName.toLowerCase();
-                        var txt = (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.src || '').trim().substring(0, 70);
-                        out.push('[' + i + '] <' + tag + '> ' + txt);
+                        var placeholder = el.placeholder || el.getAttribute('placeholder') || el.getAttribute(' data-placeholder') || '';
+                        var aria = el.getAttribute('aria-label') || '';
+                        var val = (el.value !== undefined ? el.value : (el.isContentEditable ? el.innerText : '')) || '';
+                        var txt = (el.innerText || placeholder || aria || el.src || '').trim().replace(/\s+/g, ' ').substring(0, 65);
+                        var valInfo = (tag === 'textarea' || tag === 'input' || el.isContentEditable || el.getAttribute('role') === 'textbox')
+                            ? ' | CURRENT_VALUE="' + val.trim().substring(0, 45) + '" | PLACEHOLDER="' + placeholder + '"'
+                            : '';
+                        out.push('[' + i + '] <' + tag + '> ' + txt + valInfo);
                     }
                 }
-                var bodyText = (document.body ? document.body.innerText : '').substring(0, 1500).replace(/\s+/g, ' ');
-                return 'PAGE_TEXT: ' + bodyText + '\nELEMENTS:\n' + out.join('\n');
+                var bodyText = (document.body ? document.body.innerText : '').substring(0, 1400).replace(/\s+/g, ' ');
+                return 'HAS_VIDEO_ELEMENT: ' + hasVideo + '\nPAGE_TEXT: ' + bodyText + '\nELEMENTS:\n' + out.join('\n');
             })();
         """.trimIndent()
 
@@ -470,35 +518,131 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    private fun performWebJsClick(webView: WebView?, index: Int) {
+    /**
+     * Dispatches full pointer + mouse + click events on the target element and its button parent
+     */
+    private suspend fun performWebJsClick(webView: WebView?, index: Int): String = suspendCancellableCoroutine { cont ->
+        if (webView == null) {
+            cont.resume("No WebView")
+            return@suspendCancellableCoroutine
+        }
         val js = """
             (function() {
                 var el = document.querySelector('[data-aura-idx="$index"]');
-                if (el) { el.scrollIntoView({block:'center'}); el.click(); return true; }
-                return false;
+                if (!el) return 'NOT_FOUND';
+                var clickable = el.closest('button, [role="button"], a') || el;
+                clickable.scrollIntoView({block:'center'});
+                var opts = { bubbles: true, cancelable: true, view: window };
+                clickable.dispatchEvent(new PointerEvent('pointerdown', opts));
+                clickable.dispatchEvent(new MouseEvent('mousedown', opts));
+                clickable.dispatchEvent(new PointerEvent('pointerup', opts));
+                clickable.dispatchEvent(new MouseEvent('mouseup', opts));
+                clickable.click();
+                return 'CLICKED:' + (clickable.innerText || clickable.getAttribute('aria-label') || clickable.tagName).substring(0, 25);
             })();
         """.trimIndent()
-        webView?.evaluateJavascript(js, null)
+        webView.evaluateJavascript(js) { res ->
+            if (cont.isActive) cont.resume(res ?: "DONE")
+        }
     }
 
-    private fun performWebJsType(webView: WebView?, index: Int, text: String) {
+    /**
+     * Specially engineered for Google Flow ("What do you want to create?") & React/Lit/ContentEditable editors!
+     * 1. Smartly prioritizes the "What do you want to create?" prompt box over the top search bar.
+     * 2. Uses `document.execCommand('insertText')` + Native Prototype Value Setter + InputEvent so the `arrow_forward` button immediately enables!
+     */
+    private suspend fun performWebJsTypeAndSubmit(
+        webView: WebView?,
+        index: Int,
+        text: String
+    ): String = suspendCancellableCoroutine { cont ->
+        if (webView == null) {
+            cont.resume("No WebView")
+            return@suspendCancellableCoroutine
+        }
         val safeText = JSONObject.quote(text)
         val js = """
             (function() {
-                var el = document.querySelector('[data-aura-idx="$index"]') || document.querySelector('textarea, input[type="text"], input:not([type])');
-                if (el) {
-                    el.focus();
-                    el.value = $safeText;
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                    return true;
+                var target = document.querySelector('[data-aura-idx="$index"]');
+                
+                // Smart Override: If target is null, or is the top search bar, find the real "What do you want to create?" prompt box!
+                var allCandidates = document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"], input[type="text"], input:not([type])');
+                var flowPromptBox = null;
+                for (var i = 0; i < allCandidates.length; i++) {
+                    var c = allCandidates[i];
+                    var ph = (c.placeholder || c.getAttribute('placeholder') || c.getAttribute('aria-label') || c.innerText || '').toLowerCase();
+                    if (ph.indexOf('what do you want to create') !== -1 || ph.indexOf('create') !== -1 || ph.indexOf('prompt') !== -1 || c.tagName.toLowerCase() === 'textarea' || c.isContentEditable) {
+                        var rect = c.getBoundingClientRect();
+                        if (rect.top > 180 && rect.width > 100) {
+                            flowPromptBox = c;
+                            break;
+                        }
+                    }
                 }
-                return false;
+                if (flowPromptBox) {
+                    target = flowPromptBox;
+                } else if (!target) {
+                    target = allCandidates[allCandidates.length - 1];
+                }
+                if (!target) return 'NO_INPUT_FOUND';
+
+                target.scrollIntoView({block: 'center'});
+                target.click();
+                target.focus();
+
+                // Method 1: Native Browser execCommand('insertText') — triggers real user typing state in React/Lit/ProseMirror!
+                try {
+                    if (target.select) target.select();
+                    else document.execCommand('selectAll', false, null);
+                    document.execCommand('insertText', false, $safeText);
+                } catch (e) {}
+
+                // Method 2: Native Prototype Value Setter fallback for <textarea> / <input>
+                var currentVal = (target.value !== undefined ? target.value : target.innerText) || '';
+                if (currentVal.trim().length < 5) {
+                    try {
+                        var proto = target.tagName.toLowerCase() === 'textarea'
+                            ? window.HTMLTextAreaElement.prototype
+                            : window.HTMLInputElement.prototype;
+                        var nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value') ? Object.getOwnPropertyDescriptor(proto, 'value').set : null;
+                        if (nativeSetter) {
+                            nativeSetter.call(target, $safeText);
+                        } else if (target.isContentEditable) {
+                            target.innerText = $safeText;
+                        } else {
+                            target.value = $safeText;
+                        }
+                        target.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: $safeText }));
+                        target.dispatchEvent(new Event('change', { bubbles: true }));
+                    } catch (e2) {}
+                }
+
+                // Also press Enter / trigger arrow_forward button automatically after 400ms if on Google Flow!
+                setTimeout(function() {
+                    var btns = document.querySelectorAll('button, [role="button"]');
+                    for (var b = 0; b < btns.length; b++) {
+                        var bTxt = (btns[b].innerText || btns[b].getAttribute('aria-label') || '').trim();
+                        if (bTxt === 'arrow_forward' || bTxt.toLowerCase() === 'create' || bTxt.toLowerCase() === 'generate') {
+                            if (!btns[b].disabled) {
+                                btns[b].click();
+                                break;
+                            }
+                        }
+                    }
+                }, 450);
+
+                var finalVal = (target.value !== undefined ? target.value : target.innerText) || '';
+                return 'TYPED_LEN:' + finalVal.length;
             })();
         """.trimIndent()
-        webView?.evaluateJavascript(js, null)
+        webView.evaluateJavascript(js) { res ->
+            if (cont.isActive) cont.resume(res ?: "TYPED")
+        }
     }
 
+    // ========================================================================
+    // ENGINE 3: TESTED & WORKING YOUTUBE SHORTS AUTO-UPLOADER
+    // ========================================================================
     fun startYouTubeAutoUpload(
         apiKey: String,
         model: String,
@@ -680,6 +824,8 @@ class AutoTouchService : AccessibilityService() {
                     }
                     delay(2000)
                 }
+            } catch (e: CancellationException) {
+                // Normal user stop
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.setCursorOverlayVisible(false)
@@ -693,6 +839,9 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
+    // ========================================================================
+    // ENGINE 4: UNIVERSAL PHONE AGENT + CONTINUOUS LIVE CHAT MONITOR
+    // ========================================================================
     fun startUniversalAiTask(
         apiKey: String,
         model: String,
@@ -776,7 +925,7 @@ class AutoTouchService : AccessibilityService() {
                         else -> "WORKING"
                     }
                     overlayHud?.updateStatus("Step $step • ${decision.action}", decision.reason, stepMood)
-                    VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Step $step [${decision.action}]: ${decision.reason}")
+                    VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Step $step [${decision.action}]:${decision.reason}")
 
                     if (decision.action.equals("DONE", true)) {
                         isJobRunning = false
@@ -789,7 +938,7 @@ class AutoTouchService : AccessibilityService() {
                     if (decision.action.equals("WAIT", true)) {
                         overlayHud?.setCursorOverlayVisible(false)
                         delay(4500)
-                        history.add("Step $step: WAIT - ${decision.reason}")
+                        history.add("Step $step: WAIT -${decision.reason}")
                         continue
                     }
 
@@ -812,9 +961,11 @@ class AutoTouchService : AccessibilityService() {
                         lastTapY = tapY
                     }
 
-                    history.add("Step $step: ${decision.action} ($executedSummary) - ${decision.reason}")
+                    history.add("Step $step:${decision.action} ($executedSummary) -${decision.reason}")
                     delay(stepDelay)
                 }
+            } catch (e: CancellationException) {
+                // Clean user stop
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.setCursorOverlayVisible(false)
@@ -941,7 +1092,7 @@ class AutoTouchService : AccessibilityService() {
         val cleanTarget = target.trim()
         val actionIntent = when (cleanTarget.uppercase()) {
             "SETTINGS" -> Intent(Settings.ACTION_SETTINGS)
-            "BATTERY" -> Intent("android.settings.POWER_USAGE_SUMMARY")
+            "BATTERY" -> Intent(Intent.ACTION_MAIN).setClassName("com.android.settings", "com.android.settings.Settings\$PowerUsageSummaryActivity")
             "WIFI" -> Intent(Settings.ACTION_WIFI_SETTINGS)
             "DISPLAY" -> Intent(Settings.ACTION_DISPLAY_SETTINGS)
             "STORAGE" -> Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
@@ -1036,7 +1187,7 @@ class AutoTouchService : AccessibilityService() {
 
     private fun isAddDetailsScreenVisible(appNodes: List<UiNodeSnapshot>): Boolean {
         return appNodes.any {
-            val c = "${it.text} ${it.contentDesc} ${it.hintText}"
+            val c = "${it.text} ${it.contentDesc}${it.hintText}"
             c.contains("Add details", true) ||
             c.contains("Caption your Short", true) ||
             c.contains("Upload Short", true) ||
