@@ -8,10 +8,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.view.View
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +27,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         var onLogUpdated: ((String) -> Unit)? = null
+        var onBrowserUrlChanged: ((String) -> Unit)? = null
         private const val REQ_VOICE_SPEECH = 202
     }
 
@@ -46,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navTabDoctor: Button
     private lateinit var navTabSettings: Button
 
+    // Tab 1: Chat & Planner
     private lateinit var tvChatHistory: TextView
     private lateinit var etChatInput: EditText
     private lateinit var tvPlanSteps: TextView
@@ -53,15 +57,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rbModePhoneScreen: RadioButton
     private var currentLockedGoal: String = ""
 
+    // Tab 2: Full-Control Browser
     private lateinit var etWebUrl: EditText
     private lateinit var etWebTaskGoal: EditText
+    private lateinit var btnBrowserDesktop: Button
     private lateinit var webPreviewContainer: FrameLayout
 
+    // Tab 3: Google Flow 8s -> Daily 7/8 PM YouTube Pipeline
+    private lateinit var etFlowTopic: EditText
+    private lateinit var etDailyVideoLimit: EditText
+    private lateinit var cbAutoGenerateFlowFirst: CheckBox
+    private lateinit var etHour: EditText
+    private lateinit var etMinute: EditText
     private lateinit var etFolderPath: EditText
     private lateinit var tvQueueStatus: TextView
 
+    // Tab 4: Vault
     private lateinit var etMemoryVault: EditText
 
+    // Tab 5: Settings & Logs
     private lateinit var etApiKey: EditText
     private lateinit var etModelName: EditText
     private lateinit var cbUseScreenVision: CheckBox
@@ -76,13 +90,20 @@ class MainActivity : AppCompatActivity() {
         loadSavedSettings()
         setupBottomNavigation()
         setupTab1ChatAndPlanner()
-        setupTab2WebStudio()
-        setupTab3Pipelines()
+        setupTab2FullBrowser()
+        setupTab3FlowAndYouTubePipelines()
         setupTab4Vault()
         setupTab5Settings()
 
         onLogUpdated = { logs ->
             runOnUiThread { tvConsoleLog.text = logs }
+        }
+        onBrowserUrlChanged = { currentUrl ->
+            runOnUiThread {
+                if (!etWebUrl.hasFocus()) {
+                    etWebUrl.setText(currentUrl)
+                }
+            }
         }
     }
 
@@ -111,10 +132,17 @@ class MainActivity : AppCompatActivity() {
 
         etWebUrl = findViewById(R.id.etWebUrl)
         etWebTaskGoal = findViewById(R.id.etWebTaskGoal)
+        btnBrowserDesktop = findViewById(R.id.btnBrowserDesktop)
         webPreviewContainer = findViewById(R.id.webPreviewContainer)
 
+        etFlowTopic = findViewById(R.id.etFlowTopic)
+        etDailyVideoLimit = findViewById(R.id.etDailyVideoLimit)
+        cbAutoGenerateFlowFirst = findViewById(R.id.cbAutoGenerateFlowFirst)
+        etHour = findViewById(R.id.etHour)
+        etMinute = findViewById(R.id.etMinute)
         etFolderPath = findViewById(R.id.etFolderPath)
         tvQueueStatus = findViewById(R.id.tvQueueStatus)
+
         etMemoryVault = findViewById(R.id.etMemoryVault)
 
         etApiKey = findViewById(R.id.etApiKey)
@@ -131,7 +159,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             val visible = service.overlayHud?.togglePodVisibility() ?: false
-            btnToggleFloatingPod.text = if (visible) "Pod: ON" else "Pod: OFF"
+            btnToggleFloatingPod.text = if (visible) "Bot: ON" else "Bot: OFF"
         }
     }
 
@@ -161,19 +189,27 @@ class MainActivity : AppCompatActivity() {
 
         tvActiveSubtitle.text = when (tabIndex) {
             1 -> "Interactive AI Chat & Universal Planner"
-            2 -> "Background Web Studio (Zero Disturbance)"
-            3 -> "Universal Automations & Video Queue"
+            2 -> "Full-Control Browser (Login Gmail & Google Flow)"
+            3 -> "Google Flow (8s Video) ➔ Daily 7/8 PM YouTube"
             4 -> "Personal Memory Vault & Custom Rules"
-            else -> "Engine Settings, Permissions & Live Logs"
+            else -> "Engine Settings, Keep-Alive Lock & Live Logs"
         }
 
         if (tabIndex == 2) {
-            AutoTouchService.instance?.overlayHud?.attachWebViewToContainer(webPreviewContainer)
+            val service = AutoTouchService.instance
+            if (service != null) {
+                service.overlayHud?.attachWebViewToContainer(webPreviewContainer)
+            } else {
+                Toast.makeText(this, "Enable Auto-Touch in Settings tab first to activate Browser!", Toast.LENGTH_LONG).show()
+            }
         } else if (tabIndex == 3) {
             refreshFolderQueueStatus()
         }
     }
 
+    // ====================================================================
+    // TAB 1: UNIVERSAL CHAT & PLANNER
+    // ====================================================================
     private fun setupTab1ChatAndPlanner() {
         findViewById<Button>(R.id.btnClearChat).setOnClickListener {
             tvChatHistory.text = "🤖 Companion Bot: Chat saaf kar di gayi hai. Naya kaam batayein!"
@@ -238,14 +274,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            if (goal.contains("youtube", true) && !rbModeBackgroundWeb.isChecked) {
-                service.startYouTubeAutoUpload(
-                    etApiKey.text.toString().trim(),
-                    etModelName.text.toString().trim(),
-                    etFolderPath.text.toString().trim(),
-                    goal
-                )
-            } else if (rbModeBackgroundWeb.isChecked) {
+            if (rbModeBackgroundWeb.isChecked) {
                 service.startBackgroundWebTask(
                     etApiKey.text.toString().trim(),
                     etModelName.text.toString().trim(),
@@ -253,7 +282,7 @@ class MainActivity : AppCompatActivity() {
                     goal,
                     etFolderPath.text.toString().trim()
                 )
-                Toast.makeText(this, "Background Web Pod mein kaam shuru ho gaya!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Background Browser mein kaam shuru ho gaya!", Toast.LENGTH_SHORT).show()
             } else {
                 service.startUniversalAiTask(
                     etApiKey.text.toString().trim(),
@@ -268,13 +297,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupTab2WebStudio() {
+    // ====================================================================
+    // TAB 2: FULL-CONTROL IN-APP BROWSER (MANUAL GMAIL & GOOGLE FLOW)
+    // ====================================================================
+    private fun setupTab2FullBrowser() {
+        findViewById<Button>(R.id.btnBrowserBack).setOnClickListener {
+            val wv = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()
+            if (wv?.canGoBack() == true) wv.goBack()
+        }
+
+        findViewById<Button>(R.id.btnBrowserForward).setOnClickListener {
+            val wv = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()
+            if (wv?.canGoForward() == true) wv.goForward()
+        }
+
+        findViewById<Button>(R.id.btnBrowserRefresh).setOnClickListener {
+            AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.reload()
+        }
+
+        findViewById<Button>(R.id.btnBrowserFlow).setOnClickListener {
+            val url = VideoQueueManager.getPinnedFlowUrl(this)
+            openManualUrl(url)
+        }
+
+        findViewById<Button>(R.id.btnBrowserGmail).setOnClickListener {
+            openManualUrl("[https://accounts.google.com](https://accounts.google.com)")
+        }
+
+        btnBrowserDesktop.setOnClickListener {
+            val hud = AutoTouchService.instance?.overlayHud ?: return@setOnClickListener
+            val isDesk = hud.toggleDesktopMode()
+            btnBrowserDesktop.text = if (isDesk) "🖥️ Desktop: ON" else "🖥️ Desktop: OFF"
+        }
+
+        findViewById<Button>(R.id.btnBrowserDownloads).setOnClickListener {
+            val folder = etFolderPath.text.toString().trim()
+            val report = VideoQueueManager.getDownloadedFilesReport(folder)
+            AlertDialog.Builder(this)
+                .setTitle("📥 Browser Downloads & Storage")
+                .setMessage(report)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+
         findViewById<Button>(R.id.btnWebGo).setOnClickListener {
             var url = etWebUrl.text.toString().trim()
             if (!url.startsWith("http")) url = "https://$url"
-            etWebUrl.setText(url)
-            AutoTouchService.instance?.overlayHud?.attachWebViewToContainer(webPreviewContainer)
-            AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.loadUrl(url)
+            openManualUrl(url)
+        }
+
+        findViewById<Button>(R.id.btnPinFlowUrl).setOnClickListener {
+            val currentUrl = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.url
+                ?: etWebUrl.text.toString().trim()
+            VideoQueueManager.savePinnedFlowUrl(this, currentUrl)
+            etWebUrl.setText(currentUrl)
+            Toast.makeText(this, "📌 Google Flow URL Pinned for Daily Pipeline!", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<Button>(R.id.btnRunWebAgent).setOnClickListener {
@@ -286,7 +363,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             val goal = etWebTaskGoal.text.toString().trim().ifEmpty {
-                "Inspect this webpage and complete the task."
+                "Create an 8-second video on this page based on: ${etFlowTopic.text}"
             }
             service.startBackgroundWebTask(
                 etApiKey.text.toString().trim(),
@@ -298,16 +375,60 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupTab3Pipelines() {
+    private fun openManualUrl(url: String) {
+        etWebUrl.setText(url)
+        val service = AutoTouchService.instance
+        if (service != null) {
+            service.overlayHud?.attachWebViewToContainer(webPreviewContainer)
+            service.overlayHud?.getOrCreateSharedWebView()?.loadUrl(url)
+        } else {
+            Toast.makeText(this, "Pehle Settings tab se Auto-Touch ON karein!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ====================================================================
+    // TAB 3: GOOGLE FLOW (8s VIDEO) ➔ DAILY 7/8 PM YOUTUBE PIPELINE
+    // ====================================================================
+    private fun setupTab3FlowAndYouTubePipelines() {
+        findViewById<Button>(R.id.btnSaveSchedule).setOnClickListener {
+            saveSettings()
+            val h = etHour.text.toString().toIntOrNull()?.coerceIn(0, 23) ?: 19
+            val m = etMinute.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0
+            TaskSchedulerReceiver.scheduleDailyUpload(this, h, m)
+            val timeStr = String.format(Locale.US, "%02d:%02d", h, m)
+            VideoQueueManager.appendLog(this, "⏰ Daily Flow ➔ YouTube Pipeline Scheduled for $timeStr!")
+            Toast.makeText(this, "⏰ Daily Scheduled for $timeStr!", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<Button>(R.id.btnRunFlowToYouTubeNow).setOnClickListener {
+            saveSettings()
+            val service = AutoTouchService.instance
+            if (service == null) {
+                Toast.makeText(this, "Enable Auto-Touch in Settings first!", Toast.LENGTH_LONG).show()
+                switchTab(5)
+                return@setOnClickListener
+            }
+            service.startGoogleFlowToYouTubePipeline(
+                apiKey = etApiKey.text.toString().trim(),
+                model = etModelName.text.toString().trim(),
+                flowUrl = VideoQueueManager.getPinnedFlowUrl(this),
+                topicIdea = etFlowTopic.text.toString().trim(),
+                dailyVideoCount = etDailyVideoLimit.text.toString().toIntOrNull() ?: 1,
+                folderPath = etFolderPath.text.toString().trim()
+            )
+        }
+
         findViewById<Button>(R.id.btnScanFolder).setOnClickListener {
             saveSettings()
             refreshFolderQueueStatus()
         }
+
         findViewById<Button>(R.id.btnResetHistory).setOnClickListener {
             VideoQueueManager.resetUploadedHistory(this)
             refreshFolderQueueStatus()
             VideoQueueManager.appendLog(this, "🔄 Uploaded history reset.")
         }
+
         findViewById<Button>(R.id.btnRunYouTubeNow).setOnClickListener {
             saveSettings()
             val service = AutoTouchService.instance
@@ -320,11 +441,14 @@ class MainActivity : AppCompatActivity() {
                 etApiKey.text.toString().trim(),
                 etModelName.text.toString().trim(),
                 etFolderPath.text.toString().trim(),
-                "Upload next pending video with viral title and hashtags."
+                etFlowTopic.text.toString().trim()
             )
         }
     }
 
+    // ====================================================================
+    // TAB 4: MEMORY VAULT
+    // ====================================================================
     private fun setupTab4Vault() {
         findViewById<Button>(R.id.btnSaveMemory).setOnClickListener {
             VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString())
@@ -332,15 +456,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ====================================================================
+    // TAB 5: SETTINGS & BATTERY KILL PROTECTION
+    // ====================================================================
     private fun setupTab5Settings() {
         findViewById<Button>(R.id.btnEnableAccessibility).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             Toast.makeText(this, "Turn ON 'AuraDroid AI Universal Companion'", Toast.LENGTH_LONG).show()
         }
+
         findViewById<Button>(R.id.btnEnableStorage).setOnClickListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 if (!Environment.isExternalStorageManager()) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
                 } else {
                     Toast.makeText(this, "Folder Access Already Granted!", Toast.LENGTH_SHORT).show()
                 }
@@ -352,6 +485,23 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+
+        findViewById<Button>(R.id.btnDisableBatteryOptimization).setOnClickListener {
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } else {
+                    Toast.makeText(this, "✅ Battery Kill Protection is ALREADY Active!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }
+
         findViewById<Button>(R.id.btnSaveSettings).setOnClickListener {
             saveSettings()
             Toast.makeText(this, "Settings Saved!", Toast.LENGTH_SHORT).show()
@@ -397,6 +547,11 @@ class MainActivity : AppCompatActivity() {
             .putString("api_key", etApiKey.text.toString().trim())
             .putString("model_name", etModelName.text.toString().trim())
             .putString("folder_path", etFolderPath.text.toString().trim())
+            .putString("flow_topic", etFlowTopic.text.toString().trim())
+            .putInt("daily_video_limit", etDailyVideoLimit.text.toString().toIntOrNull()?.coerceIn(1, 5) ?: 1)
+            .putBoolean("auto_flow_first", cbAutoGenerateFlowFirst.isChecked)
+            .putInt("sched_hour", etHour.text.toString().toIntOrNull()?.coerceIn(0, 23) ?: 19)
+            .putInt("sched_min", etMinute.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0)
             .putBoolean("use_screen_vision", cbUseScreenVision.isChecked)
             .putBoolean("unstoppable_24h", cb24HourUnstoppable.isChecked)
             .apply()
@@ -408,6 +563,12 @@ class MainActivity : AppCompatActivity() {
         etApiKey.setText(prefs.getString("api_key", ""))
         etModelName.setText(prefs.getString("model_name", "gemini-2.5-flash"))
         etFolderPath.setText(prefs.getString("folder_path", "/storage/emulated/0/Download/AutoVideos"))
+        etWebUrl.setText(VideoQueueManager.getPinnedFlowUrl(this))
+        etFlowTopic.setText(VideoQueueManager.getFlowTopic(this))
+        etDailyVideoLimit.setText(VideoQueueManager.getDailyVideoLimit(this).toString())
+        cbAutoGenerateFlowFirst.isChecked = prefs.getBoolean("auto_flow_first", true)
+        etHour.setText(prefs.getInt("sched_hour", 19).toString())
+        etMinute.setText(String.format(Locale.US, "%02d", prefs.getInt("sched_min", 0)))
         cbUseScreenVision.isChecked = prefs.getBoolean("use_screen_vision", true)
         cb24HourUnstoppable.isChecked = prefs.getBoolean("unstoppable_24h", true)
         etMemoryVault.setText(VideoQueueManager.getMemoryVault(this))
