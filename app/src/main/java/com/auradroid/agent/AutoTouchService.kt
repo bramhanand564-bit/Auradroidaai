@@ -58,7 +58,6 @@ class AutoTouchService : AccessibilityService() {
         private const val CHANNEL_ID = "auradroid_keepalive_channel"
     }
 
-    // Crash-proof exception handler so Android NEVER disables Accessibility due to an uncaught error
     private val crashGuard = CoroutineExceptionHandler { _, throwable ->
         VideoQueueManager.appendLog(this, "⚠️ Handled Error: ${throwable.message}")
         isJobRunning = false
@@ -204,9 +203,6 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    // ========================================================================
-    // ENGINE 1: GOOGLE FLOW (1000 CREDITS) 8s VIDEO ➔ YOUTUBE DAILY PIPELINE
-    // ========================================================================
     fun startGoogleFlowToYouTubePipeline(
         apiKey: String,
         model: String,
@@ -228,34 +224,32 @@ class AutoTouchService : AccessibilityService() {
 
             try {
                 val countToMake = dailyVideoCount.coerceIn(1, 3)
-                for (videoIndex in 1..countToMake) {
-                    overlayHud?.updateStatus(
-                        "Flow 8s ($videoIndex/$countToMake)",
-                        "Creating fresh 8s story prompt...",
-                        "THINKING"
-                    )
-                    val freshPrompt = GeminiBrain.generateDailyFlowPrompt(apiKey, model, topicIdea)
-                    VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Flow 8s Prompt (#$videoIndex): $freshPrompt")
+                overlayHud?.updateStatus(
+                    "Flow 8s (1/$countToMake)",
+                    "Creating fresh 8s story prompt...",
+                    "THINKING"
+                )
+                val freshPrompt = GeminiBrain.generateDailyFlowPrompt(apiKey, model, topicIdea)
+                VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Flow 8s Prompt: $freshPrompt")
 
-                    val goal = """
-                        We are on Google Flow ($flowUrl).
-                        1. Type this exact 8-second video prompt into the prompt input box: "$freshPrompt"
-                        2. Click the Generate / Create button ONCE (do not waste credits).
-                        3. Wait patiently while the 8-second video generates.
-                        4. Once the video is ready, download it or trigger DOWNLOAD_VIDEO, then CHAIN_YOUTUBE.
-                    """.trimIndent()
+                val goal = """
+                    We are on Google Flow ($flowUrl).
+                    1. Type this exact 8-second video prompt into the prompt input box: "$freshPrompt"
+                    2. Click the Generate / Create button ONCE (do not waste credits).
+                    3. Wait patiently while the 8-second video generates.
+                    4. Once the video is ready, download it or trigger DOWNLOAD_VIDEO, then CHAIN_YOUTUBE.
+                """.trimIndent()
 
-                    isJobRunning = false
-                    startBackgroundWebTask(
-                        apiKey = apiKey,
-                        model = model,
-                        initialUrl = flowUrl,
-                        userGoal = goal,
-                        folderPath = folderPath,
-                        forceChainYouTube = true
-                    )
-                    return@launch
-                }
+                isJobRunning = false
+                startBackgroundWebTask(
+                    apiKey = apiKey,
+                    model = model,
+                    initialUrl = flowUrl,
+                    userGoal = goal,
+                    folderPath = folderPath,
+                    chainYouTubeAfterDownload = true,
+                    forceChainYouTube = true
+                )
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.updateStatus("Flow Error", e.message ?: "Error", "ERROR")
@@ -264,21 +258,21 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    // ========================================================================
-    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (Google Flow, Forms, Any Site)
-    // ========================================================================
     fun startBackgroundWebTask(
         apiKey: String,
         model: String,
         initialUrl: String,
         userGoal: String,
         folderPath: String,
+        chainYouTubeAfterDownload: Boolean = false,
         forceChainYouTube: Boolean = false
     ) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
             return
         }
+
+        val shouldChainYt = chainYouTubeAfterDownload || forceChainYouTube
 
         activeJob = serviceScope.launch {
             isJobRunning = true
@@ -310,9 +304,8 @@ class AutoTouchService : AccessibilityService() {
                 for (step in 1..maxSteps) {
                     if (!isActive) break
 
-                    // Check if a new 8s video file was downloaded into AutoVideos / Downloads
                     val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                    if (newlyDownloaded != null && (forceChainYouTube || userGoal.contains("youtube", true))) {
+                    if (newlyDownloaded != null && (shouldChainYt || userGoal.contains("youtube", true))) {
                         VideoQueueManager.appendLog(
                             this@AutoTouchService,
                             "🎬 Downloaded 8s Video Ready: ${newlyDownloaded.name}! Launching YouTube Auto-Upload..."
@@ -384,9 +377,6 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    /**
-     * Automatically grabs any generated <video src="..."> or download button in Google Flow / WebView
-     */
     private fun triggerVideoDownloadInWebView(webView: WebView?, directUrl: String) {
         if (directUrl.startsWith("http")) {
             webView?.loadUrl(directUrl)
@@ -483,14 +473,12 @@ class AutoTouchService : AccessibilityService() {
         webView?.evaluateJavascript(js, null)
     }
 
-    // ========================================================================
-    // ENGINE 3: TESTED & WORKING YOUTUBE SHORTS AUTO-UPLOADER
-    // ========================================================================
     fun startYouTubeAutoUpload(
         apiKey: String,
         model: String,
         folderPath: String,
-        userPrompt: String
+        userPrompt: String,
+        createAiVideoIfEmpty: Boolean = false
     ) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
@@ -507,6 +495,18 @@ class AutoTouchService : AccessibilityService() {
                 overlayHud?.updateStatus("Step 1/5 • Folder", "Scanning folder for video...", "WORKING")
                 val nextVideo = VideoQueueManager.getNextPendingVideo(this@AutoTouchService, folderPath)
                 if (nextVideo == null) {
+                    if (createAiVideoIfEmpty) {
+                        isJobRunning = false
+                        startGoogleFlowToYouTubePipeline(
+                            apiKey = apiKey,
+                            model = model,
+                            flowUrl = VideoQueueManager.getPinnedFlowUrl(this@AutoTouchService),
+                            topicIdea = userPrompt,
+                            dailyVideoCount = 1,
+                            folderPath = folderPath
+                        )
+                        return@launch
+                    }
                     isJobRunning = false
                     overlayHud?.setCursorOverlayVisible(false)
                     overlayHud?.updateStatus("Queue Empty", "Tap 'Reset History' or make video!", "ERROR")
@@ -667,13 +667,11 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    // ========================================================================
-    // ENGINE 4: UNIVERSAL PHONE AGENT + CONTINUOUS LIVE CHAT MONITOR
-    // ========================================================================
     fun startUniversalAiTask(
         apiKey: String,
         model: String,
-        userGoal: String
+        userGoal: String,
+        initialSettingAction: String? = null
     ) {
         if (isJobRunning) {
             VideoQueueManager.appendLog(this, "⚠️ Agent is already busy!")
@@ -692,7 +690,6 @@ class AutoTouchService : AccessibilityService() {
             val unstoppable = VideoQueueManager.is24HourUnstoppableEnabled(this@AutoTouchService)
             val stepDelay = VideoQueueManager.getStepDelayMs(this@AutoTouchService)
 
-            // Detect if the user wants Continuous Live Monitoring (like WhatsApp auto-chatting)
             val goalLower = userGoal.lowercase()
             val isContinuousMonitor = goalLower.contains("monitor") ||
                     goalLower.contains("wait") ||
@@ -705,8 +702,13 @@ class AutoTouchService : AccessibilityService() {
             val maxSteps = if (isContinuousMonitor || unstoppable) 5000 else 40
 
             try {
+                if (!initialSettingAction.isNullOrBlank()) {
+                    openSystemSettingOrApp(initialSettingAction)
+                    delay(2500)
+                }
+
                 overlayHud?.updateStatus("Universal Agent", "Goal: ${userGoal.take(26)}...", "THINKING")
-                VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Starting Universal Phone Agent (Monitor=$isContinuousMonitor): $userGoal")
+                VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Starting Universal Phone Agent: $userGoal")
                 val history = mutableListOf<String>()
                 var lastTapX = -1f
                 var lastTapY = -1f
@@ -735,7 +737,6 @@ class AutoTouchService : AccessibilityService() {
                         isContinuousMonitorMode = isContinuousMonitor
                     )
 
-                    // Guard: Never let Continuous Monitor stop prematurely on "DONE"!
                     if (isContinuousMonitor && decision.action.equals("DONE", true)) {
                         decision = decision.copy(
                             action = "WAIT",
