@@ -1,220 +1,92 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#060913"
-    android:fillViewport="true">
+    android:background="#121316"
+    android:orientation="vertical">
 
+    <!-- TOP EXECUTIVE HEADER BAR -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:background="#181A20"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="14dp">
 
-        <!-- TOP PREMIUM HEADER BAR -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingBottom="14dp">
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                app:cardBackgroundColor="#0F172A"
-                app:cardCornerRadius="14dp"
-                app:strokeColor="#00E5FF"
-                app:strokeWidth="1.5dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:gravity="center"
-                    android:text="◉‿◉"
-                    android:textColor="#00E5FF"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-            </com.google.android.material.card.MaterialCardView>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:letterSpacing="0.06"
-                    android:text="AURADROID PRO"
-                    android:textColor="#F8FAFC"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Autonomous Multi-Tasking AI OS"
-                    android:textColor="#38BDF8"
-                    android:textSize="11sp" />
-            </LinearLayout>
+            android:layout_weight="1"
+            android:orientation="vertical">
 
             <TextView
-                android:id="@+id/tvServiceBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="#111827"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="6dp"
-                android:text="● OFFLINE"
-                android:textColor="#EF4444"
-                android:textSize="10sp"
+                android:text="AuraDroid OS"
+                android:textColor="#F8FAFC"
+                android:textSize="22sp"
                 android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/btnToggleSettings"
+            <TextView
+                android:id="@+id/tvActiveSubtitle"
                 android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="#1E293B"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minWidth="0dp"
-                android:paddingHorizontal="12dp"
-                android:text="⚙️ Setup"
-                android:textAllCaps="false"
-                android:textColor="#E2E8F0"
-                android:textSize="11sp" />
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="24/7 Autonomous AI Companion"
+                android:textColor="#94A3B8"
+                android:textSize="13sp" />
         </LinearLayout>
 
-        <!-- LIVE METRICS DASHBOARD STRIP (3 MINI CARDS) -->
-        <LinearLayout
-            android:layout_width="match_parent"
+        <Button
+            android:id="@+id/btnToggleFloatingPod"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="#262932"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="12dp"
+            android:text="Pod: ON"
+            android:textAllCaps="false"
+            android:textColor="#F8FAFC"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvServiceBadge"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            android:orientation="horizontal">
+            android:background="#262932"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="7dp"
+            android:text="TOUCH: OFF"
+            android:textColor="#F87171"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                app:cardBackgroundColor="#0D1322"
-                app:cardCornerRadius="16dp"
-                app:strokeColor="#1E293B"
-                app:strokeWidth="1dp">
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#262932" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:orientation="vertical"
-                    android:padding="12dp">
+    <!-- MAIN 5-TAB CONTENT CONTAINER -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-                    <TextView
-                        android:id="@+id/tvStatPending"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0"
-                        android:textColor="#00E5FF"
-                        android:textSize="22sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="PENDING VIDEOS"
-                        android:textColor="#94A3B8"
-                        android:textSize="9sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="3dp"
-                android:layout_weight="1"
-                app:cardBackgroundColor="#0D1322"
-                app:cardCornerRadius="16dp"
-                app:strokeColor="#1E293B"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:id="@+id/tvStatUploaded"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="0"
-                        android:textColor="#10B981"
-                        android:textSize="22sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="UPLOADED"
-                        android:textColor="#94A3B8"
-                        android:textSize="9sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                app:cardBackgroundColor="#0D1322"
-                app:cardCornerRadius="16dp"
-                app:strokeColor="#1E293B"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <TextView
-                        android:id="@+id/tvStatSchedule"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="18:00"
-                        android:textColor="#A855F7"
-                        android:textSize="22sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="DAILY AUTO"
-                        android:textColor="#94A3B8"
-                        android:textSize="9sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-        </LinearLayout>
-
-        <!-- HERO AI COMMAND STUDIO CARD -->
-        <com.google.android.material.card.MaterialCardView
+        <!-- ========================================================= -->
+        <!-- TAB 1: INTERACTIVE AI CHAT & STEP-BY-STEP PLANNER (HOME)  -->
+        <!-- ========================================================= -->
+        <ScrollView
+            android:id="@+id/tabChatLayout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            app:cardBackgroundColor="#0B1120"
-            app:cardCornerRadius="20dp"
-            app:strokeColor="#00E5FF"
-            app:strokeWidth="1.5dp">
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="visible">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -222,482 +94,1088 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <LinearLayout
+                <!-- Chat Conversation Card -->
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:letterSpacing="0.05"
-                        android:text="✨ AI MISSION CONTROL"
-                        android:textColor="#00E5FF"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/tvNextFileBadge"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Next: None"
-                        android:textColor="#A7F3D0"
-                        android:textSize="11sp" />
-                </LinearLayout>
-
-                <!-- 4 QUICK MODE SELECTOR PILLS -->
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:scrollbars="none">
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
 
                     <LinearLayout
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal">
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                        <Button
-                            android:id="@+id/chipModeYt"
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="AI डिस्कशन और प्लानर चैट"
+                                android:textColor="#F8FAFC"
+                                android:textSize="17sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnClearChat"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="Clear Chat"
+                                android:textAllCaps="false"
+                                android:textColor="#CBD5E1"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tvChatHistory"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:background="#121316"
+                            android:lineSpacingExtra="5dp"
+                            android:minHeight="170dp"
+                            android:padding="14dp"
+                            android:text="🤖 Companion Bot: नमस्ते भाई! मुझे कोई भी काम आराम से समझाओ।\n\nमैं पहले आपसे बात करके पूरा Step-by-Step प्लान बनाऊंगा ताकि कोई कन्फ्यूजन न रहे। जब आप 'Start Approved Plan' दबाएंगे, तभी मैं काम शुरू करूंगा!"
+                            android:textColor="#E2E8F0"
+                            android:textSize="15sp" />
+
+                        <EditText
+                            android:id="@+id/etChatInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="95dp"
+                            android:layout_marginTop="12dp"
+                            android:background="#22252E"
+                            android:gravity="top|start"
+                            android:hint="यहाँ लिखें या माइक से बोलें (जैसे: 'इस वेबसाइट पर जाकर फ्री लिमिट चेक करो, स्टोरी वीडियो बनाओ, डाउनलोड करो और YouTube पर डाल दो')..."
+                            android:padding="14dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="15sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnVoiceMic"
+                                android:layout_width="wrap_content"
+                                android:layout_height="50dp"
+                                android:layout_marginEnd="8dp"
+                                android:backgroundTint="#262932"
+                                android:text="🎙️ बोलें"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp" />
+
+                            <Button
+                                android:id="@+id/btnSendChat"
+                                android:layout_width="0dp"
+                                android:layout_height="50dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#3B82F6"
+                                android:text="बात करें और प्लान बनाएं"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Verified Action Plan Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardActionPlan"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
-                            android:layout_marginEnd="8dp"
-                            android:backgroundTint="#00E5FF"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:text="⚡ YT Folder Auto"
-                            android:textAllCaps="false"
-                            android:textColor="#000000"
-                            android:textSize="11sp"
+                            android:layout_height="wrap_content"
+                            android:text="📋 AI का तैयार किया हुआ एक्शन प्लान"
+                            android:textColor="#F8FAFC"
+                            android:textSize="17sp"
                             android:textStyle="bold" />
 
-                        <Button
-                            android:id="@+id/chipModeBgWeb"
+                        <TextView
+                            android:id="@+id/tvPlanSteps"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="#121316"
+                            android:lineSpacingExtra="5dp"
+                            android:padding="14dp"
+                            android:text="अभी कोई प्लान लॉक नहीं है। ऊपर चैट में अपना काम लिखकर 'बात करें और प्लान बनाएं' दबाएं।"
+                            android:textColor="#CBD5E1"
+                            android:textSize="15sp" />
+
+                        <TextView
                             android:layout_width="wrap_content"
-                            android:layout_height="36dp"
-                            android:layout_marginEnd="8dp"
-                            android:backgroundTint="#1E293B"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:text="🌐 BG Web &amp; Form"
-                            android:textAllCaps="false"
-                            android:textColor="#E2E8F0"
-                            android:textSize="11sp" />
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="यह काम कैसे चलाना है? (Execution Mode चुनें):"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <RadioGroup
+                            android:id="@+id/rgExecutionMode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:orientation="vertical">
+
+                            <RadioButton
+                                android:id="@+id/rbModeBackgroundWeb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="🌐 Background Web Pod (फोन फ्री रहेगा, आइकॉन में काम चलेगा)"
+                                android:textColor="#F8FAFC"
+                                android:textSize="14sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbModePhoneScreen"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="📱 Phone Screen Auto-Touch (असली ऐप्स और सेटिंग्स खोलेगा)"
+                                android:textColor="#F8FAFC"
+                                android:textSize="14sp" />
+                        </RadioGroup>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnExecutePlan"
+                                android:layout_width="0dp"
+                                android:layout_height="52dp"
+                                android:layout_marginEnd="8dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#10B981"
+                                android:text="▶ हाँ, यह प्लान शुरू करें"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnSavePlanSkill"
+                                android:layout_width="wrap_content"
+                                android:layout_height="52dp"
+                                android:backgroundTint="#262932"
+                                android:text="★ सेव करें"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="14sp" />
+                        </LinearLayout>
 
                         <Button
-                            android:id="@+id/chipModeAiVideo"
-                            android:layout_width="wrap_content"
-                            android:layout_height="36dp"
-                            android:layout_marginEnd="8dp"
-                            android:backgroundTint="#1E293B"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:text="🎬 AI Video ➔ YT"
+                            android:id="@+id/btnStopAgent"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="8dp"
+                            android:backgroundTint="#EF4444"
+                            android:text="■ सभी चल रहे काम तुरंत रोकें (STOP)"
                             android:textAllCaps="false"
-                            android:textColor="#E2E8F0"
-                            android:textSize="11sp" />
-
-                        <Button
-                            android:id="@+id/chipModeApp"
-                            android:layout_width="wrap_content"
-                            android:layout_height="36dp"
-                            android:backgroundTint="#1E293B"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:text="📱 Any App AI"
-                            android:textAllCaps="false"
-                            android:textColor="#E2E8F0"
-                            android:textSize="11sp" />
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
                     </LinearLayout>
-                </HorizontalScrollView>
-
-                <!-- Target Website URL / App Input (Used for BG Web / Form / AI Video) -->
-                <EditText
-                    android:id="@+id/etTargetUrl"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:background="#151F32"
-                    android:hint="🌐 Website URL or App Name (e.g. https://... or Gemini)"
-                    android:padding="11dp"
-                    android:singleLine="true"
-                    android:text="https://www.google.com"
-                    android:textColor="#38BDF8"
-                    android:textColorHint="#64748B"
-                    android:textSize="12sp"
-                    android:visibility="gone" />
-
-                <!-- Command Input + Voice Mic Row -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:gravity="top"
-                    android:orientation="horizontal">
-
-                    <EditText
-                        android:id="@+id/etAiCommand"
-                        android:layout_width="0dp"
-                        android:layout_height="82dp"
-                        android:layout_weight="1"
-                        android:background="#151F32"
-                        android:gravity="top|start"
-                        android:hint="AI को कमांड दें या माइक दबाकर बोलें..."
-                        android:padding="12dp"
-                        android:text="Upload next pending video from folder to YouTube as Public with viral Hindi/English title, description and tags."
-                        android:textColor="#F8FAFC"
-                        android:textColorHint="#64748B"
-                        android:textSize="13sp" />
-
-                    <Button
-                        android:id="@+id/btnVoiceMic"
-                        android:layout_width="50dp"
-                        android:layout_height="82dp"
-                        android:layout_marginStart="8dp"
-                        android:backgroundTint="#7C4DFF"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:text="🎙️"
-                        android:textSize="20sp" />
-                </LinearLayout>
-
-                <!-- Primary Action Buttons -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btnLaunchMission"
-                        android:layout_width="0dp"
-                        android:layout_height="50dp"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1.3"
-                        android:backgroundTint="#00E5FF"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:text="🚀 Start AI Mission"
-                        android:textAllCaps="false"
-                        android:textColor="#000000"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-
-                    <Button
-                        android:id="@+id/btnToggleFloatingPod"
-                        android:layout_width="0dp"
-                        android:layout_height="50dp"
-                        android:layout_marginStart="6dp"
-                        android:layout_weight="1"
-                        android:backgroundTint="#10B981"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:text="◉‿◉ Live AI Pod"
-                        android:textAllCaps="false"
-                        android:textColor="#000000"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
-
-                <Button
-                    android:id="@+id/btnStopAgent"
-                    android:layout_width="match_parent"
-                    android:layout_height="42dp"
-                    android:layout_marginTop="8dp"
-                    android:backgroundTint="#1E293B"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:text="■ Emergency Stop Active Task"
-                    android:textAllCaps="false"
-                    android:textColor="#F87171"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
+                </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </ScrollView>
 
-        <!-- COLLAPSIBLE CONFIGURATION & MEMORY DRAWER -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardSettingsDrawer"
+        <!-- ========================================================= -->
+        <!-- TAB 2: BACKGROUND WEB STUDIO & IN-APP AI BROWSER          -->
+        <!-- ========================================================= -->
+        <LinearLayout
+            android:id="@+id/tabWebLayout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            android:visibility="gone"
-            app:cardBackgroundColor="#0D1322"
-            app:cardCornerRadius="20dp"
-            app:strokeColor="#334155"
-            app:strokeWidth="1dp">
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:visibility="gone">
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="⚙️ SYSTEM PERMISSIONS &amp; AI SETUP"
-                    android:textColor="#38BDF8"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
+                android:layout_marginBottom="10dp"
+                app:cardBackgroundColor="#181A20"
+                app:cardCornerRadius="14dp"
+                app:strokeColor="#262932"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btnEnableAccessibility"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1"
-                        android:backgroundTint="#1E293B"
-                        android:text="1. Enable Auto-Touch"
-                        android:textAllCaps="false"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp" />
-
-                    <Button
-                        android:id="@+id/btnEnableStorage"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
-                        android:layout_weight="1"
-                        android:backgroundTint="#1E293B"
-                        android:text="2. Allow Folder Access"
-                        android:textAllCaps="false"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp" />
-                </LinearLayout>
-
-                <!-- Gemini Key & Model -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="GEMINI API KEY &amp; MODEL"
-                    android:textColor="#94A3B8"
-                    android:textSize="10sp"
-                    android:textStyle="bold" />
-
-                <EditText
-                    android:id="@+id/etApiKey"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:background="#151F32"
-                    android:hint="Paste Gemini API Key (AIzaSy...)"
-                    android:inputType="textPassword"
-                    android:padding="11dp"
-                    android:textColor="#FFFFFF"
-                    android:textColorHint="#64748B"
-                    android:textSize="12sp" />
-
-                <EditText
-                    android:id="@+id/etModelName"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:background="#151F32"
-                    android:hint="Model Name"
-                    android:padding="11dp"
-                    android:text="gemini-2.5-flash"
-                    android:textColor="#00E5FF"
-                    android:textSize="12sp" />
-
-                <!-- Folder & Daily Schedule -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="YOUTUBE VIDEO FOLDER &amp; DAILY SCHEDULE"
-                    android:textColor="#94A3B8"
-                    android:textSize="10sp"
-                    android:textStyle="bold" />
-
-                <EditText
-                    android:id="@+id/etFolderPath"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:background="#151F32"
-                    android:padding="11dp"
-                    android:text="/storage/emulated/0/Download/AutoVideos"
-                    android:textColor="#FFFFFF"
-                    android:textSize="12sp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btnScanFolder"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1"
-                        android:backgroundTint="#1E293B"
-                        android:text="🔄 Scan Folder"
-                        android:textAllCaps="false"
-                        android:textColor="#00E5FF"
-                        android:textSize="11sp" />
-
-                    <Button
-                        android:id="@+id/btnResetHistory"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
-                        android:layout_weight="1"
-                        android:backgroundTint="#1E293B"
-                        android:text="🗑️ Reset Uploaded"
-                        android:textAllCaps="false"
-                        android:textColor="#F87171"
-                        android:textSize="11sp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:orientation="vertical"
+                    android:padding="12dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Daily Time (24h): "
-                        android:textColor="#CBD5E1"
-                        android:textSize="12sp" />
-
-                    <EditText
-                        android:id="@+id/etHour"
-                        android:layout_width="48dp"
-                        android:layout_height="wrap_content"
-                        android:background="#151F32"
-                        android:gravity="center"
-                        android:inputType="number"
-                        android:padding="8dp"
-                        android:text="18"
-                        android:textColor="#FFFFFF"
-                        android:textSize="13sp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:paddingHorizontal="6dp"
-                        android:text=":"
-                        android:textColor="#FFFFFF"
+                        android:text="🌐 Background Web Studio (फोन डिस्टर्ब किए बिना काम करें)"
+                        android:textColor="#F8FAFC"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
-                    <EditText
-                        android:id="@+id/etMinute"
-                        android:layout_width="48dp"
-                        android:layout_height="wrap_content"
-                        android:background="#151F32"
-                        android:gravity="center"
-                        android:inputType="number"
-                        android:padding="8dp"
-                        android:text="00"
-                        android:textColor="#FFFFFF"
-                        android:textSize="13sp" />
-
-                    <Button
-                        android:id="@+id/btnSaveSchedule"
+                    <!-- Quick Bookmark Buttons -->
+                    <HorizontalScrollView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="10dp"
-                        android:backgroundTint="#7C4DFF"
-                        android:text="⏰ Save Daily Auto"
-                        android:textAllCaps="false"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp" />
+                        android:layout_marginTop="8dp"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnWebGemini"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="Gemini AI"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13sp" />
+
+                            <Button
+                                android:id="@+id/btnWebVideoAi"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="AI Video Site"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13sp" />
+
+                            <Button
+                                android:id="@+id/btnWebYtStudio"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="YouTube Studio Web"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13sp" />
+
+                            <Button
+                                android:id="@+id/btnWebGitHub"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="GitHub"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+                    </HorizontalScrollView>
+
+                    <!-- URL Bar -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/etWebUrl"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="#22252E"
+                            android:hint="https://..."
+                            android:inputType="textUri"
+                            android:paddingHorizontal="12dp"
+                            android:singleLine="true"
+                            android:text="https://gemini.google.com"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="14sp" />
+
+                        <Button
+                            android:id="@+id/btnWebGo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="44dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#3B82F6"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:text="खोलें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <!-- Web AI Goal Bar -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/etWebTaskGoal"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="#22252E"
+                            android:hint="वेबसाइट पर क्या करना है? (फॉर्म भरें / वीडियो बनाएं / कोड पेस्ट करें)"
+                            android:paddingHorizontal="12dp"
+                            android:singleLine="true"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="14sp" />
+
+                        <Button
+                            android:id="@+id/btnRunWebAgent"
+                            android:layout_width="wrap_content"
+                            android:layout_height="44dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#10B981"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:text="▶ AI चलाएं"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
                 </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                <!-- Personal Memory / Form Auto-Fill Data -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="USER MEMORY (FOR AUTO WEB FORM FILLING)"
-                    android:textColor="#94A3B8"
-                    android:textSize="10sp"
-                    android:textStyle="bold" />
+            <!-- Live Web Container -->
+            <FrameLayout
+                android:id="@+id/webPreviewContainer"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="#0D0E11" />
+        </LinearLayout>
 
-                <EditText
-                    android:id="@+id/etUserProfile"
-                    android:layout_width="match_parent"
-                    android:layout_height="64dp"
-                    android:layout_marginTop="4dp"
-                    android:background="#151F32"
-                    android:gravity="top|start"
-                    android:hint="Name, Email, Phone, City, Skills (फॉर्म भरते समय AI यहाँ से डिटेल्स लेगा)"
-                    android:padding="10dp"
-                    android:text="Name: Alex Kumar, Email: alex@example.com, Phone: 9876543210, Role: AI Creator"
-                    android:textColor="#E2E8F0"
-                    android:textSize="11sp" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- LIVE TELEMETRY & EXECUTION CONSOLE -->
-        <com.google.android.material.card.MaterialCardView
+        <!-- ========================================================= -->
+        <!-- TAB 3: YOUTUBE AUTO-UPLOAD & 24/7 PIPELINES               -->
+        <!-- ========================================================= -->
+        <ScrollView
+            android:id="@+id/tabPipelinesLayout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardBackgroundColor="#04070E"
-            app:cardCornerRadius="18dp"
-            app:strokeColor="#1E293B"
-            app:strokeWidth="1dp">
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="14dp">
+                android:padding="16dp">
 
-                <LinearLayout
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
 
-                    <TextView
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:letterSpacing="0.06"
-                        android:text="● LIVE AGENT TELEMETRY &amp; LOGS"
-                        android:textColor="#10B981"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                    <TextView
-                        android:id="@+id/tvQueueStatus"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Ready"
-                        android:textColor="#64748B"
-                        android:textSize="10sp" />
-                </LinearLayout>
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🎬 YouTube ऑटो-अपलोड और 24/7 शेड्यूलर"
+                            android:textColor="#F8FAFC"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
 
-                <TextView
-                    android:id="@+id/tvConsoleLog"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="3dp"
-                    android:minHeight="170dp"
-                    android:text="[System] AuraDroid Pro v2.0 Initialized.\n[System] Tap '🚀 Start AI Mission' or '◉‿◉ Live AI Pod'."
-                    android:textColor="#CBD5E1"
-                    android:textSize="11sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="वीडियो फोल्डर का पता (Folder Path):"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etFolderPath"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:padding="14dp"
+                            android:text="/storage/emulated/0/Download/AutoVideos"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/tvQueueStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="#121316"
+                            android:padding="12dp"
+                            android:text="Total: 0 | Pending: 0 | Uploaded: 0"
+                            android:textColor="#10B981"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnScanFolder"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="📂 Scan Folder"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="14sp" />
+
+                            <Button
+                                android:id="@+id/btnResetHistory"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="🔄 Reset Uploaded"
+                                android:textAllCaps="false"
+                                android:textColor="#F87171"
+                                android:textSize="14sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="AI टाइटल और डिस्क्रिप्शन का निर्देश:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etAiCommand"
+                            android:layout_width="match_parent"
+                            android:layout_height="80dp"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:gravity="top|start"
+                            android:padding="12dp"
+                            android:text="Upload next pending video from folder to YouTube as Public with viral Hindi/English title, description and tags."
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbPipelineAiVideoFirst"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="अगर फोल्डर में वीडियो खत्म हो जाए, तो पहले Background Web से नया AI वीडियो बनाकर डाउनलोड करे"
+                            android:textColor="#E2E8F0"
+                            android:textSize="14sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="डेली समय (24h): "
+                                android:textColor="#E2E8F0"
+                                android:textSize="15sp" />
+
+                            <EditText
+                                android:id="@+id/etHour"
+                                android:layout_width="60dp"
+                                android:layout_height="46dp"
+                                android:background="#22252E"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="18"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:paddingHorizontal="6dp"
+                                android:text=":"
+                                android:textColor="#FFFFFF"
+                                android:textSize="20sp"
+                                android:textStyle="bold" />
+
+                            <EditText
+                                android:id="@+id/etMinute"
+                                android:layout_width="60dp"
+                                android:layout_height="46dp"
+                                android:background="#22252E"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="00"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp" />
+
+                            <Button
+                                android:id="@+id/btnSaveSchedule"
+                                android:layout_width="match_parent"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="10dp"
+                                android:backgroundTint="#3B82F6"
+                                android:text="⏰ डेली सेट करें"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnRunYouTubeNow"
+                            android:layout_width="match_parent"
+                            android:layout_height="54dp"
+                            android:layout_marginTop="14dp"
+                            android:backgroundTint="#10B981"
+                            android:text="▶ अभी अगली वीडियो YouTube पर अपलोड करें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+        </ScrollView>
 
+        <!-- ========================================================= -->
+        <!-- TAB 4: PHONE DOCTOR & PERSONAL MEMORY VAULT               -->
+        <!-- ========================================================= -->
+        <ScrollView
+            android:id="@+id/tabDoctorLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Phone Doctor Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🛠️ Phone Doctor (सेटिंग्स और समस्या ठीक करें)"
+                            android:textColor="#F8FAFC"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="अपने फोन की कोई भी दिक्कत लिखें, AI खुद Settings खोलकर ठीक करेगा:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etDoctorProblem"
+                            android:layout_width="match_parent"
+                            android:layout_height="80dp"
+                            android:layout_marginTop="8dp"
+                            android:background="#22252E"
+                            android:gravity="top|start"
+                            android:hint="जैसे: 'मेरे फोन की बैटरी जल्दी खत्म हो रही है, Battery Saver चालू कर दो' या 'Display सेटिंग में जाकर Dark Mode चेक करो'..."
+                            android:padding="12dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="15sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnDocBattery"
+                                android:layout_width="0dp"
+                                android:layout_height="44dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="🔋 Battery Fix"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13sp" />
+
+                            <Button
+                                android:id="@+id/btnDocWifi"
+                                android:layout_width="0dp"
+                                android:layout_height="44dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="📶 Network"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13sp" />
+
+                            <Button
+                                android:id="@+id/btnDocStorage"
+                                android:layout_width="0dp"
+                                android:layout_height="44dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="💾 Storage"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnRunPhoneDoctor"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="10dp"
+                            android:backgroundTint="#3B82F6"
+                            android:text="🛠️ AI से फोन सेटिंग ठीक करवाएं"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Personal Memory Vault Card (For Forms, Websites & GitHub) -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔐 Personal Memory Vault (फॉर्म और GitHub डेटा)"
+                            android:textColor="#F8FAFC"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="यहाँ लिखी जानकारी का इस्तेमाल AI वेबसाइट का फॉर्म भरने, GitHub प्रोजेक्ट अपडेट करने या आपकी पसंद याद रखने के लिए करेगा:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etMemoryVault"
+                            android:layout_width="match_parent"
+                            android:layout_height="130dp"
+                            android:layout_marginTop="10dp"
+                            android:background="#22252E"
+                            android:gravity="top|start"
+                            android:hint="Name: \nEmail: \nPhone: \nGitHub Repo URL: \nFavorite Video Topic: Horror &amp; Mystery Shorts"
+                            android:padding="12dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="15sp" />
+
+                        <Button
+                            android:id="@+id/btnSaveMemory"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="10dp"
+                            android:backgroundTint="#10B981"
+                            android:text="💾 मेमोरी सेव करें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ========================================================= -->
+        <!-- TAB 5: SETTINGS, CUSTOMIZATION & LIVE LOGS                -->
+        <!-- ========================================================= -->
+        <ScrollView
+            android:id="@+id/tabSettingsLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Permissions & API Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="⚙️ सिस्टम परमिशन और AI इंजन कस्टमाइज़ेशन"
+                            android:textColor="#F8FAFC"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnEnableAccessibility"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="Enable Auto-Touch"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+
+                            <Button
+                                android:id="@+id/btnEnableStorage"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="Allow Folder Access"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Gemini API Key:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etApiKey"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:hint="Paste Gemini API Key (AIzaSy...)"
+                            android:inputType="textPassword"
+                            android:padding="14dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="AI Model Name:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etModelName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:padding="14dp"
+                            android:text="gemini-2.5-flash"
+                            android:textColor="#F8FAFC"
+                            android:textSize="15sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbUseScreenVision"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:checked="true"
+                            android:text="👁️ Real Screenshot Vision (स्क्रीनशॉट देखकर बटन और वेबसाइट पहचानना)"
+                            android:textColor="#F8FAFC"
+                            android:textSize="15sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb24HourUnstoppable"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🔋 24-Hour Non-Stop Mode (चाहे कितना भी समय लगे, काम पूरा होने तक रुके नहीं)"
+                            android:textColor="#F8FAFC"
+                            android:textSize="15sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="हर स्टेप के बीच का समय (Seconds):"
+                                android:textColor="#E2E8F0"
+                                android:textSize="15sp" />
+
+                            <EditText
+                                android:id="@+id/etStepDelaySec"
+                                android:layout_width="70dp"
+                                android:layout_height="44dp"
+                                android:background="#22252E"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="3"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp" />
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnSaveSettings"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="12dp"
+                            android:backgroundTint="#3B82F6"
+                            android:text="💾 सभी सेटिंग्स सेव करें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Live Execution Logs Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="📊 लाइव एजेंट रिपोर्ट और लॉग्स"
+                                android:textColor="#10B981"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnClearLogs"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="Clear"
+                                android:textAllCaps="false"
+                                android:textColor="#CBD5E1"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tvConsoleLog"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="#121316"
+                            android:fontFamily="monospace"
+                            android:lineSpacingExtra="4dp"
+                            android:minHeight="200dp"
+                            android:padding="12dp"
+                            android:text="[System] AuraDroid OS Ready."
+                            android:textColor="#E2E8F0"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#262932" />
+
+    <!-- BOTTOM 5-TAB PROFESSIONAL NAVIGATION BAR -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:background="#181A20"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="4dp">
+
+        <Button
+            android:id="@+id/navTabChat"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="💬\nChat"
+            android:textAllCaps="false"
+            android:textColor="#3B82F6"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/navTabWeb"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="🌐\nWeb Pod"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/navTabPipelines"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="🎬\nYouTube"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/navTabDoctor"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="🛠️\nDoctor"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/navTabSettings"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="⚙️\nSettings"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
     </LinearLayout>
-</ScrollView>
+
+</LinearLayout>
