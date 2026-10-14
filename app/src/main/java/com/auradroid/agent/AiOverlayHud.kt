@@ -39,7 +39,8 @@ class AiOverlayHud(private val context: Context) {
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                     PixelFormat.TRANSLUCENT
                 )
                 pointerCanvasView = CuteBotCanvasView(context)
@@ -258,9 +259,6 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-    /**
-     * Clean Cute Floating AI Bot + Soft Circular Tap Ripple (NO straight lines)
-     */
     private class CuteBotCanvasView(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -268,6 +266,7 @@ class AiOverlayHud(private val context: Context) {
             textSize = 28f
             typeface = Typeface.DEFAULT_BOLD
         }
+        private val screenOffset = IntArray(2)
 
         private var botX = 540f
         private var botY = 400f
@@ -334,31 +333,31 @@ class AiOverlayHud(private val context: Context) {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            getLocationOnScreen(screenOffset)
+            val ox = screenOffset[0].toFloat()
+            val oy = screenOffset[1].toFloat()
 
-            // 1. Expanding Circular Tap Ripple at Target (No straight lines!)
+            val drawTargetX = targetX - ox
+            val drawTargetY = targetY - oy
+            val cx = (botX - ox)
+            val cy = (botY - oy) + sin(hoverPhase) * 5f
+
             if (rippleProgress > 0f && rippleProgress < 1f) {
                 val alpha = ((1f - rippleProgress) * 220).toInt().coerceIn(0, 255)
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 5f
                 paint.color = Color.argb(alpha, 0, 229, 255)
-                canvas.drawCircle(targetX, targetY, 18f + rippleProgress * 85f, paint)
+                canvas.drawCircle(drawTargetX, drawTargetY, 18f + rippleProgress * 85f, paint)
 
                 paint.strokeWidth = 3.5f
                 paint.color = Color.argb(alpha, 168, 85, 247)
-                canvas.drawCircle(targetX, targetY, 8f + rippleProgress * 45f, paint)
+                canvas.drawCircle(drawTargetX, drawTargetY, 8f + rippleProgress * 45f, paint)
             }
 
-            // 2. Cute Floating AI Bot Orb at (botX, botY)
-            val floatOffsetY = sin(hoverPhase) * 5f
-            val cx = botX
-            val cy = botY + floatOffsetY
-
-            // Soft Outer Glow
             paint.style = Paint.Style.FILL
             paint.color = Color.argb(60, 0, 229, 255)
             canvas.drawCircle(cx, cy, 38f, paint)
 
-            // Bot Main Head Circle
             paint.color = Color.parseColor("#0F172A")
             canvas.drawCircle(cx, cy, 26f, paint)
             paint.style = Paint.Style.STROKE
@@ -366,23 +365,19 @@ class AiOverlayHud(private val context: Context) {
             paint.color = Color.parseColor("#00E5FF")
             canvas.drawCircle(cx, cy, 26f, paint)
 
-            // Cute Floating Crown Dot Above Head (No line)
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#A855F7")
             canvas.drawCircle(cx, cy - 34f, 5.5f, paint)
 
-            // Cute Glowing Eyes
             paint.color = Color.parseColor("#00E5FF")
             canvas.drawCircle(cx - 8.5f, cy - 3f, 4.2f, paint)
             canvas.drawCircle(cx + 8.5f, cy - 3f, 4.2f, paint)
 
-            // Cute Bot Smile Arc
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2.8f
             val smile = RectF(cx - 7.5f, cy + 1f, cx + 7.5f, cy + 10f)
             canvas.drawArc(smile, 15f, 150f, false, paint)
 
-            // 3. Compact Floating Badge next to Bot
             if (currentLabel.isNotEmpty()) {
                 val textWidth = textPaint.measureText(currentLabel)
                 val tagLeft = (cx + 34f).coerceAtMost(width - textWidth - 36f).coerceAtLeast(16f)
