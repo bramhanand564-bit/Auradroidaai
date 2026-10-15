@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.webkit.WebView
@@ -294,7 +293,7 @@ object WebPipelineManager {
                     insertCaptionSingleClean(service, metadata.title)
                     titleFilled = true
                     delay(1800)
-                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
                     delay(2800)
                     continue
                 }
