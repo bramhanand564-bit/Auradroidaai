@@ -49,7 +49,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navTabDoctor: Button
     private lateinit var navTabSettings: Button
 
-    // Tab 1: Chat & Planner
     private lateinit var tvChatHistory: TextView
     private lateinit var etChatInput: EditText
     private lateinit var tvPlanSteps: TextView
@@ -57,13 +56,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rbModePhoneScreen: RadioButton
     private var currentLockedGoal: String = ""
 
-    // Tab 2: Full-Control Browser
     private lateinit var etWebUrl: EditText
     private lateinit var etWebTaskGoal: EditText
     private lateinit var btnBrowserDesktop: Button
     private lateinit var webPreviewContainer: FrameLayout
 
-    // Tab 3: Google Flow 8s -> Daily 7/8 PM YouTube Pipeline
     private lateinit var etFlowTopic: EditText
     private lateinit var etDailyVideoLimit: EditText
     private lateinit var cbAutoGenerateFlowFirst: CheckBox
@@ -72,10 +69,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etFolderPath: EditText
     private lateinit var tvQueueStatus: TextView
 
-    // Tab 4: Vault
     private lateinit var etMemoryVault: EditText
 
-    // Tab 5: Settings & Logs
     private lateinit var etApiKey: EditText
     private lateinit var etModelName: EditText
     private lateinit var cbUseScreenVision: CheckBox
@@ -191,7 +186,7 @@ class MainActivity : AppCompatActivity() {
             1 -> "Interactive AI Chat & Universal Planner"
             2 -> "Full-Control Browser (Login Gmail & Google Flow)"
             3 -> "Google Flow (8s Video) ➔ Daily 7/8 PM YouTube"
-            4 -> "Personal Memory Vault & Custom Rules"
+            4 -> "SQLite Long-Term Brain & Memory Vault"
             else -> "Engine Settings, Keep-Alive Lock & Live Logs"
         }
 
@@ -207,9 +202,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ====================================================================
-    // TAB 1: UNIVERSAL CHAT & PLANNER
-    // ====================================================================
     private fun setupTab1ChatAndPlanner() {
         findViewById<Button>(R.id.btnClearChat).setOnClickListener {
             tvChatHistory.text = "🤖 Companion Bot: Chat saaf kar di gayi hai. Naya kaam batayein!"
@@ -297,9 +289,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ====================================================================
-    // TAB 2: FULL-CONTROL IN-APP BROWSER (MANUAL GMAIL & GOOGLE FLOW)
-    // ====================================================================
     private fun setupTab2FullBrowser() {
         findViewById<Button>(R.id.btnBrowserBack).setOnClickListener {
             val wv = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()
@@ -386,9 +375,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ====================================================================
-    // TAB 3: GOOGLE FLOW (8s VIDEO) ➔ DAILY 7/8 PM YOUTUBE PIPELINE
-    // ====================================================================
     private fun setupTab3FlowAndYouTubePipelines() {
         findViewById<Button>(R.id.btnSaveSchedule).setOnClickListener {
             saveSettings()
@@ -446,37 +432,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ====================================================================
-    // TAB 4: MEMORY VAULT
-    // ====================================================================
     private fun setupTab4Vault() {
         findViewById<Button>(R.id.btnSaveMemory).setOnClickListener {
-            VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString())
-            Toast.makeText(this, "Memory Vault Saved!", Toast.LENGTH_SHORT).show()
+            val userVault = etMemoryVault.text.toString()
+            VideoQueueManager.saveMemoryVault(this, userVault)
+            val learnedSummary = VideoQueueManager.getLearnedLessonsSummary(this)
+            AlertDialog.Builder(this)
+                .setTitle("🧠 Saved! Active SQLite Brain Rules:")
+                .setMessage(learnedSummary)
+                .setPositiveButton("Awesome", null)
+                .show()
         }
     }
 
-    // ====================================================================
-    // TAB 5: SETTINGS & BATTERY KILL PROTECTION
-    // ====================================================================
     private fun setupTab5Settings() {
         findViewById<Button>(R.id.btnEnableAccessibility).setOnClickListener {
-            // Open this app's accessibility page when supported; fall back to
-            // the general accessibility settings screen on OEM-customized Android.
-            val appAccessibilityIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                putExtra(":settings:fragment_args_key", "com.auradroid.agent/com.auradroid.agent.AutoTouchService")
-                putExtra("android.provider.extra.SETTINGS_FRAGMENT_ARG_KEY", "com.auradroid.agent/com.auradroid.agent.AutoTouchService")
-            }
-            try {
-                startActivity(appAccessibilityIntent)
-            } catch (_: Exception) {
-                startActivity(Intent(Settings.ACTION_SETTINGS))
-            }
-            Toast.makeText(
-                this,
-                "Enable AuraDroid AI Universal Companion, then return to AuraDroid.",
-                Toast.LENGTH_LONG
-            ).show()
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            Toast.makeText(this, "Turn ON 'AuraDroid AI Universal Companion'", Toast.LENGTH_LONG).show()
         }
 
         findViewById<Button>(R.id.btnEnableStorage).setOnClickListener {
