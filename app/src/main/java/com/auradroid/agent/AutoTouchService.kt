@@ -283,7 +283,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (Multi-Frame + SQLite Memory!)
+    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (Fixed Rendering % + Auto Card Download!)
     // ========================================================================
     fun startBackgroundWebTask(
         apiKey: String,
@@ -314,19 +314,21 @@ class AutoTouchService : AccessibilityService() {
             val memoryVault = VideoQueueManager.getMemoryVault(this@AutoTouchService)
             val unstoppable = VideoQueueManager.is24HourUnstoppableEnabled(this@AutoTouchService)
             val stepDelay = VideoQueueManager.getStepDelayMs(this@AutoTouchService)
-            val maxSteps = if (unstoppable) 2000 else 60
+            val maxSteps = if (unstoppable) 2000 else 80
 
             var flowPromptSubmitted = false
+            var submittedAtTimeMs = 0L
             var downloadAttempts = 0
             var previousWebScreenshotB64: String? = null
             var previousDomHash = 0
 
             try {
+                // If already inside a Google Flow project or landing page, DO NOT reload & lose the open project!
                 val currentLoadedUrl = webView?.url ?: ""
-                val alreadyOnSameDomain = currentLoadedUrl.contains("labs.google/fx", true) &&
+                val alreadyOnFlow = currentLoadedUrl.contains("labs.google/fx", true) &&
                         initialUrl.contains("labs.google/fx", true)
 
-                if (initialUrl.isNotBlank() && initialUrl.startsWith("http") && !alreadyOnSameDomain &&
+                if (initialUrl.isNotBlank() && initialUrl.startsWith("http") && !alreadyOnFlow &&
                     !currentLoadedUrl.startsWith(initialUrl.take(22), true)
                 ) {
                     overlayHud?.updateStatus("Web Pod • Opening", initialUrl, "WORKING")
@@ -340,6 +342,7 @@ class AutoTouchService : AccessibilityService() {
                 for (step in 1..maxSteps) {
                     if (!isActive) break
 
+                    // Check if the new MP4 file has finished downloading into AutoVideos / Downloads!
                     val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
                     if (newlyDownloaded != null && (shouldChainYt || userGoal.contains("youtube", true))) {
                         VideoQueueManager.appendLog(
@@ -361,6 +364,78 @@ class AutoTouchService : AccessibilityService() {
                         }
                     }
 
+                    // HARD 1-VIDEO CREDIT LOCK + ACCURATE RENDERING & DOWNLOAD LOOP
+                    if (flowPromptSubmitted) {
+                        val elapsedSec = (System.currentTimeMillis() - submittedAtTimeMs) / 1000L
+                        val renderState = checkGoogleFlowRenderState(webView)
+
+                        // 1. For the first 12 seconds OR while ANY percentage (0%..100%) is visible on the card, WAIT!
+                        if (elapsedSec < 12L || renderState.startsWith("RENDERING:")) {
+                            val pct = renderState.removePrefix("RENDERING:").ifBlank { "${elapsedSec}s" }
+                            overlayHud?.updateStatus(
+                                "Flow Rendering ($pct)",
+                                "Waiting for 8s video to finish...",
+                                "WAITING"
+                            )
+                            VideoQueueManager.appendLog(
+                                this@AutoTouchService,
+                                "⏳ Google Flow Video Rendering: $pct (Elapsed: ${elapsedSec}s)..."
+                            )
+                            delay(4500)
+                            continue
+                        }
+
+                        // 2. If Google Flow rejected the prompt, log it clearly
+                        if (renderState.startsWith("FAILED:")) {
+                            overlayHud?.updateStatus("Flow Policy Error", "Prompt rejected by Google Flow", "ERROR")
+                            VideoQueueManager.appendLog(this@AutoTouchService, "❌ Google Flow Card Failed: $renderState")
+                            isJobRunning = false
+                            return@launch
+                        }
+
+                        // 3. Video is 100% READY (thumbnail/player visible, no % text)!
+                        // Click the finished card to open the player, then extract & download the MP4!
+                        downloadAttempts++
+                        overlayHud?.updateStatus(
+                            "Flow Ready • Saving",
+                            "Opening video & downloading MP4 (#$downloadAttempts)...",
+                            "WORKING"
+                        )
+                        val dlStatus = triggerVideoDownloadInWebView(webView, "")
+                        VideoQueueManager.appendLog(
+                            this@AutoTouchService,
+                            "📥 Auto-Download Step #$downloadAttempts ($renderState): $dlStatus"
+                        )
+                        delay(4500)
+
+                        val downloadedNow = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
+                        if (downloadedNow != null) {
+                            VideoQueueManager.recordLearnedLesson(
+                                this@AutoTouchService,
+                                "Google Flow video downloaded after $downloadAttempts card/player steps.",
+                                "GOOGLE_FLOW"
+                            )
+                            VideoQueueManager.appendLog(
+                                this@AutoTouchService,
+                                "✅ Video Downloaded Successfully: ${downloadedNow.name}! Starting YouTube Upload..."
+                            )
+                            isJobRunning = false
+                            startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
+                            return@launch
+                        }
+
+                        if (downloadAttempts >= 12) {
+                            VideoQueueManager.appendLog(
+                                this@AutoTouchService,
+                                "⚠️ Download attempts finished, checking folder queue..."
+                            )
+                            isJobRunning = false
+                            startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
+                            return@launch
+                        }
+                        continue
+                    }
+
                     val domSnapshot = extractWebDomAndDrawBadges(webView)
                     delay(180)
 
@@ -374,50 +449,11 @@ class AutoTouchService : AccessibilityService() {
                     val screenChangedStatus = if (step == 1) {
                         "Initial step."
                     } else if (currentDomHash != previousDomHash) {
-                        "SCREEN_CHANGED: YES (The previous action successfully updated the webpage)."
+                        "SCREEN_CHANGED: YES (The previous action updated the webpage)."
                     } else {
-                        "SCREEN_CHANGED: NO (Warning: The webpage DOM looks identical to the previous step!)"
+                        "SCREEN_CHANGED: NO (The webpage looks identical to the previous step)."
                     }
                     previousDomHash = currentDomHash
-
-                    // HARD 1-VIDEO CREDIT LOCK
-                    if (flowPromptSubmitted) {
-                        val isStillRendering = Regex("\\b([1-9]?[0-9])%\\b").find(domSnapshot)
-                        if (isStillRendering != null) {
-                            val pct = isStillRendering.value
-                            overlayHud?.updateStatus("Flow Rendering ($pct)", "Waiting for 8s video to finish...", "WAITING")
-                            VideoQueueManager.appendLog(this@AutoTouchService, "⏳ Video rendering at $pct (Credit Lock Active)...")
-                            previousWebScreenshotB64 = currentWebScreenshotB64
-                            delay(6000)
-                            continue
-                        } else {
-                            downloadAttempts++
-                            overlayHud?.updateStatus("Flow 100% • Download", "Opening video card & saving MP4 (#$downloadAttempts)...", "WORKING")
-                            val dlStatus = triggerVideoDownloadInWebView(webView, "")
-                            VideoQueueManager.appendLog(this@AutoTouchService, "📥 Auto-Download Status (#$downloadAttempts): $dlStatus")
-                            previousWebScreenshotB64 = currentWebScreenshotB64
-                            delay(5000)
-
-                            val downloadedNow = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                            if (downloadedNow != null) {
-                                VideoQueueManager.recordLearnedLesson(
-                                    this@AutoTouchService,
-                                    "Google Flow video downloaded after $downloadAttempts card-open attempts.",
-                                    "GOOGLE_FLOW"
-                                )
-                                VideoQueueManager.appendLog(this@AutoTouchService, "✅ Video Saved: ${downloadedNow.name}!")
-                                isJobRunning = false
-                                startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
-                                return@launch
-                            }
-                            if (downloadAttempts >= 5) {
-                                isJobRunning = false
-                                startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
-                                return@launch
-                            }
-                            continue
-                        }
-                    }
 
                     val domainKey = if (currentUrl.contains("labs.google", true)) "GOOGLE_FLOW" else "WEB"
                     val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(this@AutoTouchService, domainKey)
@@ -454,6 +490,7 @@ class AutoTouchService : AccessibilityService() {
                             history.add("Step $step: CLICK_EL(${decision.elementIndex}) -> $clickRes - ${decision.reason}")
                             if (clickRes.contains("arrow_forward", true) || clickRes.contains("Create", true)) {
                                 flowPromptSubmitted = true
+                                submittedAtTimeMs = System.currentTimeMillis()
                                 VideoQueueManager.appendLog(this@AutoTouchService, "🔒 1-Video Credit Lock Activated!")
                             }
                         }
@@ -466,8 +503,9 @@ class AutoTouchService : AccessibilityService() {
                             history.add("Step $step: TYPE_EL(${decision.elementIndex}) -> $typeRes")
                             if (typeRes.startsWith("SUBMITTED_OK") || typeRes.contains("TYPED_LEN:")) {
                                 flowPromptSubmitted = true
-                                VideoQueueManager.appendLog(this@AutoTouchService, "🔒 Prompt Submitted Once! 1-Video Credit Lock Activated.")
-                                delay(4000)
+                                submittedAtTimeMs = System.currentTimeMillis()
+                                VideoQueueManager.appendLog(this@AutoTouchService, "🔒 Prompt Submitted Once! Waiting for 0% -> 100% render...")
+                                delay(4500)
                             }
                         }
                         "SCROLL" -> {
@@ -488,10 +526,7 @@ class AutoTouchService : AccessibilityService() {
                             history.add("Step $step: DOWNLOAD_VIDEO ($dlRes)")
                         }
                         "WAIT" -> {
-                            if (domSnapshot.contains("HAS_VIDEO_ELEMENT: YES")) {
-                                triggerVideoDownloadInWebView(webView, "")
-                            }
-                            delay(6000)
+                            delay(5000)
                             history.add("Step $step: WAIT - ${decision.reason}")
                         }
                         "CHAIN_YOUTUBE" -> {
@@ -522,6 +557,81 @@ class AutoTouchService : AccessibilityService() {
                 releaseWakeLock()
                 isJobRunning = false
             }
+        }
+    }
+
+    /**
+     * Deeply inspects the entire webpage (including Shadow DOM and plain <div>/<span> tags)
+     * to accurately detect if Google Flow is still rendering ("0%", "2%", "25%", "100%")
+     * vs when the finished video thumbnail / player is actually ready!
+     */
+    private suspend fun checkGoogleFlowRenderState(webView: WebView?): String = suspendCancellableCoroutine { cont ->
+        if (webView == null) {
+            cont.resume("NO_WEBVIEW")
+            return@suspendCancellableCoroutine
+        }
+        val js = """
+            (function() {
+                function getAllTextDeep(root) {
+                    var text = '';
+                    var walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+                    var node = walker.currentNode;
+                    while (node) {
+                        var rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+                        if (rect && rect.top > 90 && rect.top < 750 && rect.width > 10 && rect.height > 10) {
+                            var ownText = '';
+                            for (var i = 0; i < node.childNodes.length; i++) {
+                                if (node.childNodes[i].nodeType === 3) {
+                                    ownText += node.childNodes[i].nodeValue + ' ';
+                                }
+                            }
+                            if (ownText.trim().length > 0) {
+                                text += ' ' + ownText.trim();
+                            }
+                        }
+                        if (node.shadowRoot) {
+                            text += ' ' + getAllTextDeep(node.shadowRoot);
+                        }
+                        node = walker.nextNode();
+                    }
+                    return text;
+                }
+
+                var fullText = getAllTextDeep(document) + ' ' + (document.body ? document.body.innerText : '');
+                
+                // 1. Check if any percentage (0% to 100%) is still displayed on a rendering card!
+                var pctMatch = fullText.match(/\b(\d{1,3})\s*%/);
+                if (pctMatch) {
+                    return 'RENDERING:' + pctMatch[1] + '%';
+                }
+
+                // 2. Check if a video player (<video>) is already open and loaded
+                var vids = document.querySelectorAll('video');
+                for (var v = 0; v < vids.length; v++) {
+                    if ((vids[v].currentSrc || vids[v].src || '').length > 4) {
+                        return 'READY_VIDEO_PLAYER';
+                    }
+                }
+
+                // 3. Check if a completed thumbnail card (with an <img> or play icon, and no '%') is visible in the middle area
+                var imgs = document.querySelectorAll('img, video, canvas');
+                for (var m = 0; m < imgs.length; m++) {
+                    var r = imgs[m].getBoundingClientRect();
+                    if (r.top > 110 && r.top < 650 && r.width > 70 && r.height > 90) {
+                        return 'READY_CARD_THUMBNAIL';
+                    }
+                }
+
+                // 4. If neither % nor thumbnail image is visible yet, the card placeholder is still initializing/blurring
+                if (fullText.indexOf('Start creating or drop media') === -1) {
+                    return 'RENDERING:Starting...';
+                }
+
+                return 'IDLE_EMPTY';
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js) { res ->
+            if (cont.isActive) cont.resume(res?.trim('"') ?: "RENDERING:...")
         }
     }
 
@@ -562,6 +672,12 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
+    /**
+     * Smart 3-Stage Google Flow Video Downloader:
+     * Stage A: If a <video> element is open on the page, directly fetch its blob/http MP4!
+     * Stage B: If a Download button or 3-dot menu item is visible in the player, click it!
+     * Stage C: If we are on the project grid (`01:48` in video), click the completed video thumbnail/play button to open the player!
+     */
     private suspend fun triggerVideoDownloadInWebView(webView: WebView?, directUrl: String): String = suspendCancellableCoroutine { cont ->
         if (webView == null) {
             cont.resume("NO_WEBVIEW")
@@ -574,15 +690,14 @@ class AutoTouchService : AccessibilityService() {
         }
         val js = """
             (function() {
-                var dlBtn = document.querySelector('a[download], button[aria-label*="Download" i], button[title*="Download" i], [role="menuitem"]');
-                if (dlBtn && (dlBtn.innerText || dlBtn.getAttribute('aria-label') || '').toLowerCase().indexOf('download') !== -1) {
-                    dlBtn.click();
-                    return 'CLICKED_DOWNLOAD_BTN';
-                }
-
+                // 1. Direct <video> stream extraction (Fastest & most reliable!)
                 var vids = document.querySelectorAll('video');
-                for (var i = vids.length - 1; i >= 0; i--) {
+                for (var i = 0; i < vids.length; i++) {
                     var src = vids[i].currentSrc || vids[i].src;
+                    if (!src) {
+                        var sourceEl = vids[i].querySelector('source');
+                        if (sourceEl) src = sourceEl.src;
+                    }
                     if (src && src.startsWith('blob:')) {
                         fetch(src).then(r => r.blob()).then(b => {
                             var reader = new FileReader();
@@ -593,28 +708,53 @@ class AutoTouchService : AccessibilityService() {
                         });
                         return 'BLOB_FETCHED';
                     } else if (src && src.startsWith('http')) {
-                        var a = document.createElement('a');
-                        a.href = src;
-                        a.download = 'flow_8s_' + Date.now() + '.mp4';
-                        document.body.appendChild(a);
-                        a.click();
-                        return 'HTTP_VIDEO_DOWNLOADED';
+                        fetch(src, { credentials: 'include' }).then(r => r.blob()).then(b => {
+                            var reader = new FileReader();
+                            reader.onloadend = function() {
+                                AuraBlobBridge.saveBase64Video(reader.result, 'flow_8s_' + Date.now() + '.mp4');
+                            };
+                            reader.readAsDataURL(b);
+                        }).catch(function() {
+                            var a = document.createElement('a');
+                            a.href = src;
+                            a.download = 'flow_8s_' + Date.now() + '.mp4';
+                            document.body.appendChild(a);
+                            a.click();
+                        });
+                        return 'HTTP_VIDEO_FETCHED';
                     }
                 }
 
-                var cards = document.querySelectorAll('a[href*="/edit/"], [role="button"], button, img');
-                for (var c = 0; c < cards.length; c++) {
-                    var el = cards[c];
+                // 2. Check if a Download button or menu item is visible
+                var allBtns = document.querySelectorAll('a[download], button, [role="menuitem"], [role="button"]');
+                for (var b = 0; b < allBtns.length; b++) {
+                    var label = (allBtns[b].innerText || allBtns[b].getAttribute('aria-label') || allBtns[b].getAttribute('title') || '').toLowerCase();
+                    if (label.indexOf('download') !== -1 || label === 'file_download') {
+                        allBtns[b].click();
+                        return 'CLICKED_DOWNLOAD_BTN';
+                    }
+                }
+
+                // 3. We are on the project grid (like 01:48 in the video)!
+                // Click the finished video card / thumbnail / play icon in the middle of the screen to open the video player!
+                var clickTargets = document.querySelectorAll('a[href*="/edit/"], img, button, [role="button"], div');
+                for (var c = 0; c < clickTargets.length; c++) {
+                    var el = clickTargets[c];
                     var rect = el.getBoundingClientRect();
                     var txt = (el.innerText || el.getAttribute('aria-label') || '').trim();
-                    if (rect.top > 110 && rect.top < 650 && rect.width > 60 && rect.height > 60) {
+                    if (rect.top > 115 && rect.top < 620 && rect.left >= 10 && rect.width > 65 && rect.height > 80) {
                         if (txt.indexOf('Failed') === -1 && txt.indexOf('%') === -1) {
+                            var opts = { bubbles: true, cancelable: true, view: window };
+                            el.dispatchEvent(new PointerEvent('pointerdown', opts));
+                            el.dispatchEvent(new MouseEvent('mousedown', opts));
+                            el.dispatchEvent(new PointerEvent('pointerup', opts));
+                            el.dispatchEvent(new MouseEvent('mouseup', opts));
                             el.click();
-                            return 'OPENED_VIDEO_CARD';
+                            return 'OPENED_FINISHED_VIDEO_CARD';
                         }
                     }
                 }
-                return 'WAITING_FOR_VIDEO_PLAYER';
+                return 'WAITING_FOR_CARD';
             })();
         """.trimIndent()
         webView.evaluateJavascript(js) { res ->
@@ -671,7 +811,7 @@ class AutoTouchService : AccessibilityService() {
                         } catch (e) {}
                     }
                 }
-                var bodyText = (document.body ? document.body.innerText : '').substring(0, 1400).replace(/\s+/g, ' ');
+                var bodyText = (document.body ? document.body.innerText : '').substring(0, 1800).replace(/\s+/g, ' ');
                 return 'HAS_VIDEO_ELEMENT: ' + hasVideo + '\nPAGE_TEXT: ' + bodyText + '\nELEMENTS:\n' + out.join('\n');
             })();
         """.trimIndent()
@@ -1063,7 +1203,6 @@ class AutoTouchService : AccessibilityService() {
                     if (!isActive) break
                     val nodes = captureScreenNodes()
 
-                    // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
                     val unsentInputNode = nodes.firstOrNull {
                         it.isEditable && it.text.isNotBlank() &&
                         !it.text.equals("Message", true) &&
