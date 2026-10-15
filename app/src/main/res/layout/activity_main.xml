@@ -316,7 +316,6 @@
                     android:orientation="vertical"
                     android:padding="10dp">
 
-                    <!-- Browser Navigation Bar (Back, Forward, Refresh, Desktop, Downloads, Quick Links) -->
                     <HorizontalScrollView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -431,7 +430,6 @@
                         </LinearLayout>
                     </HorizontalScrollView>
 
-                    <!-- URL Bar + Save Target Button -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -483,7 +481,6 @@
                             android:textSize="13sp" />
                     </LinearLayout>
 
-                    <!-- Optional AI Web Task Trigger (Only runs when YOU click ▶ AI चलाएं) -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -520,7 +517,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Interactive Manual & AI WebView Container -->
             <FrameLayout
                 android:id="@+id/webPreviewContainer"
                 android:layout_width="match_parent"
@@ -573,28 +569,20 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
-                            android:text="1. पहले 'Web Pod' टैब में जाकर अपना Gmail लॉगिन करके Google Flow खोल लें।\n2. यहाँ अपना टॉपिक और शाम 7:00 या 8:00 बजे का टाइम सेट कर दें:"
+                            android:text="1. पहले 'Browser' टैब में अपना Gmail लॉगिन करके Google Flow खोल लें।\n2. यहाँ अपना टॉपिक (और चाहें तो Hindi Voice/Dialog) लिखें:"
                             android:textColor="#94A3B8"
                             android:textSize="13.5sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:text="डेली वीडियो का टॉपिक / स्टोरी आइडिया (AI रोज़ नया सीन बनाएगा):"
-                            android:textColor="#CBD5E1"
-                            android:textSize="14sp" />
 
                         <EditText
                             android:id="@+id/etFlowTopic"
                             android:layout_width="match_parent"
                             android:layout_height="75dp"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginTop="8dp"
                             android:background="#22252E"
                             android:gravity="top|start"
-                            android:hint="जैसे: Futuristic AI Boy cinematic 8-second story in hyper-realistic 4K..."
+                            android:hint="जैसे: Futuristic cybernetic explorer story with Hindi voice and dialog..."
                             android:padding="12dp"
-                            android:text="Cinematic 8-second hyper-realistic story of a futuristic AI boy exploring a glowing sci-fi world"
+                            android:text="Cinematic 8-second hyper-realistic story of a futuristic cybernetic explorer in a glowing sci-fi world and story and hindi voice and dialog"
                             android:textColor="#FFFFFF"
                             android:textSize="14.5sp" />
 
@@ -636,7 +624,6 @@
                             android:textColor="#F8FAFC"
                             android:textSize="13.5sp" />
 
-                        <!-- Daily Schedule Time (Default 19:00 = 7:00 PM) -->
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
@@ -711,7 +698,7 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Local Folder Queue & Direct YouTube Upload Card -->
+                <!-- Local Folder Queue & Customizable Upload Order Card -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -729,7 +716,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="📂 डाउनलोड फोल्डर और डायरेक्ट YouTube अपलोड"
+                            android:text="📂 डाउनलोड फोल्डर और कस्टमाइज़ेबल अपलोड ऑर्डर"
                             android:textColor="#F8FAFC"
                             android:textSize="16.5sp"
                             android:textStyle="bold" />
@@ -744,6 +731,41 @@
                             android:text="/storage/emulated/0/Download/AutoVideos"
                             android:textColor="#FFFFFF"
                             android:textSize="14sp" />
+
+                        <!-- USER CUSTOMIZATION: NEWEST FIRST vs OLDEST FIRST -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="कौन-सी वीडियो पहले अपलोड हो? (आप खुद चुनें):"
+                            android:textColor="#CBD5E1"
+                            android:textSize="13.5sp"
+                            android:textStyle="bold" />
+
+                        <RadioGroup
+                            android:id="@+id/rgUploadOrder"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:orientation="vertical">
+
+                            <RadioButton
+                                android:id="@+id/rbUploadNewestFirst"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="🆕 सबसे नई वीडियो पहले अपलोड करें (Newest First)"
+                                android:textColor="#10B981"
+                                android:textSize="13.5sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbUploadOldestFirst"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="⏳ सबसे पुरानी वीडियो पहले अपलोड करें (Oldest First)"
+                                android:textColor="#F8FAFC"
+                                android:textSize="13.5sp" />
+                        </RadioGroup>
 
                         <TextView
                             android:id="@+id/tvQueueStatus"
@@ -837,7 +859,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="🔐 Personal Memory Vault"
+                            android:text="🔐 Personal Memory Vault &amp; SQLite Brain"
                             android:textColor="#F8FAFC"
                             android:textSize="18sp"
                             android:textStyle="bold" />
@@ -869,7 +891,7 @@
                             android:layout_height="48dp"
                             android:layout_marginTop="10dp"
                             android:backgroundTint="#10B981"
-                            android:text="💾 मेमोरी सेव करें"
+                            android:text="💾 मेमोरी सेव करें और सीखे हुए नियम देखें"
                             android:textAllCaps="false"
                             android:textColor="#FFFFFF"
                             android:textSize="15sp"
@@ -880,7 +902,7 @@
         </ScrollView>
 
         <!-- ========================================================= -->
-        <!-- TAB 5: SETTINGS, KEEP-ALIVE LOCK & LIVE LOGS              -->
+        <!-- TAB 5: CUSTOMIZABLE AI ENGINE SETTINGS & LIVE LOGS        -->
         <!-- ========================================================= -->
         <ScrollView
             android:id="@+id/tabSettingsLayout"
@@ -913,9 +935,9 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="⚙️ सिस्टम सेटिंग्स और 24/7 एक्सेसिबिलिटी लॉक"
+                            android:text="⚙️ कस्टमाइज़ेबल AI इंजन और वेरिफिकेशन सेटिंग्स"
                             android:textColor="#F8FAFC"
-                            android:textSize="17.5sp"
+                            android:textSize="17sp"
                             android:textStyle="bold" />
 
                         <LinearLayout
@@ -986,9 +1008,9 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:text="AI Model Name:"
+                            android:text="Fast AI Model (नॉर्मल स्टेप्स के लिए):"
                             android:textColor="#94A3B8"
-                            android:textSize="14sp" />
+                            android:textSize="13.5sp" />
 
                         <EditText
                             android:id="@+id/etModelName"
@@ -996,20 +1018,68 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:background="#22252E"
-                            android:padding="14dp"
+                            android:padding="12dp"
                             android:text="gemini-2.5-flash"
                             android:textColor="#F8FAFC"
-                            android:textSize="15sp" />
+                            android:textSize="14.5sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="High-Reasoning Model (जब क्लिक वेरिफाई न हो या अटक जाए):"
+                            android:textColor="#38BDF8"
+                            android:textSize="13.5sp"
+                            android:textStyle="bold" />
+
+                        <EditText
+                            android:id="@+id/etHighModelName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:padding="12dp"
+                            android:text="gemini-2.5-pro"
+                            android:textColor="#38BDF8"
+                            android:textSize="14.5sp"
+                            android:textStyle="bold" />
+
+                        <CheckBox
+                            android:id="@+id/cbAutoHighModel"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:checked="true"
+                            android:text="🧠 Auto High-Model Escalation (पेज न खुलने पर अपने आप High Model लगाए)"
+                            android:textColor="#F8FAFC"
+                            android:textSize="13.5sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbGoogleSearchGrounding"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🌍 Google Search Knowledge (अटकने पर Google से वेबसाइट की जानकारी ले)"
+                            android:textColor="#F8FAFC"
+                            android:textSize="13.5sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbRealWebTouch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="👆 Real Finger Touch on Browser (वेबसाइट पर असली उंगली जैसा टच करे)"
+                            android:textColor="#F8FAFC"
+                            android:textSize="13.5sp" />
 
                         <CheckBox
                             android:id="@+id/cbUseScreenVision"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
                             android:checked="true"
-                            android:text="👁️ Real Screenshot Vision"
+                            android:text="👁️ Real Screenshot Multi-Frame Vision"
                             android:textColor="#F8FAFC"
-                            android:textSize="15sp" />
+                            android:textSize="13.5sp" />
 
                         <CheckBox
                             android:id="@+id/cb24HourUnstoppable"
@@ -1018,7 +1088,7 @@
                             android:checked="true"
                             android:text="🔋 24-Hour Non-Stop Mode"
                             android:textColor="#F8FAFC"
-                            android:textSize="15sp" />
+                            android:textSize="13.5sp" />
 
                         <Button
                             android:id="@+id/btnSaveSettings"
@@ -1026,7 +1096,7 @@
                             android:layout_height="50dp"
                             android:layout_marginTop="12dp"
                             android:backgroundTint="#3B82F6"
-                            android:text="💾 सेटिंग्स सेव करें"
+                            android:text="💾 सभी कस्टम सेटिंग्स सेव करें"
                             android:textAllCaps="false"
                             android:textColor="#FFFFFF"
                             android:textSize="15sp"
