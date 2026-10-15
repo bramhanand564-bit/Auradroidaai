@@ -61,6 +61,7 @@ class AutoTouchService : AccessibilityService() {
     private val crashGuard = CoroutineExceptionHandler { _, throwable ->
         if (throwable is CancellationException) return@CoroutineExceptionHandler
         VideoQueueManager.appendLog(this, "⚠️ Handled Error: ${throwable.message}")
+        VideoQueueManager.recordLearnedLesson(this, "Avoid error: ${throwable.message}", "GLOBAL")
         isJobRunning = false
         overlayHud?.setCursorOverlayVisible(false)
         overlayHud?.updateStatus("Error", throwable.message ?: "Stopped", "ERROR")
@@ -81,7 +82,7 @@ class AutoTouchService : AccessibilityService() {
         overlayHud?.show()
         overlayHud?.setCursorOverlayVisible(false)
         overlayHud?.updateStatus("Ready", "Tap 🌐 for Browser", "IDLE")
-        VideoQueueManager.appendLog(this, "✅ Universal Companion Connected (24/7 Protected)!")
+        VideoQueueManager.appendLog(this, "✅ Universal Companion Connected (SQLite Brain + Multi-Frame Vision Active)!")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -125,7 +126,7 @@ class AutoTouchService : AccessibilityService() {
             }
             val notif = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher)
-                .setContentTitle("AuraDroid OS • 24/7 Active")
+                .setContentTitle("AuraDroid OS • Self-Learning AI")
                 .setContentText(statusText)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -198,7 +199,7 @@ class AutoTouchService : AccessibilityService() {
                                     val scaled = Bitmap.createScaledBitmap(softBitmap, 540, 1200, true)
                                     softBitmap.recycle()
                                     val baos = ByteArrayOutputStream()
-                                    scaled.compress(Bitmap.CompressFormat.JPEG, 60, baos)
+                                    scaled.compress(Bitmap.CompressFormat.JPEG, 62, baos)
                                     scaled.recycle()
                                     val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
                                     if (cont.isActive) cont.resume(b64)
@@ -282,7 +283,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (With 1-Video Credit Lock!)
+    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (Multi-Frame + SQLite Memory!)
     // ========================================================================
     fun startBackgroundWebTask(
         apiKey: String,
@@ -315,9 +316,10 @@ class AutoTouchService : AccessibilityService() {
             val stepDelay = VideoQueueManager.getStepDelayMs(this@AutoTouchService)
             val maxSteps = if (unstoppable) 2000 else 60
 
-            // STRICT SINGLE-VIDEO CREDIT LOCK: Once true, agent CANNOT type or submit another prompt!
             var flowPromptSubmitted = false
             var downloadAttempts = 0
+            var previousWebScreenshotB64: String? = null
+            var previousDomHash = 0
 
             try {
                 val currentLoadedUrl = webView?.url ?: ""
@@ -338,7 +340,6 @@ class AutoTouchService : AccessibilityService() {
                 for (step in 1..maxSteps) {
                     if (!isActive) break
 
-                    // Check if a newly downloaded .mp4 video file has arrived in AutoVideos / Downloads!
                     val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
                     if (newlyDownloaded != null && (shouldChainYt || userGoal.contains("youtube", true))) {
                         VideoQueueManager.appendLog(
@@ -352,7 +353,6 @@ class AutoTouchService : AccessibilityService() {
 
                     val currentUrl = webView?.url ?: initialUrl
 
-                    // If we are on Google Flow and haven't submitted the prompt yet, auto-switch Nano Banana -> Video 8s x1!
                     if (!flowPromptSubmitted && currentUrl.contains("labs.google/fx", true)) {
                         val modeFix = ensureGoogleFlowVideo8sMode(webView)
                         if (modeFix.startsWith("SWITCHED")) {
@@ -364,38 +364,53 @@ class AutoTouchService : AccessibilityService() {
                     val domSnapshot = extractWebDomAndDrawBadges(webView)
                     delay(180)
 
-                    val webCanvasScreenshotB64 = if (VideoQueueManager.isScreenVisionEnabled(this@AutoTouchService)) {
+                    val currentWebScreenshotB64 = if (VideoQueueManager.isScreenVisionEnabled(this@AutoTouchService)) {
                         overlayHud?.captureWebViewScreenshotBase64()
                     } else null
 
                     clearWebVisualBadges(webView)
 
-                    // HARD CREDIT LOCK: If prompt was already submitted, DO NOT let Gemini click Create/Type again!
+                    val currentDomHash = domSnapshot.take(600).hashCode()
+                    val screenChangedStatus = if (step == 1) {
+                        "Initial step."
+                    } else if (currentDomHash != previousDomHash) {
+                        "SCREEN_CHANGED: YES (The previous action successfully updated the webpage)."
+                    } else {
+                        "SCREEN_CHANGED: NO (Warning: The webpage DOM looks identical to the previous step!)"
+                    }
+                    previousDomHash = currentDomHash
+
+                    // HARD 1-VIDEO CREDIT LOCK
                     if (flowPromptSubmitted) {
                         val isStillRendering = Regex("\\b([1-9]?[0-9])%\\b").find(domSnapshot)
                         if (isStillRendering != null) {
                             val pct = isStillRendering.value
                             overlayHud?.updateStatus("Flow Rendering ($pct)", "Waiting for 8s video to finish...", "WAITING")
                             VideoQueueManager.appendLog(this@AutoTouchService, "⏳ Video rendering at $pct (Credit Lock Active)...")
+                            previousWebScreenshotB64 = currentWebScreenshotB64
                             delay(6000)
                             continue
                         } else {
-                            // Rendering % is gone (100% finished)! Open the video card & download it!
                             downloadAttempts++
                             overlayHud?.updateStatus("Flow 100% • Download", "Opening video card & saving MP4 (#$downloadAttempts)...", "WORKING")
                             val dlStatus = triggerVideoDownloadInWebView(webView, "")
                             VideoQueueManager.appendLog(this@AutoTouchService, "📥 Auto-Download Status (#$downloadAttempts): $dlStatus")
+                            previousWebScreenshotB64 = currentWebScreenshotB64
                             delay(5000)
 
                             val downloadedNow = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
                             if (downloadedNow != null) {
+                                VideoQueueManager.recordLearnedLesson(
+                                    this@AutoTouchService,
+                                    "Google Flow video downloaded after $downloadAttempts card-open attempts.",
+                                    "GOOGLE_FLOW"
+                                )
                                 VideoQueueManager.appendLog(this@AutoTouchService, "✅ Video Saved: ${downloadedNow.name}!")
                                 isJobRunning = false
                                 startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
                                 return@launch
                             }
                             if (downloadAttempts >= 5) {
-                                VideoQueueManager.appendLog(this@AutoTouchService, "⚠️ Download took too long, checking folder queue...")
                                 isJobRunning = false
                                 startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
                                 return@launch
@@ -404,7 +419,10 @@ class AutoTouchService : AccessibilityService() {
                         }
                     }
 
-                    overlayHud?.updateStatus("Web • Step $step", "Vision inspecting page...", "THINKING")
+                    val domainKey = if (currentUrl.contains("labs.google", true)) "GOOGLE_FLOW" else "WEB"
+                    val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(this@AutoTouchService, domainKey)
+
+                    overlayHud?.updateStatus("Web • Step $step", "CoT + Multi-Frame thinking...", "THINKING")
                     val decision = GeminiBrain.decideNextWebAction(
                         apiKey = apiKey,
                         model = model,
@@ -413,8 +431,18 @@ class AutoTouchService : AccessibilityService() {
                         pageTextAndElements = domSnapshot,
                         history = history,
                         memoryVault = memoryVault,
-                        screenshotBase64 = webCanvasScreenshotB64
+                        learnedLessons = learnedLessons,
+                        screenChangedStatus = screenChangedStatus,
+                        screenshotBase64 = currentWebScreenshotB64,
+                        previousScreenshotBase64 = previousWebScreenshotB64
                     )
+
+                    previousWebScreenshotB64 = currentWebScreenshotB64
+
+                    if (decision.learnedRule.isNotBlank()) {
+                        VideoQueueManager.recordLearnedLesson(this@AutoTouchService, decision.learnedRule, domainKey)
+                        VideoQueueManager.appendLog(this@AutoTouchService, "🧠 New Brain Rule Learned: ${decision.learnedRule}")
+                    }
 
                     val mood = if (decision.action == "WAIT") "WAITING" else "WORKING"
                     overlayHud?.updateStatus("Web • ${decision.action}", decision.reason, mood)
@@ -497,10 +525,6 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    /**
-     * Automatically checks if Google Flow is stuck in "Nano Banana" (Image) or "x2/x4" mode,
-     * and switches it to "Video • 9:16 • 8s • x1" automatically!
-     */
     private suspend fun ensureGoogleFlowVideo8sMode(webView: WebView?): String = suspendCancellableCoroutine { cont ->
         if (webView == null) {
             cont.resume("NO_WEBVIEW")
@@ -538,12 +562,6 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    /**
-     * Smart Google Flow Video Opener & Downloader:
-     * 1. If a <video> player is already open on screen, downloads its MP4 or clicks the 3-dot Download button.
-     * 2. If we are on the Google Flow project grid where the video finished rendering (100%), it clicks the newest
-     *    completed video thumbnail card to open the player first!
-     */
     private suspend fun triggerVideoDownloadInWebView(webView: WebView?, directUrl: String): String = suspendCancellableCoroutine { cont ->
         if (webView == null) {
             cont.resume("NO_WEBVIEW")
@@ -556,14 +574,12 @@ class AutoTouchService : AccessibilityService() {
         }
         val js = """
             (function() {
-                // 1. Check if a direct Download button or menu item is visible
                 var dlBtn = document.querySelector('a[download], button[aria-label*="Download" i], button[title*="Download" i], [role="menuitem"]');
                 if (dlBtn && (dlBtn.innerText || dlBtn.getAttribute('aria-label') || '').toLowerCase().indexOf('download') !== -1) {
                     dlBtn.click();
                     return 'CLICKED_DOWNLOAD_BTN';
                 }
 
-                // 2. Check if a <video> element with a valid src is currently loaded
                 var vids = document.querySelectorAll('video');
                 for (var i = vids.length - 1; i >= 0; i--) {
                     var src = vids[i].currentSrc || vids[i].src;
@@ -586,8 +602,6 @@ class AutoTouchService : AccessibilityService() {
                     }
                 }
 
-                // 3. If no <video> is loaded yet, we are on the Google Flow thumbnail grid!
-                // Find the newest completed video card (which does NOT say "Failed" and does NOT have "%") and click it to open the player!
                 var cards = document.querySelectorAll('a[href*="/edit/"], [role="button"], button, img');
                 for (var c = 0; c < cards.length; c++) {
                     var el = cards[c];
@@ -742,7 +756,6 @@ class AutoTouchService : AccessibilityService() {
                 target.click();
                 target.focus();
 
-                // Clear any old text first so we never duplicate prompts
                 try {
                     if (target.select) target.select();
                     else document.execCommand('selectAll', false, null);
@@ -768,7 +781,6 @@ class AutoTouchService : AccessibilityService() {
                     } catch (e2) {}
                 }
 
-                // Click arrow_forward ONCE after 500ms
                 setTimeout(function() {
                     var btns = document.querySelectorAll('button, [role="button"]');
                     for (var b = 0; b < btns.length; b++) {
@@ -996,7 +1008,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 4: UNIVERSAL PHONE AGENT + WHATSAPP AUTO-SEND FIX
+    // ENGINE 4: UNIVERSAL PHONE AGENT (Multi-Frame Vision + SQLite Brain!)
     // ========================================================================
     fun startUniversalAiTask(
         apiKey: String,
@@ -1044,14 +1056,14 @@ class AutoTouchService : AccessibilityService() {
                 var lastTapX = -1f
                 var lastTapY = -1f
                 var repeatTapCount = 0
+                var previousPhoneScreenshotB64: String? = null
+                var previousScreenSignature = 0
 
                 for (step in 1..maxSteps) {
                     if (!isActive) break
                     val nodes = captureScreenNodes()
 
                     // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
-                    // If a reply is already typed inside the message input box AND the Send button is visible on screen,
-                    // tap the Send button immediately so messages NEVER get stuck unsent in the input box!
                     val unsentInputNode = nodes.firstOrNull {
                         it.isEditable && it.text.isNotBlank() &&
                         !it.text.equals("Message", true) &&
@@ -1067,7 +1079,7 @@ class AutoTouchService : AccessibilityService() {
                     if (unsentInputNode != null && sendBtnNode != null) {
                         overlayHud?.setCursorOverlayVisible(true)
                         overlayHud?.updateStatus("Step $step • Sending", "Tapping Send button...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "📨 Auto-Sending typed message via Send button at (${sendBtnNode.centerX.toInt()}, ${sendBtnNode.centerY.toInt()})!")
+                        VideoQueueManager.appendLog(this@AutoTouchService, "📨 Auto-Sending typed message via Send button!")
                         animateAndPhysicalTapNode(sendBtnNode, "Tap: Send")
                         history.add("Step $step: Auto-Tapped Send button for '${unsentInputNode.text.take(20)}'")
                         delay(2500)
@@ -1078,9 +1090,22 @@ class AutoTouchService : AccessibilityService() {
                         "[${it.index}] text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
                     }
 
-                    val screenshotB64 = captureScreenshotBase64()
+                    val currentScreenshotB64 = captureScreenshotBase64()
 
-                    overlayHud?.updateStatus("Step $step • Thinking", "Reading screen & vision...", "THINKING")
+                    val currentSig = screenDump.take(800).hashCode()
+                    val screenChangedStatus = if (step == 1) {
+                        "Initial step."
+                    } else if (currentSig != previousScreenSignature) {
+                        "SCREEN_CHANGED: YES (The UI changed after the last action)."
+                    } else {
+                        "SCREEN_CHANGED: NO (Warning: The screen UI did NOT change after the last action! Do not repeat the same failing coordinate)."
+                    }
+                    previousScreenSignature = currentSig
+
+                    val domainKey = if (goalLower.contains("whatsapp")) "WHATSAPP" else "ANDROID_UI"
+                    val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(this@AutoTouchService, domainKey)
+
+                    overlayHud?.updateStatus("Step $step • Thinking", "Multi-frame & memory check...", "THINKING")
                     var decision = GeminiBrain.decideNextUiAction(
                         apiKey = apiKey,
                         model = model,
@@ -1088,11 +1113,21 @@ class AutoTouchService : AccessibilityService() {
                         screenSummary = screenDump.take(6500),
                         history = history,
                         memoryVault = memoryVault,
-                        screenshotBase64 = screenshotB64,
+                        learnedLessons = learnedLessons,
+                        screenChangedStatus = screenChangedStatus,
+                        screenshotBase64 = currentScreenshotB64,
+                        previousScreenshotBase64 = previousPhoneScreenshotB64,
                         screenWidth = realW.toInt(),
                         screenHeight = realH.toInt(),
                         isContinuousMonitorMode = isContinuousMonitor
                     )
+
+                    previousPhoneScreenshotB64 = currentScreenshotB64
+
+                    if (decision.learnedRule.isNotBlank()) {
+                        VideoQueueManager.recordLearnedLesson(this@AutoTouchService, decision.learnedRule, domainKey)
+                        VideoQueueManager.appendLog(this@AutoTouchService, "🧠 New Brain Rule Learned: ${decision.learnedRule}")
+                    }
 
                     if (isContinuousMonitor && decision.action.equals("DONE", true)) {
                         decision = decision.copy(
@@ -1136,6 +1171,13 @@ class AutoTouchService : AccessibilityService() {
                     ) { tapX, tapY ->
                         if (hypot(tapX - lastTapX, tapY - lastTapY) < 25f) {
                             repeatTapCount++
+                            if (repeatTapCount >= 2) {
+                                VideoQueueManager.recordLearnedLesson(
+                                    this@AutoTouchService,
+                                    "Tapping repeatedly at (${tapX.toInt()},${tapY.toInt()}) did not change the screen; use CLICK_NODE instead.",
+                                    domainKey
+                                )
+                            }
                         } else {
                             repeatTapCount = 0
                         }
@@ -1181,7 +1223,6 @@ class AutoTouchService : AccessibilityService() {
                 }
             }
             "CLICK_NODE", "CLICK_XY" -> {
-                // 1. Semantic Check: If AI wants to click Send in WhatsApp/Chat, snap directly to Send node!
                 if (reasonLower.contains("send") || reasonLower.contains("reply")) {
                     val sendNode = nodes.firstOrNull {
                         it.contentDesc.equals("Send", true) ||
@@ -1195,7 +1236,6 @@ class AutoTouchService : AccessibilityService() {
                     }
                 }
 
-                // 2. Semantic Check for 3-Dot Menu
                 val wantsThreeDotMenu = reasonLower.contains("three-dot") ||
                         reasonLower.contains("3-dot") ||
                         reasonLower.contains("three dot") ||
@@ -1273,7 +1313,6 @@ class AutoTouchService : AccessibilityService() {
                 insertCaptionSingleClean(decision.textToType, tx, ty)
                 delay(900)
 
-                // Immediately check if a Send button (like in WhatsApp) is now visible, and tap it automatically!
                 val freshNodes = captureScreenNodes()
                 val sendBtn = freshNodes.firstOrNull {
                     it.contentDesc.equals("Send", true) ||
