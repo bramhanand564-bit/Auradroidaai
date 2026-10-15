@@ -1,11 +1,50 @@
 package com.auradroid.agent
 
+import android.content.ContentValues
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
 import android.os.Environment
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private class AuraBrainDatabase(context: Context) :
+    SQLiteOpenHelper(context.applicationContext, "auradroid_brain.db", null, 1) {
+
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS episodic_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain TEXT,
+                rule_learned TEXT UNIQUE ON CONFLICT REPLACE,
+                timestamp INTEGER
+            )
+            """.trimIndent()
+        )
+        // Pre-seed core lessons learned from real testing so the AI starts smart from Day 1
+        val coreLessons = listOf(
+            "GOOGLE_FLOW" to "Never use words like boy, girl, child, kid, minor, or skin in video prompts; always use safe terms like futuristic cybernetic android explorer.",
+            "GOOGLE_FLOW" to "Before typing a prompt in Google Flow, switch Nano Banana / Image / x2 mode to Video • 9:16 • 8s • x1 so credits are never wasted.",
+            "GOOGLE_FLOW" to "Never type or click arrow_forward more than once per video. While % progress is visible, always WAIT.",
+            "GOOGLE_FLOW" to "When video rendering reaches 100% on the project grid, click the completed video thumbnail card first to open the video player and extract the MP4.",
+            "WHATSAPP" to "If reply text is already typed inside the bottom Message input box and the green Send button (desc='Send') is visible, immediately click the Send node instead of waiting.",
+            "ANDROID_UI" to "Always prefer CLICK_NODE over CLICK_XY. For top-right 3-dot menus, click the node with desc='More options' and never tap inside the status bar (y < 120)."
+        )
+        for ((dom, rule) in coreLessons) {
+            val cv = ContentValues().apply {
+                put("domain", dom)
+                put("rule_learned", rule)
+                put("timestamp", System.currentTimeMillis())
+            }
+            db.insertWithOnConflict("episodic_memory", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+}
 
 object VideoQueueManager {
     const val PREFS_NAME = "auradroid_prefs"
@@ -58,9 +97,6 @@ object VideoQueueManager {
         return newest
     }
 
-    /**
-     * Shows all downloaded videos & files in Download/AutoVideos and Downloads folder for the in-app Browser Storage dialog.
-     */
     fun getDownloadedFilesReport(targetFolder: String): String {
         val targetDir = File(targetFolder)
         if (!targetDir.exists()) targetDir.mkdirs()
@@ -68,7 +104,6 @@ object VideoQueueManager {
         if (files.isEmpty()) {
             return "📂 फोल्डर ($targetFolder) अभी खाली है।\n\nजब Google Flow या ब्राउज़र से कोई वीडियो डाउनलोड होगी, तो वह यहाँ दिखेगी।"
         }
-        val uploaded = mutableSetOf<String>()
         val sdf = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
         return files.mapIndexed { idx, file ->
             val sizeMb = String.format(Locale.US, "%.2f MB", file.length() / (1024.0 * 1024.0))
@@ -90,6 +125,51 @@ object VideoQueueManager {
         prefs.edit().remove(KEY_UPLOADED_SET).apply()
     }
 
+    /**
+     * Saves a newly learned self-correction rule into the SQLite Long-Term Brain Database
+     */
+    fun recordLearnedLesson(context: Context, lesson: String, domain: String = "GLOBAL") {
+        val clean = lesson.trim()
+        if (clean.length < 6) return
+        try {
+            val db = AuraBrainDatabase(context).writableDatabase
+            val cv = ContentValues().apply {
+                put("domain", domain.uppercase())
+                put("rule_learned", clean)
+                put("timestamp", System.currentTimeMillis())
+            }
+            db.insertWithOnConflict("episodic_memory", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Retrieves all learned rules from the SQLite Brain Database so the AI never repeats a mistake
+     */
+    fun getLearnedLessonsSummary(context: Context, domainFilter: String? = null): String {
+        return try {
+            val db = AuraBrainDatabase(context).readableDatabase
+            val list = mutableListOf<String>()
+            val cursor = if (domainFilter.isNullOrBlank()) {
+                db.rawQuery("SELECT domain, rule_learned FROM episodic_memory ORDER BY timestamp DESC LIMIT 25", null)
+            } else {
+                db.rawQuery(
+                    "SELECT domain, rule_learned FROM episodic_memory WHERE domain = ? OR domain = 'GLOBAL' OR domain = 'ANDROID_UI' ORDER BY timestamp DESC LIMIT 25",
+                    arrayOf(domainFilter.uppercase())
+                )
+            }
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    val dom = c.getString(0) ?: "AI"
+                    val rule = c.getString(1) ?: ""
+                    list.add("[$dom] $rule")
+                }
+            }
+            if (list.isEmpty()) "No prior lessons recorded." else list.joinToString("\n")
+        } catch (e: Exception) {
+            "No prior lessons."
+        }
+    }
+
     fun savePinnedFlowUrl(context: Context, url: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putString("pinned_flow_url", url.trim()).apply()
@@ -104,7 +184,7 @@ object VideoQueueManager {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(
                 "flow_topic",
-                "Cinematic 8-second hyper-realistic story of a futuristic AI boy exploring a glowing sci-fi world"
+                "Cinematic 8-second hyper-realistic story of a futuristic cybernetic explorer in a glowing sci-fi world"
             ) ?: ""
     }
 
@@ -122,7 +202,7 @@ object VideoQueueManager {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(
                 "memory_vault",
-                "Favorite Video Topic: Futuristic AI & Sci-Fi Stories\nPreferred Language: Hindi + English"
+                "Favorite Video Topic: Futuristic Sci-Fi & Cybernetic Worlds\nPreferred Language: Hindi + English"
             ) ?: ""
     }
 
