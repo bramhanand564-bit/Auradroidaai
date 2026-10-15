@@ -758,6 +758,6 @@ object GeminiBrain {
         val high = activeHighModel ?: "Auto-Detecting..."
         val deadCount = permanentlyDeadModels.size
         val liveCount = discoveredLiveModels.size
-        return "Active Fast: $fast \vert{} High:$high | Live Pool: $liveCount \vert{} Skipped(404):$deadCount"
+        return "Active Fast: $fast | High:$high | Live Pool: $liveCount | Skipped(404):$deadCount"
     }
 }
