@@ -261,6 +261,14 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
+    /**
+     * Immediately collapses any open Mini Window / Full Screen browser back to the compact floating bot icon
+     * so native apps like YouTube or WhatsApp are never covered!
+     */
+    fun collapseToCompactStage() {
+        setPodStage(1)
+    }
+
     fun show() {
         mainHandler.post {
             if (!isPodVisible) return@post
@@ -452,7 +460,7 @@ class AiOverlayHud(private val context: Context) {
         }
 
         botAvatarView = ExpressiveCompanionAvatar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dpToPx(62), dpToPx(58))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(64), dpToPx(58))
         }
         compactRow?.addView(botAvatarView)
 
@@ -642,107 +650,94 @@ class AiOverlayHud(private val context: Context) {
             val w = width.toFloat()
             val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
-            val bobY = sin(phase * 0.65f) * 2.2f
+            val bobY = sin(phase * 0.65f) * 2.0f
 
-            paint.style = Paint.Style.FILL
-            paint.color = Color.argb(80, 0, 0, 0)
-            canvas.drawRoundRect(RectF(4f, 6f + bobY, w - 4f, h - 1f + bobY), h * 0.48f, h * 0.48f, paint)
-
-            val headRect = RectF(3f, 4f + bobY, w - 3f, h - 4f + bobY)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#F8FAFC")
-            canvas.drawRoundRect(headRect, h * 0.48f, h * 0.48f, paint)
-
-            val accentColor = when (mood) {
-                "ERROR", "SAD", "FAILED" -> Color.parseColor("#EF4444")
-                "THINKING", "PROCESSING" -> Color.parseColor("#2563EB")
-                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#10B981")
-                "WAITING" -> Color.parseColor("#F59E0B")
-                else -> Color.parseColor("#10B981")
+            val glowColor = when (mood) {
+                "ERROR", "SAD", "FAILED" -> Color.parseColor("#FF4D4D")
+                "THINKING", "PROCESSING" -> Color.parseColor("#00E5FF")
+                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#00E676")
+                "WAITING" -> Color.parseColor("#FFAB00")
+                else -> Color.parseColor("#00E5FF")
             }
+
+            paint.style = Paint.Style.FILL
+            paint.color = Color.parseColor("#E2E8F0")
+            val earTop = h * 0.32f + bobY
+            val earBottom = h * 0.70f + bobY
+            canvas.drawRoundRect(RectF(1f, earTop, w * 0.14f, earBottom), 10f, 10f, paint)
+            canvas.drawRoundRect(RectF(w * 0.86f, earTop, w - 1f, earBottom), 10f, 10f, paint)
 
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 3f
-            paint.color = accentColor
-            canvas.drawRoundRect(headRect, h * 0.48f, h * 0.48f, paint)
+            paint.color = glowColor
+            canvas.drawRoundRect(RectF(2f, earTop + 2f, w * 0.12f, earBottom - 2f), 8f, 8f, paint)
+            canvas.drawRoundRect(RectF(w * 0.88f, earTop + 2f, w - 2f, earBottom - 2f), 8f, 8f, paint)
 
-            val lookOffsetX = if (mood == "THINKING") sin(phase * 1.5f) * (w * 0.05f) else 0f
-            val lookOffsetY = if (mood == "THINKING") cos(phase * 1.1f) * (h * 0.03f) else 0f
-
-            val eyeY = h * 0.44f + bobY + lookOffsetY
-            val leftEyeX = w * 0.30f + lookOffsetX
-            val rightEyeX = w * 0.70f + lookOffsetX
+            val headRect = RectF(w * 0.08f, 3f + bobY, w * 0.92f, h - 4f + bobY)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.parseColor("#F8FAFC")
+            canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
 
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 3.2f
+            paint.strokeWidth = 2.5f
             paint.color = Color.parseColor("#CBD5E1")
-            canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, paint)
+            canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
 
+            paint.strokeWidth = 1.8f
+            paint.color = Color.parseColor("#94A3B8")
+            canvas.drawOval(RectF(w * 0.44f, 6f + bobY, w * 0.56f, 12f + bobY), paint)
+
+            val visorRect = RectF(w * 0.15f, h * 0.22f + bobY, w * 0.85f, h * 0.84f + bobY)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.parseColor("#0B0F19")
+            canvas.drawRoundRect(visorRect, h * 0.28f, h * 0.28f, paint)
+
+            val lookOffsetX = if (mood == "THINKING") sin(phase * 1.5f) * (w * 0.04f) else 0f
+            val lookOffsetY = if (mood == "THINKING") cos(phase * 1.1f) * (h * 0.025f) else 0f
+
+            val eyeY = h * 0.49f + bobY + lookOffsetY
+            val leftEyeX = w * 0.33f + lookOffsetX
+            val rightEyeX = w * 0.67f + lookOffsetX
+
+            val eyeRadius = w * 0.115f
             val isBlinking = sin(phase * 0.82f) > 0.93f
-            val eyeColor = when (mood) {
-                "ERROR", "SAD", "FAILED" -> Color.parseColor("#DC2626")
-                "THINKING", "PROCESSING" -> Color.parseColor("#1D4ED8")
-                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#059669")
-                "WAITING" -> Color.parseColor("#D97706")
-                else -> Color.parseColor("#0F172A")
-            }
 
-            paint.color = eyeColor
-            val rx = w * 0.135f
-            val ry = h * 0.165f
+            paint.color = glowColor
+            paint.strokeCap = Paint.Cap.ROUND
 
             if (mood == "DONE" || mood == "HAPPY") {
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 5.5f
-                paint.strokeCap = Paint.Cap.ROUND
-                canvas.drawArc(RectF(leftEyeX - rx, eyeY - ry * 0.8f, leftEyeX + rx, eyeY + ry * 0.8f), 190f, 160f, false, paint)
-                canvas.drawArc(RectF(rightEyeX - rx, eyeY - ry * 0.8f, rightEyeX + rx, eyeY + ry * 0.8f), 190f, 160f, false, paint)
+                paint.strokeWidth = 4.8f
+                canvas.drawArc(RectF(leftEyeX - eyeRadius, eyeY - eyeRadius * 0.8f, leftEyeX + eyeRadius, eyeY + eyeRadius * 0.8f), 190f, 160f, false, paint)
+                canvas.drawArc(RectF(rightEyeX - eyeRadius, eyeY - eyeRadius * 0.8f, rightEyeX + eyeRadius, eyeY + eyeRadius * 0.8f), 190f, 160f, false, paint)
             } else if (isBlinking) {
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 5.2f
-                paint.strokeCap = Paint.Cap.ROUND
-                canvas.drawLine(leftEyeX - rx, eyeY, leftEyeX + rx, eyeY, paint)
-                canvas.drawLine(rightEyeX - rx, eyeY, rightEyeX + rx, eyeY, paint)
+                paint.strokeWidth = 4.5f
+                canvas.drawLine(leftEyeX - eyeRadius, eyeY, leftEyeX + eyeRadius, eyeY, paint)
+                canvas.drawLine(rightEyeX - eyeRadius, eyeY, rightEyeX + eyeRadius, eyeY, paint)
             } else {
-                // 100% Pure Solid 4x Huge Eyes — Zero Reflection!
-                paint.style = Paint.Style.FILL
-                canvas.drawOval(RectF(leftEyeX - rx, eyeY - ry, leftEyeX + rx, eyeY + ry), paint)
-                canvas.drawOval(RectF(rightEyeX - rx, eyeY - ry, rightEyeX + rx, eyeY + ry), paint)
-
-                if (mood == "ERROR" || mood == "SAD") {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.5f
-                    paint.color = Color.parseColor("#DC2626")
-                    canvas.drawLine(leftEyeX - rx, eyeY - ry - 2f, leftEyeX + rx * 0.8f, eyeY - ry - 6f, paint)
-                    canvas.drawLine(rightEyeX - rx * 0.8f, eyeY - ry - 6f, rightEyeX + rx, eyeY - ry - 2f, paint)
-                }
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 4.5f
+                canvas.drawCircle(leftEyeX, eyeY, eyeRadius, paint)
+                canvas.drawCircle(rightEyeX, eyeY, eyeRadius, paint)
             }
 
             val mouthCenterX = w * 0.50f + lookOffsetX * 0.4f
-            val mouthTopY = h * 0.72f + bobY
-            paint.color = eyeColor
-            paint.strokeCap = Paint.Cap.ROUND
+            val mouthTopY = h * 0.62f + bobY
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 3.4f
+            paint.color = glowColor
 
             when (mood) {
                 "ERROR", "SAD", "FAILED" -> {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.8f
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.13f, mouthTopY, mouthCenterX + w * 0.13f, mouthTopY + h * 0.13f), 200f, 140f, false, paint)
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.08f, mouthTopY + 2f, mouthCenterX + w * 0.08f, mouthTopY + h * 0.11f), 200f, 140f, false, paint)
                 }
                 "THINKING", "PROCESSING" -> {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.5f
-                    val r = (w * 0.06f) + sin(phase * 2.2f) * 1.2f
+                    val r = (w * 0.04f) + sin(phase * 2.2f) * 1.0f
                     canvas.drawCircle(mouthCenterX, mouthTopY + h * 0.04f, r, paint)
                 }
-                "DONE", "HAPPY", "SUCCESS" -> {
-                    paint.style = Paint.Style.FILL
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.15f, mouthTopY - 3f, mouthCenterX + w * 0.15f, mouthTopY + h * 0.14f), 0f, 180f, true, paint)
-                }
                 else -> {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.8f
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.13f, mouthTopY - 3f, mouthCenterX + w * 0.13f, mouthTopY + h * 0.11f), 15f, 150f, false, paint)
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.07f, mouthTopY - 2f, mouthCenterX + w * 0.07f, mouthTopY + h * 0.08f), 15f, 150f, false, paint)
                 }
             }
         }
@@ -801,11 +796,11 @@ class AiOverlayHud(private val context: Context) {
             val ox = screenOffset[0].toFloat(); val oy = screenOffset[1].toFloat()
             val tipX = handX - ox; val tipY = (handY - oy) + sin(phase * 0.8f) * 2.5f
 
-            val accentColor = when (handMood) { "ERROR", "SAD" -> Color.parseColor("#EF4444"); "DONE", "HAPPY" -> Color.parseColor("#10B981"); else -> Color.parseColor("#3B82F6") }
+            val accentColor = when (handMood) { "ERROR", "SAD" -> Color.parseColor("#EF4444"); "DONE", "HAPPY" -> Color.parseColor("#10B981"); else -> Color.parseColor("#00E5FF") }
 
             if (rippleProgress > 0f && rippleProgress < 1f) {
                 val alpha = ((1f - rippleProgress) * 210).toInt().coerceIn(0, 255)
-                paint.style = Paint.Style.STROKE; paint.strokeWidth = 4.5f; paint.color = Color.argb(alpha, 59, 130, 246)
+                paint.style = Paint.Style.STROKE; paint.strokeWidth = 4.5f; paint.color = Color.argb(alpha, 0, 229, 255)
                 canvas.drawCircle(targetX - ox, targetY - oy, 12f + rippleProgress * 62f, paint)
             }
 
