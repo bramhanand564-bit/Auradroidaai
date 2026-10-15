@@ -5,8 +5,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import android.webkit.WebView
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -367,9 +369,15 @@ object WebPipelineManager {
     }
 
     private fun insertCaptionSingleClean(context: Context, text: String) {
+        // This manager is not an AccessibilityService; delegate accessibility input to the active service.
         copyToClipboard(context, text)
-        val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
-        serviceScope.launch { rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) }
+        val service = AutoTouchService.instance ?: return
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        service.rootInActiveWindow
+            ?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
     private fun captureScreenNodes(service: AutoTouchService): List<UiNodeSnapshot> = PhoneAgentManager.captureScreenNodes(service)
