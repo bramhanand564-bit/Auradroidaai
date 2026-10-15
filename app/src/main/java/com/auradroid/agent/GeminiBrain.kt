@@ -30,7 +30,9 @@ data class AgentDecision(
     val y: Float = 0f,
     val textToType: String = "",
     val appPackageOrSetting: String = "",
-    val reason: String = ""
+    val reason: String = "",
+    val thoughtProcess: String = "",
+    val learnedRule: String = ""
 )
 
 data class WebAgentDecision(
@@ -38,7 +40,9 @@ data class WebAgentDecision(
     val elementIndex: Int = -1,
     val textToType: String = "",
     val url: String = "",
-    val reason: String = ""
+    val reason: String = "",
+    val thoughtProcess: String = "",
+    val learnedRule: String = ""
 )
 
 object GeminiBrain {
@@ -72,11 +76,16 @@ object GeminiBrain {
         }
     }
 
+    /**
+     * Supports Multi-Frame Vision: Can send BOTH the Previous Frame (Before Action) and Current Frame (Now)
+     * so Gemini sees screen transitions just like watching a video!
+     */
     private suspend fun callGeminiApi(
         apiKey: String,
         userModel: String,
         prompt: String,
-        base64ImageJpeg: String? = null
+        currentImageJpeg: String? = null,
+        previousImageJpeg: String? = null
     ): String = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) throw Exception("Gemini API Key missing! Settings tab mein jaakar API Key daalein.")
         val requested = userModel.trim().removePrefix("models/").ifEmpty { "gemini-2.5-flash" }
@@ -107,10 +116,18 @@ object GeminiBrain {
 
                         val partsArray = JSONArray().apply {
                             put(JSONObject().put("text", prompt))
-                            if (!base64ImageJpeg.isNullOrBlank()) {
+                            if (!previousImageJpeg.isNullOrBlank() && previousImageJpeg != currentImageJpeg) {
+                                put(JSONObject().put("text", "FRAME 1 (PREVIOUS SCREEN BEFORE LAST ACTION):"))
                                 put(JSONObject().put("inline_data", JSONObject().apply {
                                     put("mime_type", "image/jpeg")
-                                    put("data", base64ImageJpeg)
+                                    put("data", previousImageJpeg)
+                                }))
+                            }
+                            if (!currentImageJpeg.isNullOrBlank()) {
+                                put(JSONObject().put("text", "FRAME 2 (CURRENT LIVE SCREEN RIGHT NOW):"))
+                                put(JSONObject().put("inline_data", JSONObject().apply {
+                                    put("mime_type", "image/jpeg")
+                                    put("data", currentImageJpeg)
                                 }))
                             }
                         }
@@ -171,7 +188,6 @@ object GeminiBrain {
 
     /**
      * Generates a 100% Policy-Safe 8-second cinematic video prompt for Google Flow.
-     * Strictly avoids minor/child/boy/girl/skin/violence keywords so Google Flow NEVER fails!
      */
     suspend fun generateDailyFlowPrompt(
         apiKey: String,
@@ -204,7 +220,6 @@ object GeminiBrain {
             userTopic
         }
 
-        // Hard safety sanitizer so minor-related words NEVER slip through to Google Flow
         return rawPrompt
             .replace(Regex("\\b(young\\s+boy|little\\s+boy|boy|child|kid|minor|teenager|teen|girl)\\b", RegexOption.IGNORE_CASE), "futuristic android explorer")
             .replace(Regex("\\b(skin|bare)\\b", RegexOption.IGNORE_CASE), "armor")
@@ -309,6 +324,10 @@ object GeminiBrain {
         }
     }
 
+    /**
+     * Background Web Studio Agent Brain:
+     * Uses Multi-Frame Vision (Previous + Current Screenshot), SQLite Learned Memory, and Chain-of-Thought Reasoning!
+     */
     suspend fun decideNextWebAction(
         apiKey: String,
         model: String,
@@ -317,59 +336,70 @@ object GeminiBrain {
         pageTextAndElements: String,
         history: List<String>,
         memoryVault: String,
-        screenshotBase64: String? = null
+        learnedLessons: String = "",
+        screenChangedStatus: String = "",
+        screenshotBase64: String? = null,
+        previousScreenshotBase64: String? = null
     ): WebAgentDecision {
         val prompt = """
-            You are a Vision-Powered Autonomous Background Web Browser Agent running inside AuraDroid OS.
+            You are a Self-Correcting, Vision-Powered Autonomous Web Browser Agent with Chain-of-Thought Reasoning.
             OVERALL GOAL: $goal
             CURRENT URL: $pageUrl
-            MEMORY VAULT: $memoryVault
+            
+            LONG-TERM SQLITE BRAIN LESSONS (NEVER REPEAT PAST MISTAKES!):
+            $learnedLessons
+            
+            USER'S PERSONAL MEMORY VAULT:
+            $memoryVault
+            
+            SCREEN TRANSITION CHECK SINCE LAST STEP:
+            $screenChangedStatus
             
             RECENT ACTIONS TAKEN:
             ${history.takeLast(10).joinToString("\n")}
             
-            CURRENT WEBPAGE INTERACTIVE ELEMENTS & VISIBLE TEXT:
+            CURRENT WEBPAGE INTERACTIVE ELEMENTS (WITH YELLOW/RED BADGES `[0]`, `[1]`, `[2]`):
             $pageTextAndElements
             
-            STRICT CREDIT-SAVING & GOOGLE FLOW RULES:
-            1. NEVER generate more than 1 video! Look at RECENT ACTIONS TAKEN: if you already executed TYPE_EL or clicked arrow_forward/Create, DO NOT type or click arrow_forward again!
-            2. If you are on the landing page and see "+ New project", click "+ New project" using "CLICK_EL".
-            3. BEFORE typing the prompt on Google Flow, check the mode selector pill at the bottom (next to the arrow_forward button):
-               - If it says "Nano Banana" or "Image" or "x2" / "x4", click that mode pill first to switch it to "Video • 720p • 8s • x1"!
-            4. If no video is rendering yet and the prompt box ("What do you want to create?") is empty, use "TYPE_EL" ONCE.
-            5. If you see a percentage like "1%", "15%", "45%" on screen, the video is rendering! Return action="WAIT".
-            6. As soon as the percentage disappears and a completed video thumbnail card or player appears on screen (or `HAS_VIDEO_ELEMENT: YES`), return action="DOWNLOAD_VIDEO".
+            THINK-BEFORE-YOU-ACT & CREDIT-SAVING RULES:
+            1. First compare FRAME 1 (Previous) and FRAME 2 (Current) in `last_action_observation`, and reason carefully in `thought_process`.
+            2. NEVER generate more than 1 video! If RECENT ACTIONS TAKEN shows you already typed the prompt or clicked `arrow_forward`, DO NOT type or click `arrow_forward` again!
+            3. If you are on the Google Flow landing page and see "+ New project", click its badge number using "CLICK_EL".
+            4. Check the mode pill at the bottom: if it says "Nano Banana", "Image", "x2", or "x4", click it first to switch to "Video • 720p • 8s • x1".
+            5. If the "What do you want to create?" box is empty and no video is rendering, use "TYPE_EL" ONCE on its badge number.
+            6. If you see a percentage like "1%", "18%", "65%" on screen, the video is actively rendering! Return action="WAIT".
+            7. As soon as rendering reaches 100% or a completed video thumbnail card / player appears on screen, return action="DOWNLOAD_VIDEO".
+            8. If you discover a useful new rule from an error or screen change, write a 1-line rule in `learned_rule` (otherwise leave `learned_rule` empty "").
             
             Available actions:
-            - "CLICK_EL": Click interactive webpage element by its badge number (`elementIndex`).
-            - "TYPE_EL": Type/fill text into input/textarea/editor at `elementIndex` (provide `textToType`).
-            - "SCROLL": Scroll down the webpage.
-            - "LOAD_URL": Navigate directly to a specific URL (provide `url`).
-            - "DOWNLOAD_VIDEO": Open completed video card, extract and download the generated MP4 video.
-            - "WAIT": Wait 6 seconds while video generation is in progress.
-            - "CHAIN_YOUTUBE": Video is downloaded, now launch YouTube Auto-Upload pipeline!
-            - "DONE": Goal is 100% completed.
+            - "CLICK_EL", "TYPE_EL", "SCROLL", "LOAD_URL", "DOWNLOAD_VIDEO", "WAIT", "CHAIN_YOUTUBE", "DONE".
             
             Respond strictly in valid JSON:
             {
+              "last_action_observation": "What changed on screen after the previous step",
+              "thought_process": "Step-by-step reasoning for what to do right now",
+              "learned_rule": "",
               "action": "TYPE_EL",
               "elementIndex": 4,
               "textToType": "Your prompt text here",
               "url": "",
-              "reason": "Short clear status message"
+              "reason": "Short clear status message for the user"
             }
         """.trimIndent()
 
         return try {
-            val rawJson = callGeminiApi(apiKey, model, prompt, screenshotBase64)
+            val rawJson = callGeminiApi(apiKey, model, prompt, screenshotBase64, previousScreenshotBase64)
             val clean = rawJson.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             val obj = JSONObject(clean)
+            val thought = obj.optString("thought_process", "")
             WebAgentDecision(
                 action = obj.optString("action", "WAIT").uppercase(),
                 elementIndex = obj.optInt("elementIndex", -1),
                 textToType = obj.optString("textToType", ""),
                 url = obj.optString("url", ""),
-                reason = obj.optString("reason", "Analyzing webpage screenshot...")
+                reason = obj.optString("reason", thought.take(60).ifBlank { "Analyzing webpage..." }),
+                thoughtProcess = thought,
+                learnedRule = obj.optString("learned_rule", "")
             )
         } catch (e: CancellationException) {
             throw e
@@ -378,6 +408,10 @@ object GeminiBrain {
         }
     }
 
+    /**
+     * Universal Phone Screen Agent Brain:
+     * Uses Multi-Frame Vision (Previous + Current Screenshot), SQLite Learned Memory, and Chain-of-Thought Reasoning!
+     */
     suspend fun decideNextUiAction(
         apiKey: String,
         model: String,
@@ -385,7 +419,10 @@ object GeminiBrain {
         screenSummary: String,
         history: List<String>,
         memoryVault: String = "",
+        learnedLessons: String = "",
+        screenChangedStatus: String = "",
         screenshotBase64: String? = null,
+        previousScreenshotBase64: String? = null,
         screenWidth: Int = 1080,
         screenHeight: Int = 2408,
         isContinuousMonitorMode: Boolean = false
@@ -393,23 +430,30 @@ object GeminiBrain {
         val monitorRules = if (isContinuousMonitorMode) {
             """
             CONTINUOUS CHAT MONITORING MODE IS ACTIVE:
-            - NEVER return "DONE"! You must keep monitoring the chat continuously until the user stops you.
-            - IMPORTANT: Check the bottom message input box (`edit=true`).
-              * If there is already typed reply text sitting inside the bottom input box AND the green 'Send' button (`desc='Send'`) is visible on screen, you MUST immediately return action="CLICK_NODE" on the 'Send' button's nodeIndex! Text inside the input box is NOT sent until you click 'Send'!
-            - Look at the actual sent/received chat bubbles above the input bar:
+            - NEVER return "DONE"! Keep monitoring the chat continuously until the user stops you.
+            - CRITICAL CHECK: Look at the bottom message input box (`edit=true`).
+              * If there is already typed reply text sitting inside the bottom input box AND the green 'Send' button (`desc='Send'`) is visible on screen, you MUST immediately return action="CLICK_NODE" on the 'Send' button's nodeIndex!
+            - Look at the chat bubbles above the input bar:
               * Bubbles on the RIGHT side (`centerX > ${screenWidth / 2}`) are messages already sent by YOU.
               * Bubbles on the LEFT side (`centerX < ${screenWidth / 2}`) are INCOMING messages from the other person.
-            - If the lowest chat bubble (above the input box) is on the LEFT side (an incoming message from the other person), use action="TYPE" to type a friendly reply in the language they requested!
+            - If the lowest chat bubble is on the LEFT side (incoming message), use action="TYPE" to type a friendly reply in the language they requested!
             - Only return action="WAIT" when the input box is empty (`text='Message'`) AND the lowest chat bubble is on the RIGHT side (your sent message).
             """.trimIndent()
         } else ""
 
         val prompt = """
-            You are a Vision-First Universal Autonomous Android UI Agent controlling a phone with EXACT screen resolution ${screenWidth}x${screenHeight} pixels.
+            You are a Self-Correcting, Vision-First Universal Autonomous Android UI Agent with Chain-of-Thought Reasoning.
+            Phone screen resolution: EXACTLY ${screenWidth}x${screenHeight} pixels.
             OVERALL GOAL: $goal$monitorRules
+            
+            LONG-TERM SQLITE BRAIN LESSONS (NEVER REPEAT PAST MISTAKES!):
+            $learnedLessons
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
+            
+            SCREEN TRANSITION CHECK SINCE LAST STEP:
+            $screenChangedStatus
             
             RECENT ACTIONS HISTORY:
             ${history.takeLast(10).joinToString("\n")}
@@ -418,16 +462,21 @@ object GeminiBrain {
             $screenSummary
             
             CRITICAL RULES FOR ACCURATE TAPPING:
-            1. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
+            1. First compare FRAME 1 (Previous) and FRAME 2 (Current) in `last_action_observation`, and reason carefully in `thought_process`.
+            2. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
                - In WhatsApp, the green Send button has `desc='Send'` or `id='send'`. ALWAYS use `action="CLICK_NODE"` with its exact `nodeIndex`!
-            2. NEVER tap inside the top Android Status Bar (y < 120 pixels).
-            3. If you use "CLICK_XY", output exact pixel coordinates for ${screenWidth}x${screenHeight}.
+               - Top-right 3-dot menu has `desc='More options'` or `desc='अधिक विकल्प'`. Use `action="CLICK_NODE"`.
+            3. NEVER tap inside the top Android Status Bar (`y < 120` pixels).
+            4. If your previous tap did not change the screen, do NOT repeat the exact same failing coordinate—pick the matching nodeIndex or try a different element, and record what you learned in `learned_rule`.
             
             Available actions:
             - "CLICK_NODE", "CLICK_XY", "TYPE", "SCROLL", "BACK", "OPEN_APP", "WAIT", "DONE".
             
             Return strictly valid JSON:
             {
+              "last_action_observation": "Did the previous action work or did the screen stay the same?",
+              "thought_process": "Step-by-step reasoning for the best next action",
+              "learned_rule": "",
               "action": "CLICK_NODE",
               "nodeIndex": 3,
               "x": 540,
@@ -439,9 +488,10 @@ object GeminiBrain {
         """.trimIndent()
 
         return try {
-            val rawJson = callGeminiApi(apiKey, model, prompt, screenshotBase64)
+            val rawJson = callGeminiApi(apiKey, model, prompt, screenshotBase64, previousScreenshotBase64)
             val clean = rawJson.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             val obj = JSONObject(clean)
+            val thought = obj.optString("thought_process", "")
             AgentDecision(
                 action = obj.optString("action", "WAIT").uppercase(),
                 nodeIndex = obj.optInt("nodeIndex", -1),
@@ -449,7 +499,9 @@ object GeminiBrain {
                 y = obj.optDouble("y", 1000.0).toFloat(),
                 textToType = obj.optString("textToType", ""),
                 appPackageOrSetting = obj.optString("appPackageOrSetting", ""),
-                reason = obj.optString("reason", "Proceeding")
+                reason = obj.optString("reason", thought.take(60).ifBlank { "Proceeding" }),
+                thoughtProcess = thought,
+                learnedRule = obj.optString("learned_rule", "")
             )
         } catch (e: CancellationException) {
             throw e
