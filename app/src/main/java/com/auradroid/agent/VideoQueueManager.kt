@@ -24,14 +24,13 @@ private class AuraBrainDatabase(context: Context) :
             )
             """.trimIndent()
         )
-        // Pre-seed core lessons learned from real testing so the AI starts smart from Day 1
         val coreLessons = listOf(
             "GOOGLE_FLOW" to "Never use words like boy, girl, child, kid, minor, or skin in video prompts; always use safe terms like futuristic cybernetic android explorer.",
             "GOOGLE_FLOW" to "Before typing a prompt in Google Flow, switch Nano Banana / Image / x2 mode to Video • 9:16 • 8s • x1 so credits are never wasted.",
             "GOOGLE_FLOW" to "Never type or click arrow_forward more than once per video. While % progress is visible, always WAIT.",
-            "GOOGLE_FLOW" to "When video rendering reaches 100% on the project grid, click the completed video thumbnail card first to open the video player and extract the MP4.",
+            "GOOGLE_FLOW" to "When video rendering finishes on the project grid, tap the completed video thumbnail card physically to open the video player, tap the center Play button so the MP4 stream loads, and then download it.",
             "WHATSAPP" to "If reply text is already typed inside the bottom Message input box and the green Send button (desc='Send') is visible, immediately click the Send node instead of waiting.",
-            "ANDROID_UI" to "Always prefer CLICK_NODE over CLICK_XY. For top-right 3-dot menus, click the node with desc='More options' and never tap inside the status bar (y < 120)."
+            "ANDROID_UI" to "Always prefer CLICK_NODE over CLICK_XY. If a tap does not open the expected next page, verify using screenshot and escalate to High Model or physical coordinates."
         )
         for ((dom, rule) in coreLessons) {
             val cv = ContentValues().apply {
@@ -50,12 +49,31 @@ object VideoQueueManager {
     const val PREFS_NAME = "auradroid_prefs"
     private const val KEY_UPLOADED_SET = "uploaded_videos"
 
-    fun getVideoFilesInFolder(folderPath: String): List<File> {
+    /**
+     * User Customizable Setting: Should we upload Newest Video First (true) or Oldest Video First (false)?
+     */
+    fun isUploadNewestFirst(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("upload_newest_first", true)
+    }
+
+    fun setUploadNewestFirst(context: Context, newestFirst: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("upload_newest_first", newestFirst).apply()
+    }
+
+    fun getVideoFilesInFolder(folderPath: String, newestFirst: Boolean = false): List<File> {
         val dir = File(folderPath)
         if (!dir.exists() || !dir.isDirectory) return emptyList()
-        return dir.listFiles { file ->
+        val files = dir.listFiles { file ->
             file.isFile && file.extension.lowercase() in listOf("mp4", "mov", "mkv", "webm")
-        }?.sortedBy { it.lastModified() } ?: emptyList()
+        } ?: return emptyList()
+
+        return if (newestFirst) {
+            files.sortedByDescending { it.lastModified() }
+        } else {
+            files.sortedBy { it.lastModified() }
+        }
     }
 
     fun getUploadedSet(context: Context): Set<String> {
@@ -63,8 +81,12 @@ object VideoQueueManager {
         return prefs.getStringSet(KEY_UPLOADED_SET, emptySet()) ?: emptySet()
     }
 
+    /**
+     * Respects the user's customization choice (Newest First vs Oldest First)
+     */
     fun getNextPendingVideo(context: Context, folderPath: String): File? {
-        val allVideos = getVideoFilesInFolder(folderPath)
+        val preferNewest = isUploadNewestFirst(context)
+        val allVideos = getVideoFilesInFolder(folderPath, newestFirst = preferNewest)
         val uploaded = getUploadedSet(context)
         return allVideos.firstOrNull { it.absolutePath !in uploaded && it.name !in uploaded }
     }
@@ -100,7 +122,7 @@ object VideoQueueManager {
     fun getDownloadedFilesReport(targetFolder: String): String {
         val targetDir = File(targetFolder)
         if (!targetDir.exists()) targetDir.mkdirs()
-        val files = getVideoFilesInFolder(targetFolder).sortedByDescending { it.lastModified() }
+        val files = getVideoFilesInFolder(targetFolder, newestFirst = true)
         if (files.isEmpty()) {
             return "📂 फोल्डर ($targetFolder) अभी खाली है।\n\nजब Google Flow या ब्राउज़र से कोई वीडियो डाउनलोड होगी, तो वह यहाँ दिखेगी।"
         }
@@ -125,9 +147,6 @@ object VideoQueueManager {
         prefs.edit().remove(KEY_UPLOADED_SET).apply()
     }
 
-    /**
-     * Saves a newly learned self-correction rule into the SQLite Long-Term Brain Database
-     */
     fun recordLearnedLesson(context: Context, lesson: String, domain: String = "GLOBAL") {
         val clean = lesson.trim()
         if (clean.length < 6) return
@@ -142,9 +161,6 @@ object VideoQueueManager {
         } catch (_: Exception) {}
     }
 
-    /**
-     * Retrieves all learned rules from the SQLite Brain Database so the AI never repeats a mistake
-     */
     fun getLearnedLessonsSummary(context: Context, domainFilter: String? = null): String {
         return try {
             val db = AuraBrainDatabase(context).readableDatabase
@@ -184,13 +200,33 @@ object VideoQueueManager {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(
                 "flow_topic",
-                "Cinematic 8-second hyper-realistic story of a futuristic cybernetic explorer in a glowing sci-fi world"
+                "Cinematic 8-second hyper-realistic story of a futuristic cybernetic explorer in a glowing sci-fi world and story and hindi voice and dialog"
             ) ?: ""
     }
 
     fun getDailyVideoLimit(context: Context): Int {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getInt("daily_video_limit", 1).coerceIn(1, 5)
+    }
+
+    fun getHighModelName(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("high_model_name", "gemini-2.5-pro") ?: "gemini-2.5-pro"
+    }
+
+    fun isAutoHighModelEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("auto_high_model", true)
+    }
+
+    fun isGoogleSearchGroundingEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("google_search_grounding", true)
+    }
+
+    fun isRealWebTouchEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("real_web_touch", true)
     }
 
     fun saveMemoryVault(context: Context, memoryText: String) {
