@@ -4,16 +4,20 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.os.Environment
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 private class AuraBrainDatabase(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "auradroid_brain.db", null, 3) {
+    SQLiteOpenHelper(context.applicationContext, "auradroid_brain.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createAllTables(db)
@@ -24,7 +28,6 @@ private class AuraBrainDatabase(context: Context) :
     }
 
     private fun createAllTables(db: SQLiteDatabase) {
-        // Table 1: Self-Learned Rules & Error Recovery Memory
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS episodic_memory (
@@ -36,7 +39,6 @@ private class AuraBrainDatabase(context: Context) :
             """.trimIndent()
         )
 
-        // Table 2: Episodic Story Series Continuation (Part 1, Part 2, Part 3 + Side Stories)
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS story_episodes (
@@ -52,7 +54,6 @@ private class AuraBrainDatabase(context: Context) :
             """.trimIndent()
         )
 
-        // Table 3: WM3-Style Trained Skills & First-Run Live Verified JSON Blueprints
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS trained_skills (
@@ -68,9 +69,10 @@ private class AuraBrainDatabase(context: Context) :
             "GOOGLE_FLOW" to "Never use words like boy, girl, child, kid, minor, or skin in video prompts; always use safe terms like adult futuristic cybernetic tech explorer.",
             "GOOGLE_FLOW" to "Before typing a prompt in Google Flow, switch Nano Banana / Image / x2 mode to Video • 9:16 • 8s/10s • x1 so credits are never wasted.",
             "GOOGLE_FLOW" to "Never type into the top search bar (top < 175px). Always type ONCE into the bottom 'What do you want to create?' box and click arrow_forward.",
-            "GOOGLE_FLOW" to "When video rendering reaches 100% and the thumbnail card appears, intercept the MP4 stream directly or tap the card with 3x CSS-to-WebView scaled coordinates.",
-            "WHATSAPP" to "If reply text is already typed inside the bottom Message input box and the green Send button (desc='Send') is visible, immediately click the Send node.",
-            "ANDROID_UI" to "On the first run of any new task, use Live Test calibration with real screenshots to verify every step, then save the verified JSON blueprint for background runs."
+            "GOOGLE_FLOW" to "Every trained JSON step is a guide only: wait 1 second after every action to confirm the screen actually updated before moving to the next step.",
+            "GOOGLE_FLOW" to "When video rendering reaches 100% and the thumbnail card appears, try Sense-1 (Background MP4 Stream Sniffer), Sense-2 (DOM/React Fiber URL), Sense-3 (3x Finger Tap on Play icon), and Sense-4 (Card Center Tap -> Download).",
+            "YOUTUBE" to "Never use the raw file name or 'Google Flow' in YouTube titles; always inspect actual video frames with Vision AI to craft a curiosity-driven viral title.",
+            "WHATSAPP" to "If reply text is already typed inside the bottom Message input box and the green Send button (desc='Send') is visible, immediately click the Send node."
         )
         for ((dom, rule) in coreLessons) {
             val cv = ContentValues().apply {
@@ -81,26 +83,67 @@ private class AuraBrainDatabase(context: Context) :
             db.insertWithOnConflict("episodic_memory", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
         }
 
-        // Seed default GOOGLE_FLOW Trained Skill JSON Blueprint
-        val defaultFlowBlueprint = JSONObject().apply {
+        // Pre-Trained Built-in GOOGLE_FLOW Master JSON Blueprint with 1-Second AI Confirmation Rules
+        val masterFlowBlueprint = JSONObject().apply {
             put("skill", "GOOGLE_FLOW")
-            put("description", "Start-to-End Google Flow Video Creation & MP4 Download Blueprint")
+            put("execution_policy", "AI_1S_STEP_CONFIRMED_GUIDE_NEVER_SKIP_BLINDLY")
+            put("description", "Pre-trained start-to-end Google Flow video creation & 4-Sense MP4 download blueprint")
             put("steps", JSONArray().apply {
-                put(JSONObject().put("step", 1).put("screen", "Landing Page").put("action", "CLICK_EL").put("target", "+ New project").put("verify", "Project workspace opens with 'Start creating or drop media'"))
-                put(JSONObject().put("step", 2).put("screen", "Project Workspace").put("action", "ENSURE_MODE").put("target", "Video • 720p • 8s/10s • x1").put("verify", "Bottom pill shows Video mode and x1"))
-                put(JSONObject().put("step", 3).put("screen", "Prompt Composer").put("action", "TYPE_AND_SUBMIT").put("target", "What do you want to create? (bottom textarea top >= 175)").put("verify", "Card appears with 0% -> 100% progress"))
-                put(JSONObject().put("step", 4).put("screen", "Rendering Grid").put("action", "WAIT_FOR_100_PERCENT").put("target", "Wait while % badge is visible").put("verify", "Completed video card thumbnail with Play icon appears"))
-                put(JSONObject().put("step", 5).put("screen", "Completed Card").put("action", "EXTRACT_OR_TAP_CARD").put("target", "Sniff background MP4 network URL or 3x-scaled tap on card -> Play -> Download").put("verify", "MP4 file saved in AutoVideos folder"))
+                put(
+                    JSONObject()
+                        .put("step", 1)
+                        .put("screen_identify", "Google Flow Landing Page with '+ New project' button")
+                        .put("action", "CLICK_EL")
+                        .put("target", "+ New project")
+                        .put("css_hint", "x=270, y=700")
+                        .put("confirm_after_1s", "Workspace must open showing 'What do you want to create?' at bottom")
+                        .put("fallback_sense", "If DOM click does not open workspace in 1s, use 3x hardware finger tap at (270, 700)")
+                )
+                put(
+                    JSONObject()
+                        .put("step", 2)
+                        .put("screen_identify", "Mode Selector Pill near bottom composer")
+                        .put("action", "ENSURE_VIDEO_MODE")
+                        .put("target", "Video • 720p • 8s/10s • x1")
+                        .put("forbid", "Nano Banana, Image, x2, x4")
+                        .put("css_hint", "x=425, y=892")
+                        .put("confirm_after_1s", "Bottom mode pill must show Video and x1")
+                )
+                put(
+                    JSONObject()
+                        .put("step", 3)
+                        .put("screen_identify", "Bottom Prompt Composer (top >= 175px, never top search bar)")
+                        .put("action", "TYPE_AND_SUBMIT_ONCE")
+                        .put("target", "What do you want to create?")
+                        .put("submit_button", "arrow_forward @(496, 892)")
+                        .put("confirm_after_1s", "Project card appears with 0%..99% rendering badge; lock prompt so it never types twice")
+                )
+                put(
+                    JSONObject()
+                        .put("step", 4)
+                        .put("screen_identify", "Rendering Progress Card (0% to 99%)")
+                        .put("action", "WAIT_WITH_1S_CONFIRM")
+                        .put("target", "Wait until percentage reaches 100% and thumbnail image appears")
+                        .put("confirm_after_1s", "100% completed video card with Play icon is visible")
+                )
+                put(
+                    JSONObject()
+                        .put("step", 5)
+                        .put("screen_identify", "Completed Video Card on Project Grid")
+                        .put("action", "MULTI_SENSE_DOWNLOAD_MP4")
+                        .put("target", "Sense-1: Sniff network MP4 • Sense-2: DOM/Fiber src • Sense-3: Tap Play @(92,286) • Sense-4: Tap Card @(148,360) -> Download")
+                        .put("confirm_after_1s", "MP4 file (>40KB) verified inside user's selected storage folder")
+                )
             })
         }.toString(2)
 
         val skillCv = ContentValues().apply {
             put("skill_name", "GOOGLE_FLOW")
-            put("json_blueprint", defaultFlowBlueprint)
+            put("json_blueprint", masterFlowBlueprint)
             put("is_live_verified", 0)
             put("timestamp", System.currentTimeMillis())
         }
-        db.insertWithOnConflict("trained_skills", null, skillCv, SQLiteDatabase.CONFLICT_IGNORE)
+        db.insertWithOnConflict("trained_skills", null, skillCv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 }
 
@@ -109,8 +152,18 @@ object VideoQueueManager {
     private const val KEY_UPLOADED_SET = "uploaded_videos"
 
     // ========================================================================
-    // 1. FIRST-RUN LIVE TEST & LEARN -> THEN BACKGROUND ENGINE
+    // 1. 1-SECOND AI STEP CONFIRMATION LOCK & FIRST-RUN CALIBRATION
     // ========================================================================
+    fun isOneSecAiConfirmEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("one_sec_ai_confirm", true)
+    }
+
+    fun setOneSecAiConfirmEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("one_sec_ai_confirm", enabled).apply()
+    }
+
     fun isFirstRunLiveLearnEnabled(context: Context): Boolean {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean("first_run_live_learn", true)
@@ -121,11 +174,16 @@ object VideoQueueManager {
             .edit().putBoolean("first_run_live_learn", enabled).apply()
     }
 
-    /**
-     * Checks if a task (like GOOGLE_FLOW) has already completed its First-Run Live Test calibration.
-     * If false (and First-Run Live Learn is enabled), the app automatically opens the visible window on Run #1
-     * so screenshots + touch coordinates calibrate 100% accurately, then marks it verified for future Background runs!
-     */
+    fun isVideoFrameVisionSeoEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("video_frame_vision_seo", true)
+    }
+
+    fun setVideoFrameVisionSeoEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("video_frame_vision_seo", enabled).apply()
+    }
+
     fun isSkillLiveVerified(context: Context, skillName: String): Boolean {
         return try {
             val db = AuraBrainDatabase(context).readableDatabase
@@ -158,7 +216,53 @@ object VideoQueueManager {
     }
 
     // ========================================================================
-    // 2. WM3-STYLE TRAINED SKILLS (SCREENSHOTS / JSON PASTE / LIVE TEACH)
+    // 2. VIDEO FRAME VISION EXTRACTOR (EXTRACTS 2 REAL PHOTOS FROM MP4 FOR VIRAL TITLE!)
+    // ========================================================================
+    /**
+     * Extracts 2 actual frames (around 1.5s and 5.5s) from the MP4 video file and converts them
+     * to compact Base64 JPEGs so Gemini 3.8 Vision can SEE the actual video before writing the YouTube title!
+     */
+    fun extractVideoFramesBase64(videoFile: File): List<String> {
+        if (!videoFile.exists() || videoFile.length() < 10_000L) return emptyList()
+        val frames = mutableListOf<String>()
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(videoFile.absolutePath)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 8000L
+
+            val sampleTimesUs = listOf(
+                (durationMs * 0.20 * 1000L).toLong().coerceAtLeast(500_000L),
+                (durationMs * 0.70 * 1000L).toLong().coerceAtLeast(2_500_000L)
+            )
+
+            for (timeUs in sampleTimesUs) {
+                val rawBmp = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: retriever.getFrameAtTime()
+                if (rawBmp != null) {
+                    val targetW = 480
+                    val ratio = rawBmp.height.toFloat() / rawBmp.width.coerceAtLeast(1).toFloat()
+                    val targetH = (targetW * ratio).toInt().coerceIn(320, 860)
+                    val scaled = Bitmap.createScaledBitmap(rawBmp, targetW, targetH, true)
+                    if (scaled != rawBmp) rawBmp.recycle()
+
+                    val baos = ByteArrayOutputStream()
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 72, baos)
+                    scaled.recycle()
+                    frames.add(Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP))
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {}
+        }
+        return frames
+    }
+
+    // ========================================================================
+    // 3. WM3-STYLE TRAINED SKILLS (SCREENSHOTS / JSON PASTE / LIVE TEACH)
     // ========================================================================
     fun saveTrainedSkillBlueprint(
         context: Context,
@@ -206,9 +310,9 @@ object VideoQueueManager {
             cursor.use { c ->
                 while (c.moveToNext()) {
                     val name = c.getString(0) ?: "SKILL"
-                    val verified = if (c.getInt(1) == 1) "✅ Live Verified (Background Ready)" else "🎯 Needs 1st Live Run"
+                    val verified = if (c.getInt(1) == 1) "✅ 1st-Run Verified (Background Ready)" else "🎯 1st-Run Phone Learn Pending"
                     val bp = c.getString(2) ?: "{}"
-                    list.add("🎓 $name [$verified]\n${bp.take(320)}")
+                    list.add("🎓 $name [$verified]\n${bp.take(360)}")
                 }
             }
             if (list.isEmpty()) "No trained skills yet." else list.joinToString("\n\n────────────────────\n\n")
@@ -218,11 +322,24 @@ object VideoQueueManager {
     }
 
     // ========================================================================
-    // 3. CUSTOMIZABLE STORY SERIES (PART 1, 2, 3 + SIDE STORY + 10s DURATION)
+    // 4. SMART NATURAL LANGUAGE TIMER & SCHEDULE STORAGE
     // ========================================================================
-    /**
-     * Story Modes: "SERIAL" (Part 1 -> Part 2 -> Part 3), "SIDE_STORY" (Spin-off reel in same world), "STANDALONE" (Fresh reel)
-     */
+    fun saveParsedScheduleSummary(context: Context, summary: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString("parsed_schedule_summary", summary.trim()).apply()
+    }
+
+    fun getParsedScheduleSummary(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(
+                "parsed_schedule_summary",
+                "⏰ Smart Timer: चैट में समय लिखें तो AI खुद अलार्म और टास्क काउंट सेट कर देगा।"
+            ) ?: ""
+    }
+
+    // ========================================================================
+    // 5. CUSTOMIZABLE STORY SERIES (PART 1, 2, 3 + SIDE STORY + 10s DURATION)
+    // ========================================================================
     fun getStoryMode(context: Context): String {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString("story_mode_type", "SERIAL") ?: "SERIAL"
@@ -337,7 +454,7 @@ object VideoQueueManager {
                     val title = c.getString(2) ?: ""
                     val sum = c.getString(3) ?: ""
                     val vp = c.getString(4) ?: ""
-                    list.add("Part $num [$mode] ($title): $sum | Prompt: ${vp.take(110)}...")
+                    list.add("Part $num [$mode] ($title): $sum • Prompt: ${vp.take(110)}...")
                 }
             }
             if (list.isEmpty()) {
@@ -395,7 +512,7 @@ object VideoQueueManager {
     }
 
     // ========================================================================
-    // 4. VIDEO QUEUE & CUSTOMIZABLE UPLOAD ORDER (NEWEST vs OLDEST)
+    // 6. VIDEO QUEUE & CUSTOMIZABLE STORAGE FOLDER
     // ========================================================================
     fun isUploadNewestFirst(context: Context): Boolean {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -466,7 +583,7 @@ object VideoQueueManager {
         if (!targetDir.exists()) targetDir.mkdirs()
         val files = getVideoFilesInFolder(targetFolder, newestFirst = true)
         if (files.isEmpty()) {
-            return "📂 फोल्डर ($targetFolder) अभी खाली है।\n\nजब Google Flow या ब्राउज़र से कोई वीडियो डाउनलोड होगी, तो वह यहाँ दिखेगी।"
+            return "📂 फोल्डर ($targetFolder) अभी खाली है।\n\nजब Google Flow या किसी भी स्टोरेज से वीडियो आएगी, तो वह यहाँ दिखेगी।"
         }
         val sdf = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
         return files.mapIndexed { idx, file ->
@@ -542,7 +659,7 @@ object VideoQueueManager {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(
                 "flow_topic",
-                "Cinematic hyper-realistic technical story of a futuristic cybernetic explorer in a glowing sci-fi world with Hindi voice and dialog"
+                "Cinematic hyper-realistic technical story series of an adult futuristic cybernetic explorer inventing quantum gadgets in a glowing sci-fi world with Hindi voice and dialog"
             ) ?: ""
     }
 
@@ -595,9 +712,25 @@ object VideoQueueManager {
     }
 
     fun getStepDelayMs(context: Context): Long {
+        // When 1-Second AI Step Confirmation is enabled, AI checks and confirms within ~1200ms!
+        if (isOneSecAiConfirmEnabled(context)) {
+            return 1200L
+        }
         val sec = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt("step_delay_sec", 3).coerceIn(1, 30)
+            .getInt("step_delay_sec", 2).coerceIn(1, 30)
         return sec * 1000L
+    }
+
+    fun appendDetailedLog(
+        context: Context,
+        modelUsed: String,
+        clickSense: String,
+        actionDesc: String,
+        whyReason: String,
+        verifyStatus: String
+    ) {
+        val msg = "[$modelUsed • $clickSense] $actionDesc -> Why: $whyReason -> Verify: $verifyStatus"
+        appendLog(context, msg)
     }
 
     fun appendLog(context: Context, message: String) {
@@ -605,7 +738,7 @@ object VideoQueueManager {
         val line = "[$time] $message"
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val oldLogs = prefs.getString("live_logs", "") ?: ""
-        val updated = (oldLogs.lines().takeLast(60) + line).joinToString("\n").trim()
+        val updated = (oldLogs.lines().takeLast(75) + line).joinToString("\n").trim()
         prefs.edit().putString("live_logs", updated).apply()
         MainActivity.onLogUpdated?.invoke(updated)
     }
