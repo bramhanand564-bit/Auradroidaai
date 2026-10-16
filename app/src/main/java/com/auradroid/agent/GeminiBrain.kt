@@ -47,6 +47,17 @@ data class WebAgentDecision(
     val learnedRule: String = ""
 )
 
+data class AgentDecision(
+    val action: String, // OPEN_APP, CLICK_NODE, CLICK_XY, TYPE, SCROLL, BACK, WAIT, DONE
+    val nodeIndex: Int = -1,
+    val x: Float = -1f,
+    val y: Float = -1f,
+    val textToType: String = "",
+    val appPackageOrSetting: String = "",
+    val reason: String = "",
+    val learnedRule: String = ""
+)
+
 object GeminiBrain {
 
     @Volatile
@@ -534,6 +545,101 @@ object GeminiBrain {
                 title = "${episodeTitle.ifBlank { "Cybernetic Secret" }} #shorts #viral".take(95),
                 description = "$storySummary\n\n#shorts #viral"
             )
+        }
+    }
+
+    /**
+     * Phone accessibility agent decision maker. Kept separate from WebAgentDecision
+     * because native Android nodes use nodeIndex/x/y and app/setting actions.
+     */
+    suspend fun decideNextUiAction(
+        apiKey: String,
+        model: String,
+        goal: String,
+        screenSummary: String,
+        history: List<String>,
+        memoryVault: String,
+        learnedLessons: String = "",
+        screenChangedStatus: String = "",
+        screenshotBase64: String? = null,
+        previousScreenshotBase64: String? = null,
+        screenWidth: Int,
+        screenHeight: Int,
+        isContinuousMonitorMode: Boolean = false,
+        useHighModel: Boolean = false,
+        highModelName: String = "gemini-3.8-pro",
+        useGoogleSearch: Boolean = false
+    ): AgentDecision {
+        val prompt = """
+            You are Nax Bot, a careful Android phone accessibility agent.
+            GOAL: $goal
+            SCREEN SIZE: $screenWidth x $screenHeight pixels
+            CONTINUOUS MONITOR MODE: $isContinuousMonitorMode
+
+            CURRENT ACCESSIBILITY NODES:
+            $screenSummary
+
+            RECENT ACTIONS (latest 8):
+            ${history.takeLast(8).joinToString("\n")}
+
+            LONG-TERM MEMORY:
+            $memoryVault
+
+            LEARNED LESSONS:
+            $learnedLessons
+
+            SCREEN CHANGE VERIFICATION:
+            $screenChangedStatus
+
+            Choose exactly one next action. Use CLICK_NODE when the intended node index is known;
+            use CLICK_XY only when a coordinate tap is necessary. Coordinates must be real pixels
+            within the screen bounds. Use OPEN_APP for an app package or supported setting name.
+            Use TYPE only when text should be entered. Use WAIT while monitoring for a reply or
+            while an app is loading. Use DONE only when the user's goal is actually complete.
+            Never claim a message was sent or an upload completed without visible evidence.
+            Return valid JSON only:
+            {
+              "action": "CLICK_NODE",
+              "nodeIndex": 2,
+              "x": -1,
+              "y": -1,
+              "textToType": "",
+              "appPackageOrSetting": "",
+              "reason": "Short explanation",
+              "learnedRule": ""
+            }
+        """.trimIndent()
+
+        return try {
+            val rawJson = callGeminiApi(
+                apiKey = apiKey,
+                userModel = model,
+                prompt = prompt,
+                currentImageJpeg = screenshotBase64,
+                previousImageJpeg = previousScreenshotBase64,
+                escalateToHighModel = useHighModel,
+                highModelName = highModelName,
+                enableGoogleSearch = useGoogleSearch
+            )
+            val obj = extractCleanJsonObject(rawJson)
+            val allowedActions = setOf("OPEN_APP", "CLICK_NODE", "CLICK_XY", "TYPE", "SCROLL", "BACK", "WAIT", "DONE")
+            val action = obj.optString("action", "WAIT").uppercase().let {
+                if (it in allowedActions) it else "WAIT"
+            }
+            AgentDecision(
+                action = action,
+                nodeIndex = obj.optInt("nodeIndex", -1),
+                x = obj.optDouble("x", -1.0).toFloat(),
+                y = obj.optDouble("y", -1.0).toFloat(),
+                textToType = obj.optString("textToType", ""),
+                appPackageOrSetting = obj.optString("appPackageOrSetting", ""),
+                reason = obj.optString("reason", "Waiting for the next safe action"),
+                learnedRule = obj.optString("learnedRule", "")
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            AgentDecision(action = "WAIT", reason = "AI decision unavailable; waiting to retry")
         }
     }
 
