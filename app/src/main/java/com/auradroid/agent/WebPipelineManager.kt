@@ -44,6 +44,58 @@ object WebPipelineManager {
     }
 
     /**
+     * Upload an already-downloaded local video through the existing web-agent workflow.
+     * If requested and no pending video exists, create one using the established Flow pipeline.
+     */
+    fun runYouTubeAutoUpload(
+        context: Context,
+        apiKey: String,
+        model: String,
+        folderPath: String,
+        userPrompt: String,
+        createAiVideoIfEmpty: Boolean = false
+    ) {
+        val pendingVideo = VideoQueueManager.getNextPendingVideo(context, folderPath)
+        if (pendingVideo == null) {
+            if (createAiVideoIfEmpty) {
+                startFlowToYouTubePipeline(
+                    context = context,
+                    apiKey = apiKey,
+                    model = model,
+                    flowTopic = userPrompt.ifBlank { VideoQueueManager.getFlowTopic(context) },
+                    folderPath = folderPath,
+                    dailyVideoLimit = 1
+                )
+            } else {
+                val message = "No pending video found in the selected folder: $folderPath"
+                AutoTouchService.instance?.overlayHud?.updateStatus("YouTube Upload", message, "ERROR")
+                VideoQueueManager.appendLog(context, "⚠️ $message")
+            }
+            return
+        }
+
+        val uploadGoal = """
+            Upload the existing local video file "${pendingVideo.name}" from the user's selected folder
+            to YouTube Studio as a YouTube Short. Open the upload flow, choose this exact video file,
+            and use the following title/description instructions when the relevant fields are available:
+            $userPrompt
+
+            Verify the final YouTube Studio confirmation before reporting completion. If the file picker
+            cannot access the selected file or any step fails, explain the blocker; do not claim success.
+        """.trimIndent()
+
+        startAutonomousWebAgent(
+            context = context,
+            apiKey = apiKey,
+            model = model,
+            goal = uploadGoal,
+            startUrl = "https://studio.youtube.com/",
+            folderPath = folderPath,
+            skipFlowRouting = true
+        )
+    }
+
+    /**
      * Master Customizable Story Series (Part 1, Part 2, Part 3 / Side-Story / Standalone) +
      * 1-Second Live AI Step Confirmation + First-Run Phone Calibration +
      * Viral Video Frame Vision SEO -> YouTube Shorts Pipeline!
@@ -226,10 +278,11 @@ object WebPipelineManager {
         model: String,
         goal: String,
         startUrl: String,
-        folderPath: String
+        folderPath: String,
+        skipFlowRouting: Boolean = false
     ) {
         val lowerGoal = goal.lowercase()
-        if (lowerGoal.contains("flow") || startUrl.contains("labs.google/fx", true) || startUrl.contains("flow.google", true)) {
+        if (!skipFlowRouting && (lowerGoal.contains("flow") || startUrl.contains("labs.google/fx", true) || startUrl.contains("flow.google", true))) {
             startFlowToYouTubePipeline(
                 context = context,
                 apiKey = apiKey,
