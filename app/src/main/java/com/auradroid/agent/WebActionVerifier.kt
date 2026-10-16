@@ -27,7 +27,8 @@ data class DomSnapshot(
 data class StepVerificationResult(
     val passed: Boolean,
     val verificationReport: String,
-    val consecutiveFailures: Int
+    val consecutiveFailures: Int,
+    val recommendedSense: Int // 1 = DOM Click, 2 = 3x Finger Tap, 3 = Inner Icon Tap, 4 = Offset Tap + High Pro Model
 )
 
 object WebActionVerifier {
@@ -41,9 +42,36 @@ object WebActionVerifier {
         consecutiveStuckCount = 0
     }
 
+    fun getSenseName(senseIndex: Int): String {
+        return when (senseIndex.coerceIn(1, 4)) {
+            1 -> "Sense-1: DOM Click"
+            2 -> "Sense-2: 3x Finger Tap"
+            3 -> "Sense-3: Inner Icon Tap"
+            else -> "Sense-4: Offset Tap + Pro AI"
+        }
+    }
+
+    /**
+     * 1-Second Live AI Step Confirmation:
+     * Waits 1 second after any action, captures a fresh live snapshot, and confirms whether the screen
+     * genuinely progressed before allowing the workflow to move to the next step!
+     */
+    suspend fun confirmStepInOneSecond(
+        webView: WebView,
+        before: DomSnapshot?,
+        actionTaken: String,
+        expectedOutcome: String,
+        waitMs: Long = 1050L
+    ): Pair<DomSnapshot, StepVerificationResult> {
+        delay(waitMs)
+        val after = captureSnapshot(webView)
+        val result = verifyActionOutcome(before, after, actionTaken, expectedOutcome)
+        return after to result
+    }
+
     /**
      * Dispatches a hardware-accurate Android MotionEvent (DOWN -> MOVE -> UP) directly onto the WebView,
-     * automatically scaling CSS coordinates (e.g. 360px wide) to actual WebView pixel coordinates (e.g. 1080px wide = 3x)!
+     * scaling CSS coordinates (540x960) to actual WebView pixel coordinates (3x screen scale).
      */
     suspend fun dispatchRealWebTouch(
         webView: WebView,
@@ -52,6 +80,7 @@ object WebActionVerifier {
         cssY: Float,
         viewportCssWidth: Float = 540f,
         viewportCssHeight: Float = 960f,
+        holdDurationMs: Long = 95L,
         label: String = "Tap"
     ): Boolean = suspendCancellableCoroutine { cont ->
         mainHandler.post {
@@ -69,30 +98,12 @@ object WebActionVerifier {
                 val localY = (cssY * scaleY).coerceIn(8f, (actualH - 8f).coerceAtLeast(10f))
 
                 val downTime = SystemClock.uptimeMillis()
-                val eventDown = MotionEvent.obtain(
-                    downTime,
-                    downTime,
-                    MotionEvent.ACTION_DOWN,
-                    localX,
-                    localY,
-                    0
-                )
-                val eventMove = MotionEvent.obtain(
-                    downTime,
-                    downTime + 45L,
-                    MotionEvent.ACTION_MOVE,
-                    localX + 1f,
-                    localY + 1f,
-                    0
-                )
-                val eventUp = MotionEvent.obtain(
-                    downTime,
-                    downTime + 95L,
-                    MotionEvent.ACTION_UP,
-                    localX,
-                    localY,
-                    0
-                )
+                val moveTime = downTime + (holdDurationMs / 2L).coerceAtLeast(35L)
+                val upTime = downTime + holdDurationMs.coerceAtLeast(80L)
+
+                val eventDown = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, localX, localY, 0)
+                val eventMove = MotionEvent.obtain(downTime, moveTime, MotionEvent.ACTION_MOVE, localX + 1f, localY + 1f, 0)
+                val eventUp = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, localX, localY, 0)
 
                 webView.requestFocus()
                 webView.dispatchTouchEvent(eventDown)
@@ -117,6 +128,90 @@ object WebActionVerifier {
     }
 
     /**
+     * 4-Sense Smart Clicking Engine:
+     * Adapts its clicking technique automatically based on `senseLevel` (1..4) when a previous click didn't open the next state.
+     */
+    suspend fun executeMultiSenseClick(
+        webView: WebView,
+        hud: AiOverlayHud?,
+        elementIndex: Int,
+        fallbackCssX: Float,
+        fallbackCssY: Float,
+        senseLevel: Int,
+        label: String
+    ): String {
+        val activeSense = senseLevel.coerceIn(1, 4)
+        val jsResult = suspendCancellableCoroutine<String> { cont ->
+            val js = """
+                (function() {
+                    var vw = window.innerWidth ? window.innerWidth : 540;
+                    var vh = window.innerHeight ? window.innerHeight : 960;
+                    var list = window.__naxElements ? window.__naxElements : [];
+                    var el = list[$elementIndex];
+                    if (el) {
+                        var targetEl = el;
+                        if ($activeSense === 3 && el.querySelector) {
+                            var inner = el.querySelector('button, a, [role="button"], svg, img, video');
+                            if (inner) targetEl = inner;
+                        }
+                        var r = targetEl.getBoundingClientRect();
+                        targetEl.focus();
+                        targetEl.click();
+                        var mDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+                        var mUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+                        targetEl.dispatchEvent(mDown);
+                        targetEl.dispatchEvent(mUp);
+                        return JSON.stringify({
+                            ok: true,
+                            x: Math.round(r.left + r.width / 2),
+                            y: Math.round(r.top + r.height / 2),
+                            vw: vw,
+                            vh: vh
+                        });
+                    }
+                    return JSON.stringify({ ok: false, vw: vw, vh: vh });
+                })();
+            """.trimIndent()
+
+            mainHandler.post {
+                webView.evaluateJavascript(js) { raw ->
+                    val clean = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"") ?: "{}"
+                    if (cont.isActive) cont.resume(clean)
+                }
+            }
+        }
+
+        try {
+            val obj = JSONObject(jsResult)
+            val vw = obj.optDouble("vw", 540.0).toFloat()
+            val vh = obj.optDouble("vh", 960.0).toFloat()
+            val baseX = if (obj.optBoolean("ok", false)) obj.optDouble("x", fallbackCssX.toDouble()).toFloat() else fallbackCssX
+            val baseY = if (obj.optBoolean("ok", false)) obj.optDouble("y", fallbackCssY.toDouble()).toFloat() else fallbackCssY
+
+            if (baseX > 0f && baseY > 0f && VideoQueueManager.isRealWebTouchEnabled(webView.context)) {
+                val (offsetX, offsetY, holdMs) = when (activeSense) {
+                    1 -> Triple(0f, 0f, 85L)
+                    2 -> Triple(0f, 0f, 120L)
+                    3 -> Triple(-18f, -18f, 140L)
+                    else -> Triple(16f, -24f, 260L)
+                }
+                dispatchRealWebTouch(
+                    webView = webView,
+                    hud = hud,
+                    cssX = baseX + offsetX,
+                    cssY = baseY + offsetY,
+                    viewportCssWidth = vw,
+                    viewportCssHeight = vh,
+                    holdDurationMs = holdMs,
+                    label = "${getSenseName(activeSense)} •${label.take(12)}"
+                )
+            }
+        } catch (_: Exception) {}
+
+        return getSenseName(activeSense)
+    }
+
+    /**
      * Ensures Google Flow is set to Video mode (9:16 • 8s/10s • x1) and NOT Nano Banana / Image / x2 mode.
      */
     suspend fun ensureFlowVideoMode8s(
@@ -126,23 +221,22 @@ object WebActionVerifier {
     ): String = suspendCancellableCoroutine { cont ->
         val js = """
             (function() {
-                var vw = window.innerWidth || 540;
-                var vh = window.innerHeight || 960;
-                var bodyTxt = (document.body ? document.body.innerText : '') || '';
+                var vw = window.innerWidth ? window.innerWidth : 540;
+                var vh = window.innerHeight ? window.innerHeight : 960;
                 var desiredDur = ${targetDurationSec} + 's';
                 
                 var pills = Array.from(document.querySelectorAll('button, [role="button"], div, span'));
                 for (var i = 0; i < pills.length; i++) {
                     var el = pills[i];
-                    var t = (el.innerText || el.getAttribute('aria-label') || '').trim();
-                    if (t.length > 0 && t.length < 48 &&
-                        (t.indexOf('Nano Banana') !== -1 || t.indexOf('Image') !== -1 || t.indexOf('x2') !== -1 || t.indexOf('x4') !== -1 || (t.indexOf('Video') !== -1 && t.indexOf(desiredDur) === -1))) {
-                        
+                    var t = (el.innerText ? el.innerText : (el.getAttribute('aria-label') ? el.getAttribute('aria-label') : '')).trim();
+                    var hasBadMode = (t.indexOf('Nano Banana') !== -1) || (t.indexOf('Image') !== -1) || (t.indexOf('x2') !== -1) || (t.indexOf('x4') !== -1);
+                    var needsDurUpdate = (t.indexOf('Video') !== -1) && (t.indexOf(desiredDur) === -1);
+                    if (t.length > 0 && t.length < 48 && (hasBadMode || needsDurUpdate)) {
                         var menuButtons = Array.from(document.querySelectorAll('button, [role="option"], [role="menuitem"], [role="tab"], span'));
                         var switched = [];
                         for (var j = 0; j < menuButtons.length; j++) {
                             var mb = menuButtons[j];
-                            var mt = (mb.innerText || mb.getAttribute('aria-label') || '').trim();
+                            var mt = (mb.innerText ? mb.innerText : (mb.getAttribute('aria-label') ? mb.getAttribute('aria-label') : '')).trim();
                             if (mt === 'Video' || mt === '9:16' || mt === 'Portrait (9:16)' || mt === desiredDur || mt === '8s' || mt === 'x1' || mt === '1') {
                                 mb.click();
                                 switched.push(mt);
@@ -185,19 +279,14 @@ object WebActionVerifier {
     }
 
     /**
-     * Captures a rich snapshot of the current DOM, badges interactive elements,
-     * and detects Google Flow rendering percentages (0%..100%) and completed video cards.
+     * Captures a live DOM snapshot, tags interactive elements with indices `[0]..[47]`,
+     * and checks Google Flow rendering progress (0%..100%) and completed video cards.
      */
     suspend fun captureSnapshot(webView: WebView): DomSnapshot = suspendCancellableCoroutine { cont ->
         val js = """
             (function() {
-                try {
-                    var oldBadges = document.querySelectorAll('.__nax_badge');
-                    oldBadges.forEach(function(b) { b.remove(); });
-                } catch(e) {}
-
-                var vw = window.innerWidth || 540;
-                var vh = window.innerHeight || 960;
+                var vw = window.innerWidth ? window.innerWidth : 540;
+                var vh = window.innerHeight ? window.innerHeight : 960;
                 window.__naxElements = [];
                 var lines = [];
 
@@ -214,7 +303,8 @@ object WebActionVerifier {
                     if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) < 0.08) continue;
 
                     var tag = el.tagName.toLowerCase();
-                    var txt = (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
+                    var rawTxt = el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+                    var txt = rawTxt.replace(/\s+/g, ' ').trim();
                     if (txt.length > 75) txt = txt.substring(0, 75) + '...';
 
                     var isMediaCard = (tag === 'video') ||
@@ -225,13 +315,13 @@ object WebActionVerifier {
                     window.__naxElements.push(el);
                     var cx = Math.round(r.left + r.width / 2);
                     var cy = Math.round(r.top + r.height / 2);
-                    var label = txt || (isMediaCard ? 'MEDIA_CARD_THUMBNAIL' : tag.toUpperCase());
+                    var label = txt ? txt : (isMediaCard ? 'MEDIA_CARD_THUMBNAIL' : tag.toUpperCase());
                     lines.push('[' + idx + '] ' + tag.toUpperCase() + ' "' + label + '" @(' + cx + ',' + cy + ') size=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' top=' + Math.round(r.top));
                     idx++;
                     if (idx >= 48) break;
                 }
 
-                var bodyText = (document.body ? document.body.innerText : '') || '';
+                var bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
                 var pctMatch = bodyText.match(/\b(\d{1,3})%\b/);
                 var isRendering = false;
                 var pctLabel = '';
@@ -261,7 +351,7 @@ object WebActionVerifier {
 
                 return JSON.stringify({
                     url: location.href,
-                    title: document.title || '',
+                    title: document.title ? document.title : '',
                     elementsText: lines.join('\n'),
                     count: idx,
                     hasStream: hasStream,
@@ -298,43 +388,30 @@ object WebActionVerifier {
                         if (cont.isActive) cont.resume(snap)
                     } catch (_: Exception) {
                         if (cont.isActive) {
-                            cont.resume(
-                                DomSnapshot(
-                                    url = webView.url ?: "",
-                                    title = "",
-                                    interactiveElementsText = "",
-                                    elementCount = 0,
-                                    domFingerprint = 0,
-                                    hasActiveVideoStream = false,
-                                    hasCompletedProjectCard = false,
-                                    isFlowRenderingInProgress = false,
-                                    renderingProgressLabel = "",
-                                    isInvalidModelModeSelected = false
-                                )
-                            )
+                            cont.resume(emptySnapshot(webView.url ?: ""))
                         }
                     }
                 }
             } catch (_: Exception) {
                 if (cont.isActive) {
-                    cont.resume(
-                        DomSnapshot(
-                            url = "",
-                            title = "",
-                            interactiveElementsText = "",
-                            elementCount = 0,
-                            domFingerprint = 0,
-                            hasActiveVideoStream = false,
-                            hasCompletedProjectCard = false,
-                            isFlowRenderingInProgress = false,
-                            renderingProgressLabel = "",
-                            isInvalidModelModeSelected = false
-                        )
-                    )
+                    cont.resume(emptySnapshot(""))
                 }
             }
         }
     }
+
+    private fun emptySnapshot(url: String) = DomSnapshot(
+        url = url,
+        title = "",
+        interactiveElementsText = "",
+        elementCount = 0,
+        domFingerprint = 0,
+        hasActiveVideoStream = false,
+        hasCompletedProjectCard = false,
+        isFlowRenderingInProgress = false,
+        renderingProgressLabel = "",
+        isInvalidModelModeSelected = false
+    )
 
     fun verifyActionOutcome(
         before: DomSnapshot?,
@@ -346,8 +423,9 @@ object WebActionVerifier {
         if (before == null || actionTaken == "WAIT" || actionTaken == "START") {
             return StepVerificationResult(
                 passed = true,
-                verificationReport = "Initial / Wait state active.",
-                consecutiveFailures = consecutiveStuckCount
+                verificationReport = "1s AI Confirm: Initial / Wait state verified.",
+                consecutiveFailures = consecutiveStuckCount,
+                recommendedSense = 1
             )
         }
 
@@ -361,50 +439,52 @@ object WebActionVerifier {
             consecutiveStuckCount = 0
             StepVerificationResult(
                 passed = true,
-                verificationReport = "VERIFIED SUCCESS: Screen updated after $actionTaken (Expected: $expectedOutcome).",
-                consecutiveFailures = 0
+                verificationReport = "1s AI CONFIRMED SUCCESS: Screen progressed after $actionTaken ($expectedOutcome).",
+                consecutiveFailures = 0,
+                recommendedSense = 1
             )
         } else {
             consecutiveStuckCount++
+            val nextSense = (consecutiveStuckCount + 1).coerceIn(2, 4)
             StepVerificationResult(
                 passed = false,
-                verificationReport = "VERIFICATION FAILED (#$consecutiveStuckCount): Screen did NOT change after $actionTaken! Escalating to 3x Real Touch / High Model.",
-                consecutiveFailures = consecutiveStuckCount
+                verificationReport = "1s AI CONFIRM FAILED (#$consecutiveStuckCount): Screen did NOT change after$actionTaken! Switching to ${getSenseName(nextSense)}.",
+                consecutiveFailures = consecutiveStuckCount,
+                recommendedSense = nextSense
             )
         }
     }
 
     /**
-     * Multi-Stage Video Card Opener, Play Trigger & Zero-Click Background Stream Extractor:
-     * 1. First checks if AiOverlayHud's network interceptor already sniffed the direct .mp4 URL in the background!
-     * 2. Scans DOM <video>, <source>, performance entries, and React Fiber props for any .mp4 / blob URL.
-     * 3. If no direct stream yet, returns the exact CSS coordinates of the completed video card & Play button
-     *    so dispatchRealWebTouch can tap it with 3x scaled finger accuracy!
+     * 4-Sense Completed Video Card Opener & MP4 Extractor:
+     * Sense 1: Zero-Click Background Network Stream Sniffer (`AiOverlayHud.lastSniffedMp4Url`)
+     * Sense 2: DOM `<video>`, Performance Timing & React Fiber State Extractor
+     * Sense 3: 3x Finger Touch on Inner Play Icon `@(92, 286)`
+     * Sense 4: 3x Finger Touch on Card Center `@(148, 360)` -> Download Button
      */
     suspend fun attemptOpenPlayAndDownloadVideo(
         webView: WebView,
         hud: AiOverlayHud?,
         attemptIndex: Int
     ): Pair<Boolean, String> {
-        // Stage 0: Zero-Click Background Network Sniffer Check!
+        // Sense 1: Zero-Click Background Network Sniffer Check
         val sniffedUrl = AiOverlayHud.lastSniffedMp4Url
         val sniffedAgeMs = System.currentTimeMillis() - AiOverlayHud.lastSniffedTimestampMs
         if (!sniffedUrl.isNullOrBlank() && sniffedAgeMs < 180_000L) {
             AiOverlayHud.lastSniffedMp4Url = null
             val ok = hud?.enqueueDirectVideoDownload(sniffedUrl) ?: false
             if (ok) {
-                return true to "Background Network Sniffer captured MP4 directly!"
+                return true to "[Sense-1: Network Stream Sniffer] Captured MP4 directly in background!"
             }
         }
 
-        // Stage 1: Inspect DOM, React Fiber props, Performance Resource Timing, or locate Card/Play coordinates
+        // Sense 2: Inspect DOM <video>, Performance Timing, React Fiber, or find Play/Card coordinates
         val jsResult = suspendCancellableCoroutine<String> { cont ->
             val js = """
                 (function() {
-                    var vw = window.innerWidth || 540;
-                    var vh = window.innerHeight || 960;
+                    var vw = window.innerWidth ? window.innerWidth : 540;
+                    var vh = window.innerHeight ? window.innerHeight : 960;
 
-                    // 1. Direct <video> or <source> elements
                     var vids = Array.from(document.querySelectorAll('video, source'));
                     for (var i = 0; i < vids.length; i++) {
                         var v = vids[i];
@@ -417,7 +497,6 @@ object WebActionVerifier {
                         }
                     }
 
-                    // 2. Check Performance Resource Timing for recently loaded mp4/video streams
                     try {
                         var res = performance.getEntriesByType('resource') || [];
                         for (var r = res.length - 1; r >= 0; r--) {
@@ -428,7 +507,6 @@ object WebActionVerifier {
                         }
                     } catch(e) {}
 
-                    // 3. Scan React Fiber / state props on cards for hidden video URLs
                     var allNodes = Array.from(document.querySelectorAll('[class*="card"], [class*="media"], [class*="result"], [class*="item"], div'));
                     for (var k = 0; k < Math.min(allNodes.length, 160); k++) {
                         var node = allNodes[k];
@@ -446,7 +524,6 @@ object WebActionVerifier {
                         }
                     }
 
-                    // 4. Look for an explicit Download button or icon if player modal is already open
                     var btns = Array.from(document.querySelectorAll('a[download], button, [role="button"]'));
                     for (var b = 0; b < btns.length; b++) {
                         var btn = btns[b];
@@ -467,7 +544,6 @@ object WebActionVerifier {
                         }
                     }
 
-                    // 5. Locate the completed video card or Play icon on the project grid (top between 155 and vh - 140)
                     var candidates = Array.from(document.querySelectorAll('video, [aria-label*="Play" i], [aria-label*="play" i], [class*="play" i], [class*="card" i], [class*="thumb" i], img'));
                     var bestEl = null;
                     var bestScore = -1;
@@ -502,7 +578,6 @@ object WebActionVerifier {
                         });
                     }
 
-                    // Fallback coordinates right on the first project card slot (seen at ~145, 340 in CSS coords)
                     return JSON.stringify({
                         status: 'TAP_TARGET',
                         targetName: 'Primary Card Slot',
@@ -535,49 +610,44 @@ object WebActionVerifier {
                     val videoUrl = obj.optString("url", "")
                     if (videoUrl.isNotBlank()) {
                         val ok = hud?.enqueueDirectVideoDownload(videoUrl) ?: false
-                        ok to "Extracted stream URL (${videoUrl.take(45)}...)"
+                        ok to "[Sense-2: DOM/Fiber Extractor] Extracted MP4 URL (${videoUrl.take(40)}...)"
                     } else {
                         false to "Empty video URL"
                     }
                 }
                 "TAP_TARGET" -> {
                     val targetName = obj.optString("targetName", "Video Card")
-                    val cssX = obj.optDouble("x", 150.0).toFloat()
-                    val cssY = obj.optDouble("y", 340.0).toFloat()
+                    val cssX = obj.optDouble("x", 148.0).toFloat()
+                    val cssY = obj.optDouble("y", 350.0).toFloat()
                     val vw = obj.optDouble("vw", 540.0).toFloat()
                     val vh = obj.optDouble("vh", 960.0).toFloat()
 
-                    //Vary tap offset slightly on subsequent attempts to hit Play button vs Card center
-                    val offsetX = when (attemptIndex % 3) {
-                        1 -> -28f
-                        2 -> 20f
-                        else -> 0f
-                    }
-                    val offsetY = when (attemptIndex % 3) {
-                        1 -> -55f
-                        2 -> 25f
-                        else -> 0f
+                    // Sense 3 & Sense 4: Rotate between Play Icon @(92,286), Card Center, and Upper-Right Download area
+                    val (tapX, tapY, senseTag) = when (attemptIndex % 3) {
+                        1 -> Triple(92f, 286f, "Sense-3: Play Icon Tap")
+                        2 -> Triple(cssX + 18f, cssY + 22f, "Sense-4: Offset Card Tap")
+                        else -> Triple(cssX, cssY, "Sense-2: 3x Card Tap")
                     }
 
                     dispatchRealWebTouch(
                         webView = webView,
                         hud = hud,
-                        cssX = cssX + offsetX,
-                        cssY = cssY + offsetY,
+                        cssX = tapX,
+                        cssY = tapY,
                         viewportCssWidth = vw,
                         viewportCssHeight = vh,
+                        holdDurationMs = 125L,
                         label = targetName
                     )
-                    delay(1400)
+                    delay(1150)
 
-                    // Check if the tap caused the network sniffer to catch the MP4 stream!
                     val newlySniffed = AiOverlayHud.lastSniffedMp4Url
                     if (!newlySniffed.isNullOrBlank()) {
                         AiOverlayHud.lastSniffedMp4Url = null
                         val ok = hud?.enqueueDirectVideoDownload(newlySniffed) ?: false
-                        if (ok) return true to "Tapped $targetName & captured MP4 stream!"
+                        if (ok) return true to "[$senseTag] Tapped$targetName & captured MP4 stream!"
                     }
-                    false to "Tapped $targetName @(${(cssX + offsetX).toInt()},${(cssY + offsetY).toInt()}); waiting for player/stream..."
+                    false to "[$senseTag] Tapped$targetName @(${tapX.toInt()},${tapY.toInt()}); 1s AI confirming player..."
                 }
                 else -> false to "Scanning for completed video card..."
             }
