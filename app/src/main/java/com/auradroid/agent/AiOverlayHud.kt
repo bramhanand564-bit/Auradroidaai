@@ -23,6 +23,8 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -30,6 +32,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import kotlinx.coroutines.suspendCancellableCoroutine
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -41,6 +45,12 @@ import kotlin.math.sin
 class AiOverlayHud(private val context: Context) {
 
     companion object {
+        @Volatile
+        var lastSniffedMp4Url: String? = null
+
+        @Volatile
+        var lastSniffedTimestampMs: Long = 0L
+
         init {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 try {
@@ -53,7 +63,7 @@ class AiOverlayHud(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var pointerCanvasView: CuteBaymaxHandCursorCanvas? = null
+    private var pointerCanvasView: NaxHandCursorCanvas? = null
     private var podRootLayout: LinearLayout? = null
     private var podLayoutParams: WindowManager.LayoutParams? = null
 
@@ -62,8 +72,9 @@ class AiOverlayHud(private val context: Context) {
     private var tvPodTitle: TextView? = null
     private var tvPodSubtitle: TextView? = null
     private var btnQuickMiniBrowser: TextView? = null
+    private var btnQuickTeachToggle: TextView? = null
     private var stopBadge: TextView? = null
-    private var botAvatarView: ExpressiveCompanionAvatar? = null
+    private var botAvatarView: NaxBotAvatarView? = null
 
     private var expandedContainer: LinearLayout? = null
     private var tvExpandedStepInfo: TextView? = null
@@ -77,8 +88,15 @@ class AiOverlayHud(private val context: Context) {
     private var isSideBarExpanded = false
     private var currentStage = 1
 
+    // Live Teach Mode State (WM3-Style Touch & Step Recorder)
+    var isLiveTeachActive = false
+        private set
+    private var currentTeachSkillName = "GOOGLE_FLOW"
+    private val recordedTeachSteps = JSONArray()
+    private var onLiveTeachFinishedCallback: ((String) -> Unit)? = null
+
     private val autoCollapseSideBarRunnable = Runnable {
-        if (!AutoTouchService.isJobRunning && currentStage == 1) {
+        if (!AutoTouchService.isJobRunning && !isLiveTeachActive && currentStage == 1) {
             setSideBarExpanded(false)
         }
     }
@@ -128,62 +146,62 @@ class AiOverlayHud(private val context: Context) {
                             if (!dir.exists()) dir.mkdirs()
                             val outFile = File(dir, fileName)
                             FileOutputStream(outFile).use { it.write(bytes) }
-                            VideoQueueManager.appendLog(context, "✅ Saved Google Flow 8s Video: ${outFile.name}")
+                            VideoQueueManager.appendLog(context, "✅ Nax Bot Saved Video: ${outFile.name}")
                         } catch (e: Exception) {
-                            VideoQueueManager.appendLog(context, "⚠️ Blob Video Save Error: ${e.message}")
+                            VideoQueueManager.appendLog(context, "⚠️ Blob Save Error: ${e.message}")
                         }
+                    }
+
+                    @JavascriptInterface
+                    fun onLiveTeachEvent(actionType: String, targetText: String, cssX: Int, cssY: Int) {
+                        if (!isLiveTeachActive) return
+                        try {
+                            val stepNum = recordedTeachSteps.length() + 1
+                            val stepObj = JSONObject().apply {
+                                put("step", stepNum)
+                                put("screen_identify", "Live recorded step #$stepNum")
+                                put("action", actionType)
+                                put("target", targetText.take(80))
+                                put("cssX", cssX)
+                                put("cssY", cssY)
+                                put("verify_next", "Screen updates after $actionType on '$targetText'")
+                            }
+                            recordedTeachSteps.put(stepObj)
+                            VideoQueueManager.appendLog(context, "🎓 Live Teach Step #$stepNum: $actionType -> '$targetText' ($cssX,$cssY)")
+                            updateStatus("Teach #$stepNum", "$actionType: ${targetText.take(18)}", "EXCITED")
+                        } catch (_: Exception) {}
                     }
                 }, "AuraBlobBridge")
 
                 webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): WebResourceResponse? {
+                        val reqUrl = request?.url?.toString() ?: ""
+                        val lower = reqUrl.lowercase()
+                        if ((lower.contains(".mp4") || lower.contains("videoplayback") || lower.contains("generated_video") || lower.contains("googleusercontent.com")) &&
+                            !lower.endsWith(".js") && !lower.endsWith(".css") && !lower.endsWith(".png")
+                        ) {
+                            if (lower.contains(".mp4") || request?.requestHeaders?.get("Accept")?.contains("video") == true) {
+                                lastSniffedMp4Url = reqUrl
+                                lastSniffedTimestampMs = System.currentTimeMillis()
+                            }
+                        }
+                        return super.shouldInterceptRequest(view, request)
+                    }
+
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
                         CookieManager.getInstance().flush()
                         url?.let { MainActivity.onBrowserUrlChanged?.invoke(it) }
+                        injectLiveTeachHooks(view)
                     }
                 }
                 webChromeClient = WebChromeClient()
 
                 setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-                    try {
-                        if (url.startsWith("blob:")) {
-                            val js = """
-                                (function() {
-                                    fetch('$url').then(r => r.blob()).then(b => {
-                                        var reader = new FileReader();
-                                        reader.onloadend = function() {
-                                            AuraBlobBridge.saveBase64Video(reader.result, 'flow_video_' + Date.now() + '.mp4');
-                                        };
-                                        reader.readAsDataURL(b);
-                                    });
-                                })();
-                            """.trimIndent()
-                            evaluateJavascript(js, null)
-                            return@setDownloadListener
-                        }
-
-                        val rawName = URLUtil.guessFileName(url, contentDisposition, mimeType)
-                        val fileName = if (rawName.endsWith(".bin", true) || !rawName.contains(".")) {
-                            "flow_video_${System.currentTimeMillis()}.mp4"
-                        } else rawName
-
-                        val request = DownloadManager.Request(Uri.parse(url)).apply {
-                            setMimeType(mimeType.ifBlank { "video/mp4" })
-                            addRequestHeader("User-Agent", userAgent)
-                            CookieManager.getInstance().getCookie(url)?.let {
-                                addRequestHeader("Cookie", it)
-                            }
-                            setTitle(fileName)
-                            setDescription("AuraDroid AI Downloading Video...")
-                            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "AutoVideos/$fileName")
-                        }
-                        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                        dm.enqueue(request)
-                        VideoQueueManager.appendLog(context, "⬇️ Downloading Video: $fileName")
-                    } catch (e: Exception) {
-                        VideoQueueManager.appendLog(context, "⚠️ Download error: ${e.message}")
-                    }
+                    enqueueDirectVideoDownload(url, userAgent, contentDisposition, mimeType)
                 }
 
                 measure(
@@ -196,6 +214,108 @@ class AiOverlayHud(private val context: Context) {
             sharedWebView = wv
         }
         return sharedWebView!!
+    }
+
+    fun enqueueDirectVideoDownload(
+        url: String,
+        userAgent: String = "Mozilla/5.0",
+        contentDisposition: String = "",
+        mimeType: String = "video/mp4"
+    ): Boolean {
+        return try {
+            val wv = getOrCreateSharedWebView()
+            if (url.startsWith("blob:")) {
+                val js = """
+                    (function() {
+                        fetch('$url').then(r => r.blob()).then(b => {
+                            var reader = new FileReader();
+                            reader.onloadend = function() {
+                                AuraBlobBridge.saveBase64Video(reader.result, 'flow_video_' + Date.now() + '.mp4');
+                            };
+                            reader.readAsDataURL(b);
+                        });
+                    })();
+                """.trimIndent()
+                mainHandler.post { wv.evaluateJavascript(js, null) }
+                return true
+            }
+
+            val rawName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+            val fileName = if (rawName.endsWith(".bin", true) || !rawName.contains(".")) {
+                "flow_video_${System.currentTimeMillis()}.mp4"
+            } else rawName
+
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                setMimeType(mimeType.ifBlank { "video/mp4" })
+                addRequestHeader("User-Agent", userAgent)
+                CookieManager.getInstance().getCookie(url)?.let {
+                    addRequestHeader("Cookie", it)
+                }
+                setTitle(fileName)
+                setDescription("Nax Bot Downloading Video...")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "AutoVideos/$fileName")
+            }
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            dm.enqueue(request)
+            VideoQueueManager.appendLog(context, "⬇️ Nax Bot Downloading MP4: $fileName")
+            true
+        } catch (e: Exception) {
+            VideoQueueManager.appendLog(context, "⚠️ Download error: ${e.message}")
+            false
+        }
+    }
+
+    private fun injectLiveTeachHooks(webView: WebView?) {
+        val js = """
+            (function() {
+                if (window.__naxTeachHooked) return;
+                window.__naxTeachHooked = true;
+                document.addEventListener('click', function(e) {
+                    var el = e.target;
+                    var txt = (el.innerText || el.placeholder || el.getAttribute('aria-label') || el.tagName || '').trim().substring(0, 60);
+                    if (window.AuraBlobBridge && window.AuraBlobBridge.onLiveTeachEvent) {
+                        window.AuraBlobBridge.onLiveTeachEvent('CLICK_EL', txt, Math.round(e.clientX), Math.round(e.clientY));
+                    }
+                }, true);
+            })();
+        """.trimIndent()
+        webView?.evaluateJavascript(js, null)
+    }
+
+    fun startOrStopLiveTeach(
+        skillName: String = "GOOGLE_FLOW",
+        onFinishedJson: ((String) -> Unit)? = null
+    ): Boolean {
+        if (!isLiveTeachActive) {
+            isLiveTeachActive = true
+            currentTeachSkillName = skillName.uppercase().trim().ifEmpty { "GOOGLE_FLOW" }
+            while (recordedTeachSteps.length() > 0) recordedTeachSteps.remove(0)
+            onLiveTeachFinishedCallback = onFinishedJson
+            mainHandler.post {
+                btnQuickTeachToggle?.text = "💾"
+                setPodStage(2)
+                injectLiveTeachHooks(sharedWebView)
+            }
+            updateStatus("🎓 Teach ON", "Tap steps in browser, then tap 💾", "EXCITED")
+            VideoQueueManager.appendLog(context, "🎓 Live Teach Recording started for '$currentTeachSkillName'!")
+        } else {
+            isLiveTeachActive = false
+            val blueprintObj = JSONObject().apply {
+                put("skill", currentTeachSkillName)
+                put("description", "Live taught workflow by user on Nax Bot")
+                put("steps", recordedTeachSteps)
+            }
+            val jsonStr = blueprintObj.toString(2)
+            VideoQueueManager.saveTrainedSkillBlueprint(context, currentTeachSkillName, jsonStr, isVerified = true)
+            mainHandler.post {
+                btnQuickTeachToggle?.text = "🎓"
+                onLiveTeachFinishedCallback?.invoke(jsonStr)
+            }
+            updateStatus("✅ Skill Saved!", "$currentTeachSkillName (${recordedTeachSteps.length()} steps)", "HAPPY")
+            VideoQueueManager.appendLog(context, "💾 Live Teach Blueprint Saved & Verified for '$currentTeachSkillName'!")
+        }
+        return isLiveTeachActive
     }
 
     suspend fun captureWebViewScreenshotBase64(): String? = suspendCancellableCoroutine { cont ->
@@ -261,12 +381,18 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-    /**
-     * Immediately collapses any open Mini Window / Full Screen browser back to the compact floating bot icon
-     * so native apps like YouTube or WhatsApp are never covered!
-     */
     fun collapseToCompactStage() {
         setPodStage(1)
+    }
+
+    /**
+     * Opens the live visible Mini Window automatically during the 1st calibration run
+     * so screenshots and touch coordinates are 100% accurate before switching to Background mode!
+     */
+    fun openForFirstRunLiveCalibration() {
+        if (currentStage == 1) {
+            setPodStage(2)
+        }
     }
 
     fun show() {
@@ -288,7 +414,7 @@ class AiOverlayHud(private val context: Context) {
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT
                 )
-                pointerCanvasView = CuteBaymaxHandCursorCanvas(context).apply { visibility = View.GONE }
+                pointerCanvasView = NaxHandCursorCanvas(context).apply { visibility = View.GONE }
                 windowManager.addView(pointerCanvasView, canvasParams)
 
                 podLayoutParams = WindowManager.LayoutParams(
@@ -301,8 +427,8 @@ class AiOverlayHud(private val context: Context) {
                     PixelFormat.TRANSLUCENT
                 ).apply {
                     gravity = Gravity.TOP or Gravity.START
-                    x = dpToPx(16)
-                    y = dpToPx(48)
+                    x = dpToPx(12)
+                    y = dpToPx(42)
                 }
 
                 podRootLayout = buildThreeStagePodUi()
@@ -340,108 +466,85 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-    private fun setSideBarExpanded(expanded: Boolean, autoHideAfterMs: Long = 0L) {
+    // === PASTE PART B BELOW THIS LINE ===
+    private fun setSideBarExpanded(expanded: Boolean) {
         mainHandler.post {
-            mainHandler.removeCallbacks(autoCollapseSideBarRunnable)
             isSideBarExpanded = expanded
-            val root = podRootLayout ?: return@post
-            val params = podLayoutParams ?: return@post
-
-            if (expanded || currentStage > 1) {
-                sideInfoContainer?.visibility = View.VISIBLE
-                root.background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#F2181A20"))
-                    cornerRadius = dpToPx(32).toFloat()
-                    setStroke(dpToPx(1), Color.parseColor("#334155"))
-                }
-                root.setPadding(dpToPx(8), dpToPx(6), dpToPx(12), dpToPx(6))
-
-                if (autoHideAfterMs > 0L && !AutoTouchService.isJobRunning && currentStage == 1) {
-                    mainHandler.postDelayed(autoCollapseSideBarRunnable, autoHideAfterMs)
-                }
-            } else {
-                sideInfoContainer?.visibility = View.GONE
-                root.background = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
-                root.setPadding(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2))
-            }
-
-            try { windowManager.updateViewLayout(root, params) } catch (_: Exception) {}
+            sideInfoContainer?.visibility = if (expanded) View.VISIBLE else View.GONE
         }
     }
 
-    fun updateStatus(stepBadge: String, detailMessage: String, mood: String = "WORKING") {
+    fun setPodStage(stage: Int) {
         mainHandler.post {
-            if (isPodVisible && (!isAdded || podRootLayout?.windowToken == null)) show()
-            tvPodTitle?.text = stepBadge
-            tvPodSubtitle?.text = detailMessage
-            tvExpandedStepInfo?.text = "$stepBadge • $detailMessage"
-            botAvatarView?.setMood(mood)
-            pointerCanvasView?.setHandMood(mood)
+            currentStage = stage.coerceIn(1, 3)
+            val lp = podLayoutParams ?: return@post
 
-            val upperMood = mood.uppercase()
-            val isFinishedOrIdle = upperMood in listOf("DONE", "IDLE", "STOPPED", "ERROR", "SAD") && !AutoTouchService.isJobRunning
-
-            if (AutoTouchService.isJobRunning) {
-                stopBadge?.visibility = View.VISIBLE
-                setSideBarExpanded(true, 0L)
-            } else if (isFinishedOrIdle) {
-                stopBadge?.visibility = View.GONE
-                setSideBarExpanded(true, 2200L)
-            }
-        }
-    }
-
-    fun moveBotAndShowTap(targetX: Float, targetY: Float, actionLabel: String) {
-        mainHandler.post {
-            if (isPodVisible && (!isAdded || podRootLayout?.windowToken == null)) show()
-            pointerCanvasView?.visibility = View.VISIBLE
-            pointerCanvasView?.animateHandToTap(targetX, targetY, actionLabel)
-        }
-    }
-
-    private fun setPodStage(stage: Int) {
-        mainHandler.post {
-            currentStage = stage
-            val params = podLayoutParams ?: return@post
-            val root = podRootLayout ?: return@post
-            val dm = context.resources.displayMetrics
-
-            when (stage) {
+            when (currentStage) {
                 1 -> {
-                    expandedContainer?.visibility = View.GONE
+                    // Stage 1: Compact Nax Bot + Sleek Mini-Notch
                     podWebFrame?.removeAllViews()
-                    sharedWebView?.let { wv ->
-                        wv.measure(View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY))
-                        wv.layout(0, 0, 540, 960)
-                    }
-                    params.width = WindowManager.LayoutParams.WRAP_CONTENT
-                    params.height = WindowManager.LayoutParams.WRAP_CONTENT
-                    params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    expandedContainer?.visibility = View.GONE
+                    lp.width = WindowManager.LayoutParams.WRAP_CONTENT
+                    lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    setSideBarExpanded(AutoTouchService.isJobRunning, if (AutoTouchService.isJobRunning) 0L else 2200L)
+                    btnQuickMiniBrowser?.text = "🌐"
                 }
                 2 -> {
-                    setSideBarExpanded(true, 0L)
+                    // Stage 2: Floating Mini Browser Window (First-Run Live Calibration & Teach Mode)
+                    setSideBarExpanded(true)
                     expandedContainer?.visibility = View.VISIBLE
-                    btnExpandFullToggle?.text = "⛶ Full Screen"
-                    params.width = (dm.widthPixels * 0.88f).toInt()
-                    params.height = (dm.heightPixels * 0.46f).toInt()
-                    params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    podWebFrame?.let { attachWebViewToContainer(it) }
+                    lp.width = dpToPx(300)
+                    lp.height = dpToPx(470)
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                    btnExpandFullToggle?.text = "⛶ Full"
+                    btnQuickMiniBrowser?.text = "━"
+                    podWebFrame?.let { frame ->
+                        val wv = getOrCreateSharedWebView()
+                        (wv.parent as? ViewGroup)?.removeView(wv)
+                        frame.removeAllViews()
+                        frame.addView(
+                            wv,
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                        )
+                        wv.requestFocus()
+                    }
                 }
                 3 -> {
-                    setSideBarExpanded(true, 0L)
+                    // Stage 3: Full Screen Interactive Browser Overlay
+                    setSideBarExpanded(true)
                     expandedContainer?.visibility = View.VISIBLE
-                    btnExpandFullToggle?.text = "↙ Mini Window"
-                    params.x = 0; params.y = dpToPx(28)
-                    params.width = dm.widthPixels
-                    params.height = (dm.heightPixels * 0.88f).toInt()
-                    params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    podWebFrame?.let { attachWebViewToContainer(it) }
+                    lp.width = WindowManager.LayoutParams.MATCH_PARENT
+                    lp.height = WindowManager.LayoutParams.MATCH_PARENT
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                    btnExpandFullToggle?.text = "🗗 Mini"
+                    btnQuickMiniBrowser?.text = "━"
+                    podWebFrame?.let { frame ->
+                        val wv = getOrCreateSharedWebView()
+                        (wv.parent as? ViewGroup)?.removeView(wv)
+                        frame.removeAllViews()
+                        frame.addView(
+                            wv,
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                        )
+                        wv.requestFocus()
+                    }
                 }
             }
-            try { windowManager.updateViewLayout(root, params) } catch (_: Exception) {}
+            try {
+                if (isAdded && podRootLayout != null) {
+                    windowManager.updateViewLayout(podRootLayout, lp)
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -449,151 +552,148 @@ class AiOverlayHud(private val context: Context) {
     private fun buildThreeStagePodUi(): LinearLayout {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2))
         }
 
+        // Top Compact Row: Nax Bot (Perfect 46dp size) + Sleek Smaller Mini-Notch
         compactRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#E614171F"))
+                cornerRadius = dpToPx(24).toFloat()
+                setStroke(dpToPx(1), Color.parseColor("#334155"))
+            }
+            setPadding(dpToPx(4), dpToPx(3), dpToPx(6), dpToPx(3))
         }
 
-        botAvatarView = ExpressiveCompanionAvatar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dpToPx(64), dpToPx(58))
+        // Cute Original Nax Bot Avatar (46dp perfect size)
+        botAvatarView = NaxBotAvatarView(context).apply {
+            layoutParams = LinearLayout.LayoutParams(dpToPx(46), dpToPx(46))
         }
-        compactRow?.addView(botAvatarView)
 
+        // Sleek Smaller Notch Container (Reduced width & compact padding)
         sideInfoContainer = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(6), 0, dpToPx(2), 0)
             visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                marginStart = dpToPx(8)
-            }
         }
 
         val textCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(dpToPx(148), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dpToPx(5)
+            }
         }
 
         tvPodTitle = TextView(context).apply {
-            text = "Aura Companion"
-            setTextColor(Color.parseColor("#94A3B8"))
+            text = "Nax Bot"
+            setTextColor(Color.parseColor("#F8FAFC"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             typeface = Typeface.DEFAULT_BOLD
             maxLines = 1
+            maxWidth = dpToPx(125)
         }
 
         tvPodSubtitle = TextView(context).apply {
-            text = "Ready • Tap 🌐 for Browser"
-            setTextColor(Color.parseColor("#F8FAFC"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            text = "Ready"
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.2f)
             maxLines = 1
+            maxWidth = dpToPx(125)
         }
 
         textCol.addView(tvPodTitle)
         textCol.addView(tvPodSubtitle)
-        sideInfoContainer?.addView(textCol)
 
+        // Compact Mini Action Buttons inside the smaller notch
         btnQuickMiniBrowser = TextView(context).apply {
             text = "🌐"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setPadding(dpToPx(8), dpToPx(5), dpToPx(8), dpToPx(5))
-            background = GradientDrawable().apply { setColor(Color.parseColor("#2563EB")); cornerRadius = dpToPx(14).toFloat() }
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dpToPx(4) }
-            setOnClickListener { if (currentStage == 1) setPodStage(2) else setPodStage(1) }
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2563EB"))
+                cornerRadius = dpToPx(11).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply {
+                marginEnd = dpToPx(4)
+            }
+            setOnClickListener {
+                if (currentStage == 1) setPodStage(2) else setPodStage(1)
+            }
         }
-        sideInfoContainer?.addView(btnQuickMiniBrowser)
+
+        btnQuickTeachToggle = TextView(context).apply {
+            text = "🎓"
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#D97706"))
+                cornerRadius = dpToPx(11).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply {
+                marginEnd = dpToPx(4)
+            }
+            setOnClickListener {
+                startOrStopLiveTeach("GOOGLE_FLOW")
+            }
+        }
 
         stopBadge = TextView(context).apply {
             text = "■"
-            visibility = View.GONE
+            gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(dpToPx(10), dpToPx(5), dpToPx(10), dpToPx(5))
-            background = GradientDrawable().apply { setColor(Color.parseColor("#EF4444")); cornerRadius = dpToPx(14).toFloat() }
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dpToPx(6) }
-            setOnClickListener { AutoTouchService.instance?.stopCurrentJob() }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#EF4444"))
+                cornerRadius = dpToPx(11).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22))
+            setOnClickListener {
+                AutoTouchService.instance?.stopCurrentJob()
+                WebPipelineManager.stopEverything(context)
+                updateStatus("Nax Bot", "Stopped", "IDLE")
+            }
         }
+
+        sideInfoContainer?.addView(textCol)
+        sideInfoContainer?.addView(btnQuickMiniBrowser)
+        sideInfoContainer?.addView(btnQuickTeachToggle)
         sideInfoContainer?.addView(stopBadge)
+
+        compactRow?.addView(botAvatarView)
         compactRow?.addView(sideInfoContainer)
-        root.addView(compactRow)
 
-        expandedContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT).apply { topMargin = dpToPx(8) }
-        }
+        // Drag + Tap handler on Nax Bot avatar
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        var isDragging = false
 
-        val controlBar = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dpToPx(4), 0, dpToPx(8))
-        }
-
-        tvExpandedStepInfo = TextView(context).apply {
-            text = "Live Browser Workspace"
-            setTextColor(Color.parseColor("#CBD5E1"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            maxLines = 1
-        }
-        controlBar.addView(tvExpandedStepInfo)
-
-        btnExpandFullToggle = TextView(context).apply {
-            text = "⛶ Full Screen"
-            setTextColor(Color.parseColor("#F8FAFC"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            setPadding(dpToPx(10), dpToPx(5), dpToPx(10), dpToPx(5))
-            background = GradientDrawable().apply { setColor(Color.parseColor("#3B82F6")); cornerRadius = dpToPx(12).toFloat() }
-            setOnClickListener { if (currentStage == 2) setPodStage(3) else setPodStage(2) }
-        }
-        controlBar.addView(btnExpandFullToggle)
-
-        val btnMinimizePod = TextView(context).apply {
-            text = "━ Hide"
-            setTextColor(Color.parseColor("#F8FAFC"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            setPadding(dpToPx(10), dpToPx(5), dpToPx(10), dpToPx(5))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dpToPx(6) }
-            background = GradientDrawable().apply { setColor(Color.parseColor("#262932")); cornerRadius = dpToPx(12).toFloat() }
-            setOnClickListener { setPodStage(1) }
-        }
-        controlBar.addView(btnMinimizePod)
-        expandedContainer?.addView(controlBar)
-
-        podWebFrame = FrameLayout(context).apply {
-            background = GradientDrawable().apply { setColor(Color.parseColor("#0D0E11")); cornerRadius = dpToPx(14).toFloat() }
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        }
-        expandedContainer?.addView(podWebFrame)
-        root.addView(expandedContainer)
-
-        var startX = 0; var startY = 0; var touchX = 0f; var touchY = 0f; var isDragging = false
-
-        compactRow?.setOnTouchListener { _, event ->
-            val params = podLayoutParams ?: return@setOnTouchListener false
-            when (event.action) {
+        botAvatarView?.setOnTouchListener { _, event ->
+            val lp = podLayoutParams ?: return@setOnTouchListener false
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    startX = params.x; startY = params.y
-                    touchX = event.rawX; touchY = event.rawY
+                    initialX = lp.x
+                    initialY = lp.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
                     isDragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - touchX).toInt()
-                    val dy = (event.rawY - touchY).toInt()
-                    if (abs(dx) > 10 || abs(dy) > 10) {
+                    val dx = (event.rawX - initialTouchX).toInt()
+                    val dy = (event.rawY - initialTouchY).toInt()
+                    if (abs(dx) > dpToPx(6) || abs(dy) > dpToPx(6)) {
                         isDragging = true
-                        if (currentStage != 3) {
-                            params.x = (startX + dx).coerceIn(0, 960)
-                            params.y = (startY + dy).coerceIn(20, 2150)
-                            try { windowManager.updateViewLayout(root, params) } catch (_: Exception) {}
-                        }
+                        lp.x = initialX + dx
+                        lp.y = initialY + dy
+                        try { windowManager.updateViewLayout(podRootLayout, lp) } catch (_: Exception) {}
                     }
                     true
                 }
@@ -601,10 +701,8 @@ class AiOverlayHud(private val context: Context) {
                     if (!isDragging) {
                         if (currentStage > 1) {
                             setPodStage(1)
-                        } else if (!isSideBarExpanded) {
-                            setSideBarExpanded(true, 3000L)
                         } else {
-                            setPodStage(2)
+                            setSideBarExpanded(!isSideBarExpanded)
                         }
                     }
                     true
@@ -613,238 +711,303 @@ class AiOverlayHud(private val context: Context) {
             }
         }
 
+        // Stage 2 / Stage 3 Expanded Browser Container
+        expandedContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#14171F"))
+                cornerRadius = dpToPx(14).toFloat()
+                setStroke(dpToPx(1), Color.parseColor("#334155"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            ).apply {
+                topMargin = dpToPx(4)
+            }
+        }
+
+        val headerBar = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(8), dpToPx(5), dpToPx(8), dpToPx(5))
+            setBackgroundColor(Color.parseColor("#1E222D"))
+        }
+
+        tvExpandedStepInfo = TextView(context).apply {
+            text = "Nax Bot Live Studio"
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        btnExpandFullToggle = TextView(context).apply {
+            text = "⛶ Full"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#2563EB"))
+                cornerRadius = dpToPx(8).toFloat()
+            }
+            setOnClickListener {
+                if (currentStage == 2) setPodStage(3) else setPodStage(2)
+            }
+        }
+
+        val btnHideMini = TextView(context).apply {
+            text = "━ Hide"
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = dpToPx(5)
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#334155"))
+                cornerRadius = dpToPx(8).toFloat()
+            }
+            setOnClickListener { setPodStage(1) }
+        }
+
+        headerBar.addView(tvExpandedStepInfo)
+        headerBar.addView(btnExpandFullToggle)
+        headerBar.addView(btnHideMini)
+
+        podWebFrame = FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+            setBackgroundColor(Color.parseColor("#0D0E11"))
+        }
+
+        expandedContainer?.addView(headerBar)
+        expandedContainer?.addView(podWebFrame)
+
+        root.addView(compactRow)
+        root.addView(expandedContainer)
         return root
     }
 
-    private fun dpToPx(dp: Int): Int {
-        return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp.toFloat(), context.resources.displayMetrics).toInt()
-    }
+    fun updateStatus(title: String, subtitle: String, emotion: String = "AUTO") {
+        mainHandler.post {
+            if (!isAdded) show()
+            tvPodTitle?.text = title.take(22)
+            tvPodSubtitle?.text = subtitle.take(26)
+            tvExpandedStepInfo?.text = "$title • $subtitle"
 
-    private class ExpressiveCompanionAvatar(context: Context) : View(context) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private var phase = 0f
-        private var mood = "IDLE"
-
-        private val animator = object : Runnable {
-            override fun run() {
-                phase += 0.17f
-                invalidate()
-                postDelayed(this, 40)
-            }
-        }
-
-        init { post(animator) }
-
-        fun setMood(newMood: String) {
-            mood = newMood.uppercase()
-            invalidate()
-        }
-
-        override fun onDetachedFromWindow() {
-            removeCallbacks(animator)
-            super.onDetachedFromWindow()
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            val w = width.toFloat()
-            val h = height.toFloat()
-            if (w <= 0f || h <= 0f) return
-            val bobY = sin(phase * 0.65f) * 2.0f
-
-            val glowColor = when (mood) {
-                "ERROR", "SAD", "FAILED" -> Color.parseColor("#FF4D4D")
-                "THINKING", "PROCESSING" -> Color.parseColor("#00E5FF")
-                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#00E676")
-                "WAITING" -> Color.parseColor("#FFAB00")
-                else -> Color.parseColor("#00E5FF")
-            }
-
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#E2E8F0")
-            val earTop = h * 0.32f + bobY
-            val earBottom = h * 0.70f + bobY
-            canvas.drawRoundRect(RectF(1f, earTop, w * 0.14f, earBottom), 10f, 10f, paint)
-            canvas.drawRoundRect(RectF(w * 0.86f, earTop, w - 1f, earBottom), 10f, 10f, paint)
-
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 3f
-            paint.color = glowColor
-            canvas.drawRoundRect(RectF(2f, earTop + 2f, w * 0.12f, earBottom - 2f), 8f, 8f, paint)
-            canvas.drawRoundRect(RectF(w * 0.88f, earTop + 2f, w - 2f, earBottom - 2f), 8f, 8f, paint)
-
-            val headRect = RectF(w * 0.08f, 3f + bobY, w * 0.92f, h - 4f + bobY)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#F8FAFC")
-            canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
-
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.5f
-            paint.color = Color.parseColor("#CBD5E1")
-            canvas.drawRoundRect(headRect, h * 0.46f, h * 0.46f, paint)
-
-            paint.strokeWidth = 1.8f
-            paint.color = Color.parseColor("#94A3B8")
-            canvas.drawOval(RectF(w * 0.44f, 6f + bobY, w * 0.56f, 12f + bobY), paint)
-
-            val visorRect = RectF(w * 0.15f, h * 0.22f + bobY, w * 0.85f, h * 0.84f + bobY)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#0B0F19")
-            canvas.drawRoundRect(visorRect, h * 0.28f, h * 0.28f, paint)
-
-            val lookOffsetX = if (mood == "THINKING") sin(phase * 1.5f) * (w * 0.04f) else 0f
-            val lookOffsetY = if (mood == "THINKING") cos(phase * 1.1f) * (h * 0.025f) else 0f
-
-            val eyeY = h * 0.49f + bobY + lookOffsetY
-            val leftEyeX = w * 0.33f + lookOffsetX
-            val rightEyeX = w * 0.67f + lookOffsetX
-
-            val eyeRadius = w * 0.115f
-            val isBlinking = sin(phase * 0.82f) > 0.93f
-
-            paint.color = glowColor
-            paint.strokeCap = Paint.Cap.ROUND
-
-            if (mood == "DONE" || mood == "HAPPY") {
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 4.8f
-                canvas.drawArc(RectF(leftEyeX - eyeRadius, eyeY - eyeRadius * 0.8f, leftEyeX + eyeRadius, eyeY + eyeRadius * 0.8f), 190f, 160f, false, paint)
-                canvas.drawArc(RectF(rightEyeX - eyeRadius, eyeY - eyeRadius * 0.8f, rightEyeX + eyeRadius, eyeY + eyeRadius * 0.8f), 190f, 160f, false, paint)
-            } else if (isBlinking) {
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 4.5f
-                canvas.drawLine(leftEyeX - eyeRadius, eyeY, leftEyeX + eyeRadius, eyeY, paint)
-                canvas.drawLine(rightEyeX - eyeRadius, eyeY, rightEyeX + eyeRadius, eyeY, paint)
+            val resolvedEmotion = if (emotion == "AUTO") {
+                inferEmotionFromStatus(title, subtitle)
             } else {
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 4.5f
-                canvas.drawCircle(leftEyeX, eyeY, eyeRadius, paint)
-                canvas.drawCircle(rightEyeX, eyeY, eyeRadius, paint)
+                emotion.uppercase()
             }
+            botAvatarView?.setEmotion(resolvedEmotion)
 
-            val mouthCenterX = w * 0.50f + lookOffsetX * 0.4f
-            val mouthTopY = h * 0.62f + bobY
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 3.4f
-            paint.color = glowColor
-
-            when (mood) {
-                "ERROR", "SAD", "FAILED" -> {
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.08f, mouthTopY + 2f, mouthCenterX + w * 0.08f, mouthTopY + h * 0.11f), 200f, 140f, false, paint)
-                }
-                "THINKING", "PROCESSING" -> {
-                    val r = (w * 0.04f) + sin(phase * 2.2f) * 1.0f
-                    canvas.drawCircle(mouthCenterX, mouthTopY + h * 0.04f, r, paint)
-                }
-                else -> {
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.07f, mouthTopY - 2f, mouthCenterX + w * 0.07f, mouthTopY + h * 0.08f), 15f, 150f, false, paint)
-                }
+            setSideBarExpanded(true)
+            mainHandler.removeCallbacks(autoCollapseSideBarRunnable)
+            if (!AutoTouchService.isJobRunning && !isLiveTeachActive) {
+                mainHandler.postDelayed(autoCollapseSideBarRunnable, 5000L)
             }
         }
     }
 
-    private class CuteBaymaxHandCursorCanvas(context: Context) : View(context) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#F8FAFC"); textSize = 27f; typeface = Typeface.DEFAULT_BOLD }
-        private val screenOffset = IntArray(2)
-
-        private var handX = 540f; private var handY = 400f; private var startX = 540f; private var startY = 400f
-        private var targetX = 540f; private var targetY = 400f; private var rippleProgress = 0f; private var pressScale = 1f
-        private var phase = 0f; private var currentLabel = ""; private var handMood = "WORKING"
-
-        private var moveAnimator: ValueAnimator? = null
-        private var rippleAnimator: ValueAnimator? = null
-
-        private val ticker = object : Runnable {
-            override fun run() { phase += 0.2f; invalidate(); postDelayed(this, 40) }
+    private fun inferEmotionFromStatus(title: String, subtitle: String): String {
+        val combined = "$title$subtitle".lowercase()
+        return when {
+            combined.contains("error") || combined.contains("fail") || combined.contains("blocked") -> "ERROR"
+            combined.contains("timeout") || combined.contains("sad") || combined.contains("retry") -> "SAD"
+            combined.contains("high") || combined.contains("pro") || combined.contains("3.8-pro") -> "HIGH_BRAIN"
+            combined.contains("verify") || combined.contains("check") || combined.contains(" stuck") -> "CONFUSED"
+            combined.contains("search") || combined.contains("scan") || combined.contains("find") -> "SEARCHING"
+            combined.contains("download") || combined.contains("saving") || combined.contains("⬇️") -> "DOWNLOADING"
+            combined.contains("upload") || combined.contains("youtube") -> "UPLOADING"
+            combined.contains("render") || combined.contains("%") || combined.contains("wait") -> "RENDERING"
+            combined.contains("think") || combined.contains("plan") || combined.contains("brain") -> "THINKING"
+            combined.contains("teach") || combined.contains("story") || combined.contains("✨") -> "EXCITED"
+            combined.contains("done") || combined.contains("complete") || combined.contains("saved") || combined.contains("✅") -> "HAPPY"
+            combined.contains("surprise") || combined.contains("new") || combined.contains("alert") -> "SURPRISED"
+            combined.contains("sleep") || combined.contains("cooldown") -> "SLEEPY"
+            combined.contains("idle") || combined.contains("ready") || combined.contains("stop") -> "IDLE"
+            else -> "WORKING"
         }
+    }
 
-        init { post(ticker) }
+    fun getWebViewBoundsOnScreen(): Rect? {
+        val wv = sharedWebView ?: return null
+        if (!wv.isShown) return null
+        val loc = IntArray(2)
+        wv.getLocationOnScreen(loc)
+        return Rect(loc[0], loc[1], loc[0] + wv.width, loc[1] + wv.height)
+    }
 
-        fun setHandMood(mood: String) { handMood = mood.uppercase(); invalidate() }
-
-        fun animateHandToTap(destX: Float, destY: Float, label: String) {
-            startX = handX; startY = handY; targetX = destX; targetY = destY; currentLabel = label
-            moveAnimator?.cancel()
-            moveAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 340; interpolator = DecelerateInterpolator()
-                addUpdateListener { anim ->
-                    val f = anim.animatedValue as Float
-                    handX = startX + (targetX - startX) * f; handY = startY + (targetY - startY) * f
-                    invalidate()
-                }
-                start()
-            }
-            rippleAnimator?.cancel()
-            rippleAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-                startDelay = 260; duration = 620
-                addUpdateListener { anim ->
-                    val p = anim.animatedValue as Float; rippleProgress = p
-                    pressScale = if (p < 0.35f) 1f - (p / 0.35f) * 0.16f else 0.84f + ((p - 0.35f) / 0.65f) * 0.16f
-                    invalidate()
-                }
-                start()
-            }
+    fun showTapEffect(x: Float, y: Float, label: String = "") {
+        mainHandler.post {
+            pointerCanvasView?.visibility = View.VISIBLE
+            pointerCanvasView?.triggerTapAnimation(x, y, label)
         }
+    }
 
-        fun stopAnimations() { removeCallbacks(ticker); moveAnimator?.cancel(); rippleAnimator?.cancel() }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            if (currentLabel.isEmpty()) return
-            getLocationOnScreen(screenOffset)
-            val ox = screenOffset[0].toFloat(); val oy = screenOffset[1].toFloat()
-            val tipX = handX - ox; val tipY = (handY - oy) + sin(phase * 0.8f) * 2.5f
-
-            val accentColor = when (handMood) { "ERROR", "SAD" -> Color.parseColor("#EF4444"); "DONE", "HAPPY" -> Color.parseColor("#10B981"); else -> Color.parseColor("#00E5FF") }
-
-            if (rippleProgress > 0f && rippleProgress < 1f) {
-                val alpha = ((1f - rippleProgress) * 210).toInt().coerceIn(0, 255)
-                paint.style = Paint.Style.STROKE; paint.strokeWidth = 4.5f; paint.color = Color.argb(alpha, 0, 229, 255)
-                canvas.drawCircle(targetX - ox, targetY - oy, 12f + rippleProgress * 62f, paint)
-            }
-
-            canvas.save(); canvas.translate(tipX, tipY); canvas.scale(pressScale, pressScale)
-            paint.style = Paint.Style.FILL; paint.color = Color.argb(55, 0, 0, 0)
-            canvas.drawRoundRect(RectF(-22f, 20f, 34f, 74f), 26f, 26f, paint)
-
-            val handFillColor = Color.parseColor("#F8FAFC"); val handStrokeColor = Color.parseColor("#334155")
-            val thumbRect = RectF(-34f, 28f, -6f, 52f)
-            paint.style = Paint.Style.FILL; paint.color = handFillColor
-            canvas.rotate(-22f, -20f, 40f); canvas.drawRoundRect(thumbRect, 14f, 14f, paint)
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.6f; paint.color = handStrokeColor
-            canvas.drawRoundRect(thumbRect, 14f, 14f, paint); canvas.rotate(22f, -20f, 40f)
-
-            val midFingerRect = RectF(6f, 10f, 22f, 38f); val ringFingerRect = RectF(18f, 16f, 33f, 42f)
-            paint.style = Paint.Style.FILL; paint.color = handFillColor
-            canvas.drawRoundRect(ringFingerRect, 10f, 10f, paint); paint.style = Paint.Style.STROKE; paint.color = handStrokeColor; canvas.drawRoundRect(ringFingerRect, 10f, 10f, paint)
-            paint.style = Paint.Style.FILL; paint.color = handFillColor
-            canvas.drawRoundRect(midFingerRect, 10f, 10f, paint); paint.style = Paint.Style.STROKE; paint.color = handStrokeColor; canvas.drawRoundRect(midFingerRect, 10f, 10f, paint)
-
-            val indexFingerRect = RectF(-9f, -2f, 10f, 36f)
-            paint.style = Paint.Style.FILL; paint.color = handFillColor
-            canvas.drawRoundRect(indexFingerRect, 11f, 11f, paint); paint.style = Paint.Style.STROKE; paint.color = handStrokeColor; canvas.drawRoundRect(indexFingerRect, 11f, 11f, paint)
-
-            val palmRect = RectF(-20f, 22f, 32f, 70f)
-            paint.style = Paint.Style.FILL; paint.color = handFillColor; canvas.drawRoundRect(palmRect, 24f, 24f, paint)
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.6f; paint.color = handStrokeColor; canvas.drawRoundRect(palmRect, 24f, 24f, paint)
-
-            val cuffRect = RectF(-12f, 64f, 24f, 75f)
-            paint.style = Paint.Style.FILL; paint.color = Color.parseColor("#E2E8F0"); canvas.drawRoundRect(cuffRect, 8f, 8f, paint)
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f; paint.color = handStrokeColor; canvas.drawRoundRect(cuffRect, 8f, 8f, paint)
-
-            paint.style = Paint.Style.FILL; paint.color = accentColor
-            canvas.drawCircle(6f, 46f, 4.5f, paint); canvas.drawCircle(0f, 0f, 4f, paint)
-            canvas.restore()
-
-            val textWidth = textPaint.measureText(currentLabel)
-            val tagLeft = (tipX + 42f).coerceAtMost(width - textWidth - 34f).coerceAtLeast(16f)
-            val tagTop = (tipY + 18f).coerceAtMost(height - 70f).coerceAtLeast(50f)
-            val tagRect = RectF(tagLeft, tagTop, tagLeft + textWidth + 24f, tagTop + 40f)
-
-            paint.style = Paint.Style.FILL; paint.color = Color.parseColor("#E6181A20"); canvas.drawRoundRect(tagRect, 14f, 14f, paint)
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.8f; paint.color = accentColor; canvas.drawRoundRect(tagRect, 14f, 14f, paint)
-            canvas.drawText(currentLabel, tagLeft + 12f, tagTop + 28f, textPaint)
+    fun showSwipeEffect(startX: Float, startY: Float, endX: Float, endY: Float) {
+        mainHandler.post {
+            pointerCanvasView?.visibility = View.VISIBLE
+            pointerCanvasView?.triggerSwipeAnimation(startX, startY, endX, endY)
         }
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            dp.toFloat(),
+            context.resources.displayMetrics
+        ).toInt()
     }
 }
+
+/**
+ * Original Cute White Marshmallow "Nax Bot" Avatar View (Baymax-inspired soft round face)
+ * Features 4x large solid color-changing eyes and 15 rich expressive emotions!
+ */
+class NaxBotAvatarView(context: Context) : View(context) {
+
+    private var currentEmotion = "IDLE"
+    private var animPhase = 0f
+    private var blinkFactor = 1f
+    private var lastBlinkTime = System.currentTimeMillis()
+
+    private val headPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#F8FAFC") // Pure cute soft marshmallow white
+    }
+
+    private val headRimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+        color = Color.parseColor("#CBD5E1")
+    }
+
+    private val eyePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#0F172A")
+    }
+
+    private val bridgeLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 4.2f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.parseColor("#0F172A")
+    }
+
+    private val browPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        strokeCap = Paint.Cap.ROUND
+    }
+
+    private val blushPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#88FB7185")
+    }
+
+    private val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 4.5f
+    }
+
+    private val mouthPath = Path()
+
+    private val pulseAnimator = ValueAnimator.ofFloat(0f, (Math.PI * 2).toFloat()).apply {
+        duration = 2200L
+        repeatCount = ValueAnimator.INFINITE
+        addUpdateListener {
+            animPhase = it.animatedValue as Float
+            val now = System.currentTimeMillis()
+            if (now - lastBlinkTime > 3400L) {
+                val elapsed = now - lastBlinkTime - 3400L
+                blinkFactor = if (elapsed < 160L) {
+                    0.12f
+                } else {
+                    lastBlinkTime = now
+                    1f
+                }
+            }
+            invalidate()
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (!pulseAnimator.isStarted) pulseAnimator.start()
+    }
+
+    override fun onDetachedFromWindow() {
+        pulseAnimator.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    fun setEmotion(emotion: String) {
+        currentEmotion = emotion.uppercase()
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+
+        val cx = w / 2f
+        val cy = h / 2f + sin(animPhase.toDouble()).toFloat() * 1.6f
+        val headRx = w * 0.44f
+        val headRy = h * 0.40f
+
+        // 1. Choose Solid Inside Eye Color & Aura Color for all 15 Emotions
+        val solidEyeColor = when (currentEmotion) {
+            "IDLE" -> Color.parseColor("#0F172A")         // 1. Pure Deep Black
+            "THINKING" -> Color.parseColor("#2563EB")     // 2. Solid Royal Blue
+            "WORKING" -> Color.parseColor("#10B981")      // 3. Solid Emerald Green
+            "RENDERING", "WAITING" -> Color.parseColor("#F59E0B") // 4. Solid Golden Amber
+            "HAPPY", "DONE" -> Color.parseColor("#059669") // 5. Solid Happy Green
+            "EXCITED" -> Color.parseColor("#06B6D4")      // 6. Solid Bright Cyan
+            "CONFUSED", "VERIFYING" -> Color.parseColor("#F97316") // 7. Solid Warm Orange
+            "HIGH_BRAIN", "PRO" -> Color.parseColor("#9333EA") // 8. Solid Royal Purple
+            "SEARCHING" -> Color.parseColor("#0284C7")    // 9. Solid Sky-Teal Blue
+            "DOWNLOADING" -> Color.parseColor("#14B8A6")  // 10. Solid Aqua Teal
+            "UPLOADING" -> Color.parseColor("#22C55E")    // 11. Solid Lime Green
+            "SURPRISED" -> Color.parseColor("#3B82F6")    // 12. Solid Electric Blue
+            "ERROR", "ANGRY" -> Color.parseColor("#DC2626") // 13. Solid Pure Red
+            "SAD", "TIMEOUT" -> Color.parseColor("#1D4ED8") // 14. Solid Deep Sad Blue
+            "SLEEPY", "COOLDOWN" -> Color.parseColor("#475569") // 15. Solid Soft Slate
+            else -> Color.parseColor("#0F172A")
+        }
+
+        // Draw subtle outer glow when active
+        if (currentEmotion != "IDLE") {
+            auraPaint.color = solidEyeColor
+            auraPaint.alpha = 110
+            val auraRect = RectF(cx - headRx - 2f, cy - headRy - 2f, cx + headRx + 2f, cy + headRy + 2f)
+            canvas.drawRoundRect(auraRect, headRy, headRy, auraPaint)
+        }
+
+        // Draw cute soft white Baymax-style oval head
+        val headRect = RectF(cx - headRx, cy - headRy, cx + headRx, cy + headRy)
+        canvas.drawRoundRect(headRect, headRy, headRy, headPaint)
+        headRimPaint.color = if (currentEmotion == "IDLE") Color.parseColor("#CBD5E1") else solidEyeColor
+        canvas.drawRoundRect(headRect, headRy, headRy, headRimPaint)
+
+        // Eye positions & 4x large solid radius
+        var eyeOffsetX = 0f
+        var eyeOffsetY = 0f
+        when (currentEmotion) {
+            "THINKING" -> {
+                eyeOffsetX = sin(animPhase.toDouble()).toFloat() * 2.2f
+                eyeOffsetY = -2.2f
+            }
+            "SEARCHING" -> {
+                eyeOffsetX = sin(animPhase * 2.0).toFloat() * 4.
