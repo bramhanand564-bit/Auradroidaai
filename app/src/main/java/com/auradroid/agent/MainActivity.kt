@@ -1,9 +1,15 @@
 package com.auradroid.agent
 
-import android.Manifest
-import android.app.Activity
+import android.app.AlarmManager
+import android.app.AlertDialog
+import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,16 +17,27 @@ import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import android.speech.RecognizerIntent
+import android.util.Base64
 import android.view.View
-import android.widget.*
-import androidx.appcompat.app.AlertDialog
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Calendar
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
@@ -28,51 +45,103 @@ class MainActivity : AppCompatActivity() {
     companion object {
         var onLogUpdated: ((String) -> Unit)? = null
         var onBrowserUrlChanged: ((String) -> Unit)? = null
-        private const val REQ_VOICE_SPEECH = 202
     }
 
-    private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
+    // Header Views
     private lateinit var tvActiveSubtitle: TextView
-    private lateinit var tvServiceBadge: TextView
     private lateinit var btnToggleFloatingPod: Button
+    private lateinit var tvServiceBadge: TextView
 
-    private lateinit var tabChatLayout: View
-    private lateinit var tabWebLayout: View
-    private lateinit var tabPipelinesLayout: View
-    private lateinit var tabDoctorLayout: View
-    private lateinit var tabSettingsLayout: View
+    // 5 Tab Containers
+    private lateinit var tabChatLayout: ScrollView
+    private lateinit var tabWebLayout: LinearLayout
+    private lateinit var tabPipelinesLayout: ScrollView
+    private lateinit var tabDoctorLayout: ScrollView
+    private lateinit var tabSettingsLayout: ScrollView
 
+    // Bottom Navigation Buttons
     private lateinit var navTabChat: Button
     private lateinit var navTabWeb: Button
     private lateinit var navTabPipelines: Button
     private lateinit var navTabDoctor: Button
     private lateinit var navTabSettings: Button
 
+    // Tab 1: Chat & Universal Planner
+    private lateinit var btnClearChat: Button
     private lateinit var tvChatHistory: TextView
     private lateinit var etChatInput: EditText
+    private lateinit var btnVoiceMic: Button
+    private lateinit var btnSendChat: Button
     private lateinit var tvPlanSteps: TextView
+    private lateinit var rgExecutionMode: RadioGroup
     private lateinit var rbModeBackgroundWeb: RadioButton
     private lateinit var rbModePhoneScreen: RadioButton
-    private var currentLockedGoal: String = ""
+    private lateinit var btnExecutePlan: Button
+    private lateinit var btnStopAgent: Button
 
-    private lateinit var etWebUrl: EditText
-    private lateinit var etWebTaskGoal: EditText
+    // Tab 2: In-App Browser
+    private lateinit var btnBrowserBack: Button
+    private lateinit var btnBrowserForward: Button
+    private lateinit var btnBrowserRefresh: Button
+    private lateinit var btnBrowserFlow: Button
+    private lateinit var btnBrowserGmail: Button
     private lateinit var btnBrowserDesktop: Button
+    private lateinit var btnBrowserDownloads: Button
+    private lateinit var etWebUrl: EditText
+    private lateinit var btnWebGo: Button
+    private lateinit var btnPinFlowUrl: Button
+    private lateinit var etWebTaskGoal: EditText
+    private lateinit var btnRunWebAgent: Button
     private lateinit var webPreviewContainer: FrameLayout
 
+    // Tab 3: Customizable Story Series + Duration + Folder Queue
     private lateinit var etFlowTopic: EditText
+    private lateinit var etStoryCharacterLock: EditText
+    private lateinit var rgStoryMode: RadioGroup
+    private lateinit var rbStorySerialMode: RadioButton
+    private lateinit var rbStorySideMode: RadioButton
+    private lateinit var rbStoryStandaloneMode: RadioButton
+    private lateinit var etStoryCustomTwist: EditText
+    private lateinit var rgVideoDuration: RadioGroup
+    private lateinit var rbDuration8s: RadioButton
+    private lateinit var rbDuration10s: RadioButton
+    private lateinit var rbDuration12s: RadioButton
+    private lateinit var rbDuration15s: RadioButton
+    private lateinit var etCustomDurationSec: EditText
+    private lateinit var etNextEpisodeNumber: EditText
+    private lateinit var btnViewStoryHistory: Button
+    private lateinit var btnResetStoryArc: Button
+    private lateinit var cbFirstRunLiveLearn: CheckBox
     private lateinit var etDailyVideoLimit: EditText
     private lateinit var cbAutoGenerateFlowFirst: CheckBox
-    private lateinit var rbUploadNewestFirst: RadioButton
-    private lateinit var rbUploadOldestFirst: RadioButton
     private lateinit var etHour: EditText
     private lateinit var etMinute: EditText
+    private lateinit var btnSaveSchedule: Button
+    private lateinit var btnRunFlowToYouTubeNow: Button
     private lateinit var etFolderPath: EditText
+    private lateinit var rgUploadOrder: RadioGroup
+    private lateinit var rbUploadNewestFirst: RadioButton
+    private lateinit var rbUploadOldestFirst: RadioButton
     private lateinit var tvQueueStatus: TextView
+    private lateinit var btnScanFolder: Button
+    private lateinit var btnResetHistory: Button
+    private lateinit var btnRunYouTubeNow: Button
 
+    // Tab 4: WM3-Style 3-in-1 Train Model Studio & Memory Vault
+    private lateinit var etSkillTaskName: EditText
+    private lateinit var btnPickScreenshotsToTrain: Button
+    private lateinit var btnStartLiveTeachMode: Button
+    private lateinit var etTrainedSkillJson: EditText
+    private lateinit var btnSaveTrainedSkillJson: Button
+    private lateinit var btnCopyTrainedSkillJson: Button
+    private lateinit var btnViewAllTrainedSkills: Button
     private lateinit var etMemoryVault: EditText
+    private lateinit var btnSaveMemory: Button
 
+    // Tab 5: Customizable AI Engine Settings & Logs
+    private lateinit var btnEnableAccessibility: Button
+    private lateinit var btnEnableStorage: Button
+    private lateinit var btnDisableBatteryOptimization: Button
     private lateinit var etApiKey: EditText
     private lateinit var etModelName: EditText
     private lateinit var etHighModelName: EditText
@@ -81,31 +150,81 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cbRealWebTouch: CheckBox
     private lateinit var cbUseScreenVision: CheckBox
     private lateinit var cb24HourUnstoppable: CheckBox
+    private lateinit var btnSaveSettings: Button
     private lateinit var tvConsoleLog: TextView
+
+    private var lockedPlanGoal: String = ""
+    private var lockedTargetUrl: String = ""
+
+    // Voice Input Launcher
+    private val voiceRecognizerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spokenText = matches?.firstOrNull() ?: ""
+            if (spokenText.isNotBlank()) {
+                etChatInput.setText(spokenText)
+            }
+        }
+    }
+
+    // Multi-Screenshot Picker Launcher for WM3-Style Visual Skill Training
+    private val pickScreenshotsLauncher = registerForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@registerForActivityResult
+        trainAiFromSelectedScreenshots(uris)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        bindViews()
-        loadSavedSettings()
+        bindAllViews()
+        loadAllSavedPreferences()
         setupBottomNavigation()
-        setupTab1ChatAndPlanner()
-        setupTab2FullBrowser()
-        setupTab3FlowAndYouTubePipelines()
-        setupTab4Vault()
-        setupTab5Settings()
+        setupChatAndPlannerActions()
+        setupBrowserTabActions()
+        setupStoryAndPipelineActions()
+        setupTrainModelAndVaultActions()
+        setupSettingsActions()
 
-        onLogUpdated = { logs -> runOnUiThread { tvConsoleLog.text = logs } }
-        onBrowserUrlChanged = { currentUrl ->
-            runOnUiThread { if (!etWebUrl.hasFocus()) etWebUrl.setText(currentUrl) }
+        onLogUpdated = { updatedLogs ->
+            runOnUiThread {
+                tvConsoleLog.text = updatedLogs
+            }
         }
+
+        onBrowserUrlChanged = { newUrl ->
+            runOnUiThread {
+                if (!etWebUrl.hasFocus()) {
+                    etWebUrl.setText(newUrl)
+                }
+            }
+        }
+
+        refreshQueueCount()
+        refreshServiceStatusBadge()
     }
 
-    private fun bindViews() {
+    override fun onResume() {
+        super.onResume()
+        refreshServiceStatusBadge()
+        refreshQueueCount()
+        etNextEpisodeNumber.setText(VideoQueueManager.getNextEpisodeNumber(this).toString())
+    }
+
+    override fun onDestroy() {
+        if (onLogUpdated != null) onLogUpdated = null
+        if (onBrowserUrlChanged != null) onBrowserUrlChanged = null
+        super.onDestroy()
+    }
+
+    private fun bindAllViews() {
         tvActiveSubtitle = findViewById(R.id.tvActiveSubtitle)
-        tvServiceBadge = findViewById(R.id.tvServiceBadge)
         btnToggleFloatingPod = findViewById(R.id.btnToggleFloatingPod)
+        tvServiceBadge = findViewById(R.id.tvServiceBadge)
 
         tabChatLayout = findViewById(R.id.tabChatLayout)
         tabWebLayout = findViewById(R.id.tabWebLayout)
@@ -119,29 +238,77 @@ class MainActivity : AppCompatActivity() {
         navTabDoctor = findViewById(R.id.navTabDoctor)
         navTabSettings = findViewById(R.id.navTabSettings)
 
+        btnClearChat = findViewById(R.id.btnClearChat)
         tvChatHistory = findViewById(R.id.tvChatHistory)
         etChatInput = findViewById(R.id.etChatInput)
+        btnVoiceMic = findViewById(R.id.btnVoiceMic)
+        btnSendChat = findViewById(R.id.btnSendChat)
         tvPlanSteps = findViewById(R.id.tvPlanSteps)
+        rgExecutionMode = findViewById(R.id.rgExecutionMode)
         rbModeBackgroundWeb = findViewById(R.id.rbModeBackgroundWeb)
         rbModePhoneScreen = findViewById(R.id.rbModePhoneScreen)
+        btnExecutePlan = findViewById(R.id.btnExecutePlan)
+        btnStopAgent = findViewById(R.id.btnStopAgent)
 
-        etWebUrl = findViewById(R.id.etWebUrl)
-        etWebTaskGoal = findViewById(R.id.etWebTaskGoal)
+        btnBrowserBack = findViewById(R.id.btnBrowserBack)
+        btnBrowserForward = findViewById(R.id.btnBrowserForward)
+        btnBrowserRefresh = findViewById(R.id.btnBrowserRefresh)
+        btnBrowserFlow = findViewById(R.id.btnBrowserFlow)
+        btnBrowserGmail = findViewById(R.id.btnBrowserGmail)
         btnBrowserDesktop = findViewById(R.id.btnBrowserDesktop)
+        btnBrowserDownloads = findViewById(R.id.btnBrowserDownloads)
+        etWebUrl = findViewById(R.id.etWebUrl)
+        btnWebGo = findViewById(R.id.btnWebGo)
+        btnPinFlowUrl = findViewById(R.id.btnPinFlowUrl)
+        etWebTaskGoal = findViewById(R.id.etWebTaskGoal)
+        btnRunWebAgent = findViewById(R.id.btnRunWebAgent)
         webPreviewContainer = findViewById(R.id.webPreviewContainer)
 
         etFlowTopic = findViewById(R.id.etFlowTopic)
+        etStoryCharacterLock = findViewById(R.id.etStoryCharacterLock)
+        rgStoryMode = findViewById(R.id.rgStoryMode)
+        rbStorySerialMode = findViewById(R.id.rbStorySerialMode)
+        rbStorySideMode = findViewById(R.id.rbStorySideMode)
+        rbStoryStandaloneMode = findViewById(R.id.rbStoryStandaloneMode)
+        etStoryCustomTwist = findViewById(R.id.etStoryCustomTwist)
+        rgVideoDuration = findViewById(R.id.rgVideoDuration)
+        rbDuration8s = findViewById(R.id.rbDuration8s)
+        rbDuration10s = findViewById(R.id.rbDuration10s)
+        rbDuration12s = findViewById(R.id.rbDuration12s)
+        rbDuration15s = findViewById(R.id.rbDuration15s)
+        etCustomDurationSec = findViewById(R.id.etCustomDurationSec)
+        etNextEpisodeNumber = findViewById(R.id.etNextEpisodeNumber)
+        btnViewStoryHistory = findViewById(R.id.btnViewStoryHistory)
+        btnResetStoryArc = findViewById(R.id.btnResetStoryArc)
+        cbFirstRunLiveLearn = findViewById(R.id.cbFirstRunLiveLearn)
         etDailyVideoLimit = findViewById(R.id.etDailyVideoLimit)
         cbAutoGenerateFlowFirst = findViewById(R.id.cbAutoGenerateFlowFirst)
-        rbUploadNewestFirst = findViewById(R.id.rbUploadNewestFirst)
-        rbUploadOldestFirst = findViewById(R.id.rbUploadOldestFirst)
         etHour = findViewById(R.id.etHour)
         etMinute = findViewById(R.id.etMinute)
+        btnSaveSchedule = findViewById(R.id.btnSaveSchedule)
+        btnRunFlowToYouTubeNow = findViewById(R.id.btnRunFlowToYouTubeNow)
         etFolderPath = findViewById(R.id.etFolderPath)
+        rgUploadOrder = findViewById(R.id.rgUploadOrder)
+        rbUploadNewestFirst = findViewById(R.id.rbUploadNewestFirst)
+        rbUploadOldestFirst = findViewById(R.id.rbUploadOldestFirst)
         tvQueueStatus = findViewById(R.id.tvQueueStatus)
+        btnScanFolder = findViewById(R.id.btnScanFolder)
+        btnResetHistory = findViewById(R.id.btnResetHistory)
+        btnRunYouTubeNow = findViewById(R.id.btnRunYouTubeNow)
 
+        etSkillTaskName = findViewById(R.id.etSkillTaskName)
+        btnPickScreenshotsToTrain = findViewById(R.id.btnPickScreenshotsToTrain)
+        btnStartLiveTeachMode = findViewById(R.id.btnStartLiveTeachMode)
+        etTrainedSkillJson = findViewById(R.id.etTrainedSkillJson)
+        btnSaveTrainedSkillJson = findViewById(R.id.btnSaveTrainedSkillJson)
+        btnCopyTrainedSkillJson = findViewById(R.id.btnCopyTrainedSkillJson)
+        btnViewAllTrainedSkills = findViewById(R.id.btnViewAllTrainedSkills)
         etMemoryVault = findViewById(R.id.etMemoryVault)
+        btnSaveMemory = findViewById(R.id.btnSaveMemory)
 
+        btnEnableAccessibility = findViewById(R.id.btnEnableAccessibility)
+        btnEnableStorage = findViewById(R.id.btnEnableStorage)
+        btnDisableBatteryOptimization = findViewById(R.id.btnDisableBatteryOptimization)
         etApiKey = findViewById(R.id.etApiKey)
         etModelName = findViewById(R.id.etModelName)
         etHighModelName = findViewById(R.id.etHighModelName)
@@ -150,216 +317,770 @@ class MainActivity : AppCompatActivity() {
         cbRealWebTouch = findViewById(R.id.cbRealWebTouch)
         cbUseScreenVision = findViewById(R.id.cbUseScreenVision)
         cb24HourUnstoppable = findViewById(R.id.cb24HourUnstoppable)
+        btnSaveSettings = findViewById(R.id.btnSaveSettings)
         tvConsoleLog = findViewById(R.id.tvConsoleLog)
+    }
 
-        btnToggleFloatingPod.setOnClickListener {
-            val service = AutoTouchService.instance
-            if (service == null) { Toast.makeText(this, "Enable Auto-Touch first!", Toast.LENGTH_SHORT).show(); switchTab(5); return@setOnClickListener }
-            val visible = service.overlayHud?.togglePodVisibility() ?: false
-            btnToggleFloatingPod.text = if (visible) "Bot: ON" else "Bot: OFF"
+    private fun loadAllSavedPreferences() {
+        val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+
+        etApiKey.setText(prefs.getString("api_key", "") ?: "")
+        etModelName.setText(prefs.getString("model_name", "gemini-3.8-flash") ?: "gemini-3.8-flash")
+        etHighModelName.setText(VideoQueueManager.getHighModelName(this))
+
+        cbAutoHighModel.isChecked = VideoQueueManager.isAutoHighModelEnabled(this)
+        cbGoogleSearchGrounding.isChecked = VideoQueueManager.isGoogleSearchGroundingEnabled(this)
+        cbRealWebTouch.isChecked = VideoQueueManager.isRealWebTouchEnabled(this)
+        cbUseScreenVision.isChecked = VideoQueueManager.isScreenVisionEnabled(this)
+        cb24HourUnstoppable.isChecked = VideoQueueManager.is24HourUnstoppableEnabled(this)
+
+        etFlowTopic.setText(VideoQueueManager.getFlowTopic(this))
+        etStoryCharacterLock.setText(VideoQueueManager.getCharacterVisualLock(this))
+        etStoryCustomTwist.setText(VideoQueueManager.getStoryCustomTwist(this))
+        etNextEpisodeNumber.setText(VideoQueueManager.getNextEpisodeNumber(this).toString())
+        cbFirstRunLiveLearn.isChecked = VideoQueueManager.isFirstRunLiveLearnEnabled(this)
+
+        when (VideoQueueManager.getStoryMode(this)) {
+            "SIDE_STORY" -> rbStorySideMode.isChecked = true
+            "STANDALONE" -> rbStoryStandaloneMode.isChecked = true
+            else -> rbStorySerialMode.isChecked = true
         }
+
+        val savedDur = VideoQueueManager.getTargetVideoDurationSec(this)
+        etCustomDurationSec.setText(savedDur.toString())
+        when (savedDur) {
+            8 -> rbDuration8s.isChecked = true
+            10 -> rbDuration10s.isChecked = true
+            12 -> rbDuration12s.isChecked = true
+            15 -> rbDuration15s.isChecked = true
+        }
+
+        etDailyVideoLimit.setText(VideoQueueManager.getDailyVideoLimit(this).toString())
+        cbAutoGenerateFlowFirst.isChecked = prefs.getBoolean("auto_flow_first", true)
+        etHour.setText(String.format(Locale.US, "%02d", prefs.getInt("schedule_hour", 19)))
+        etMinute.setText(String.format(Locale.US, "%02d", prefs.getInt("schedule_minute", 0)))
+
+        val defaultFolder = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "AutoVideos"
+        ).absolutePath
+        etFolderPath.setText(prefs.getString("folder_path", defaultFolder) ?: defaultFolder)
+
+        if (VideoQueueManager.isUploadNewestFirst(this)) {
+            rbUploadNewestFirst.isChecked = true
+        } else {
+            rbUploadOldestFirst.isChecked = true
+        }
+
+        etWebUrl.setText(VideoQueueManager.getPinnedFlowUrl(this))
+        etMemoryVault.setText(VideoQueueManager.getMemoryVault(this))
+
+        val initialSkill = etSkillTaskName.text.toString().trim().ifEmpty { "GOOGLE_FLOW" }
+        etTrainedSkillJson.setText(VideoQueueManager.getTrainedSkillBlueprint(this, initialSkill))
+
+        tvConsoleLog.text = prefs.getString("live_logs", "[System] AuraDroid OS • Nax Bot Ready.") ?: ""
     }
 
     private fun setupBottomNavigation() {
+        fun switchTab(activeIndex: Int) {
+            tabChatLayout.visibility = if (activeIndex == 1) View.VISIBLE else View.GONE
+            tabWebLayout.visibility = if (activeIndex == 2) View.VISIBLE else View.GONE
+            tabPipelinesLayout.visibility = if (activeIndex == 3) View.VISIBLE else View.GONE
+            tabDoctorLayout.visibility = if (activeIndex == 4) View.VISIBLE else View.GONE
+            tabSettingsLayout.visibility = if (activeIndex == 5) View.VISIBLE else View.GONE
+
+            val activeColor = Color.parseColor("#3B82F6")
+            val inactiveColor = Color.parseColor("#94A3B8")
+
+            navTabChat.setTextColor(if (activeIndex == 1) activeColor else inactiveColor)
+            navTabWeb.setTextColor(if (activeIndex == 2) activeColor else inactiveColor)
+            navTabPipelines.setTextColor(if (activeIndex == 3) activeColor else inactiveColor)
+            navTabDoctor.setTextColor(if (activeIndex == 4) activeColor else inactiveColor)
+            navTabSettings.setTextColor(if (activeIndex == 5) activeColor else inactiveColor)
+
+            if (activeIndex == 2) {
+                val hud = AutoTouchService.instance?.overlayHud
+                if (hud != null) {
+                    hud.collapseToCompactStage()
+                    hud.attachWebViewToContainer(webPreviewContainer)
+                } else {
+                    Toast.makeText(
+                        this,
+                        "Pehle Settings tab se Enable Auto-Touch (Nax Bot) ON karein!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+
         navTabChat.setOnClickListener { switchTab(1) }
         navTabWeb.setOnClickListener { switchTab(2) }
         navTabPipelines.setOnClickListener { switchTab(3) }
         navTabDoctor.setOnClickListener { switchTab(4) }
         navTabSettings.setOnClickListener { switchTab(5) }
+
+        btnToggleFloatingPod.setOnClickListener {
+            val hud = AutoTouchService.instance?.overlayHud
+            if (hud == null) {
+                Toast.makeText(this, "Enable Auto-Touch service first!", Toast.LENGTH_SHORT).show()
+            } else {
+                val visible = hud.togglePodVisibility()
+                btnToggleFloatingPod.text = if (visible) "Nax: ON" else "Nax: OFF"
+            }
+        }
     }
 
-    private fun switchTab(tabIndex: Int) {
-        tabChatLayout.visibility = if (tabIndex == 1) View.VISIBLE else View.GONE
-        tabWebLayout.visibility = if (tabIndex == 2) View.VISIBLE else View.GONE
-        tabPipelinesLayout.visibility = if (tabIndex == 3) View.VISIBLE else View.GONE
-        tabDoctorLayout.visibility = if (tabIndex == 4) View.VISIBLE else View.GONE
-        tabSettingsLayout.visibility = if (tabIndex == 5) View.VISIBLE else View.GONE
+    private fun setupChatAndPlannerActions() {
+        btnClearChat.setOnClickListener {
+            tvChatHistory.text = "🤖 Nax Bot: Chat clear ho gayi! Naya kaam ya story idea batayein."
+            tvPlanSteps.text = "Abhi koi plan nahi hai."
+            lockedPlanGoal = ""
+            lockedTargetUrl = ""
+        }
 
-        val activeColor = 0xFF3B82F6.toInt(); val inactiveColor = 0xFF94A3B8.toInt()
-        navTabChat.setTextColor(if (tabIndex == 1) activeColor else inactiveColor)
-        navTabWeb.setTextColor(if (tabIndex == 2) activeColor else inactiveColor)
-        navTabPipelines.setTextColor(if (tabIndex == 3) activeColor else inactiveColor)
-        navTabDoctor.setTextColor(if (tabIndex == 4) activeColor else inactiveColor)
-        navTabSettings.setTextColor(if (tabIndex == 5) activeColor else inactiveColor)
-
-        if (tabIndex == 2) AutoTouchService.instance?.overlayHud?.attachWebViewToContainer(webPreviewContainer)
-        else if (tabIndex == 3) refreshFolderQueueStatus()
-    }
-
-    private fun setupTab1ChatAndPlanner() {
-        findViewById<Button>(R.id.btnClearChat).setOnClickListener { tvChatHistory.text = "🤖 Companion Bot: Chat cleared." }
-        findViewById<Button>(R.id.btnVoiceMic).setOnClickListener {
+        btnVoiceMic.setOnClickListener {
             try {
-                startActivityForResult(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                }, REQ_VOICE_SPEECH)
-            } catch (_: Exception) {}
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Nax Bot ko apna kaam bolkar batayein...")
+                }
+                voiceRecognizerLauncher.launch(intent)
+            } catch (_: Exception) {
+                Toast.makeText(this, "Voice mic supported nahi hai.", Toast.LENGTH_SHORT).show()
+            }
         }
-        findViewById<Button>(R.id.btnSendChat).setOnClickListener {
-            saveSettings()
+
+        btnSendChat.setOnClickListener {
             val userMsg = etChatInput.text.toString().trim()
-            if (userMsg.isEmpty()) return@setOnClickListener
-            val updatedChat = "${tvChatHistory.text}\n\n👤 You: $userMsg\n\n🤖 Companion Bot: Planning..."
-            tvChatHistory.text = updatedChat; etChatInput.setText("")
-            uiScope.launch {
-                val planRes = GeminiBrain.chatAndBuildPlan(etApiKey.text.toString().trim(), etModelName.text.toString().trim(), userMsg, updatedChat, etMemoryVault.text.toString().trim())
-                tvChatHistory.text = "${updatedChat.substringBeforeLast("🤖 Companion Bot:")}🤖 Companion Bot: ${planRes.replyText}"
-                tvPlanSteps.text = "🎯 Goal: ${planRes.planGoal}\n\n${planRes.planSteps}"
-                currentLockedGoal = planRes.planGoal; etWebTaskGoal.setText(planRes.planGoal)
-                if (planRes.targetUrl.isNotBlank()) etWebUrl.setText(planRes.targetUrl)
-                rbModeBackgroundWeb.isChecked = planRes.suggestedMode == "WEB"
-                rbModePhoneScreen.isChecked = planRes.suggestedMode == "PHONE"
+            if (userMsg.isEmpty()) {
+                Toast.makeText(this, "Pehle apna kaam likhein!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            saveAllSettingsToPrefs()
+            val apiKey = etApiKey.text.toString().trim()
+            val model = etModelName.text.toString().trim()
+            val vault = VideoQueueManager.getMemoryVault(this)
+
+            tvChatHistory.append("\n\n🧑 You: $userMsg")
+            etChatInput.setText("")
+            btnSendChat.isEnabled = false
+            btnSendChat.text = "Nax Bot soch raha hai..."
+
+            lifecycleScope.launch {
+                val resp = GeminiBrain.chatAndBuildPlan(
+                    apiKey = apiKey,
+                    model = model,
+                    userMessage = userMsg,
+                    chatHistory = tvChatHistory.text.toString(),
+                    memoryVault = vault
+                )
+                btnSendChat.isEnabled = true
+                btnSendChat.text = "प्लान बनाएं (Gemini 3.8/3.1)"
+
+                tvChatHistory.append("\n\n🤖 Nax Bot: ${resp.replyText}")
+                tvPlanSteps.text = resp.planSteps
+                lockedPlanGoal = resp.planGoal
+                lockedTargetUrl = resp.targetUrl
+
+                if (resp.suggestedMode == "WEB") {
+                    rbModeBackgroundWeb.isChecked = true
+                } else {
+                    rbModePhoneScreen.isChecked = true
+                }
+                tvActiveSubtitle.text = GeminiBrain.getAutoModelStatusReport()
             }
         }
-        findViewById<Button>(R.id.btnExecutePlan).setOnClickListener {
-            saveSettings()
-            val service = AutoTouchService.instance
-            if (service == null) { Toast.makeText(this, "Enable Auto-Touch first!", Toast.LENGTH_LONG).show(); switchTab(5); return@setOnClickListener }
-            val goal = currentLockedGoal.ifBlank { etChatInput.text.toString().trim() }
-            if (goal.isBlank()) return@setOnClickListener
-            if (rbModeBackgroundWeb.isChecked) service.startBackgroundWebTask(etApiKey.text.toString().trim(), etModelName.text.toString().trim(), etWebUrl.text.toString().trim(), goal, etFolderPath.text.toString().trim())
-            else service.startUniversalAiTask(etApiKey.text.toString().trim(), etModelName.text.toString().trim(), goal)
-        }
-        findViewById<Button>(R.id.btnStopAgent).setOnClickListener { AutoTouchService.instance?.stopCurrentJob() }
-    }
 
-    private fun setupTab2FullBrowser() {
-        findViewById<Button>(R.id.btnBrowserBack).setOnClickListener { AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.let { if (it.canGoBack()) it.goBack() } }
-        findViewById<Button>(R.id.btnBrowserForward).setOnClickListener { AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.let { if (it.canGoForward()) it.goForward() } }
-        findViewById<Button>(R.id.btnBrowserRefresh).setOnClickListener { AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.reload() }
-        findViewById<Button>(R.id.btnBrowserFlow).setOnClickListener { openManualUrl(VideoQueueManager.getPinnedFlowUrl(this)) }
-        findViewById<Button>(R.id.btnBrowserGmail).setOnClickListener { openManualUrl("https://accounts.google.com") }
-        btnBrowserDesktop.setOnClickListener { btnBrowserDesktop.text = if (AutoTouchService.instance?.overlayHud?.toggleDesktopMode() == true) "🖥️ Desktop: ON" else "🖥️ Desktop: OFF" }
-        findViewById<Button>(R.id.btnBrowserDownloads).setOnClickListener {
-            AlertDialog.Builder(this).setTitle("📥 Downloads").setMessage(VideoQueueManager.getDownloadedFilesReport(etFolderPath.text.toString().trim())).setPositiveButton("OK", null).show()
-        }
-        findViewById<Button>(R.id.btnWebGo).setOnClickListener { openManualUrl(etWebUrl.text.toString().trim()) }
-        findViewById<Button>(R.id.btnPinFlowUrl).setOnClickListener {
-            val u = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.url ?: etWebUrl.text.toString().trim()
-            VideoQueueManager.savePinnedFlowUrl(this, u); etWebUrl.setText(u)
-        }
-        findViewById<Button>(R.id.btnRunWebAgent).setOnClickListener {
-            saveSettings()
-            AutoTouchService.instance?.startBackgroundWebTask(etApiKey.text.toString().trim(), etModelName.text.toString().trim(), etWebUrl.text.toString().trim(), etWebTaskGoal.text.toString().trim(), etFolderPath.text.toString().trim())
-        }
-    }
+        btnExecutePlan.setOnClickListener {
+            saveAllSettingsToPrefs()
+            val apiKey = etApiKey.text.toString().trim()
+            val model = etModelName.text.toString().trim()
+            val folderPath = etFolderPath.text.toString().trim()
+            val goalToRun = lockedPlanGoal.ifBlank {
+                etChatInput.text.toString().trim().ifBlank { tvPlanSteps.text.toString() }
+            }
 
-    private fun openManualUrl(url: String) {
-        var u = url.trim(); if (!u.startsWith("http")) u = "https://$u"
-        etWebUrl.setText(u)
-        AutoTouchService.instance?.overlayHud?.let { it.attachWebViewToContainer(webPreviewContainer); it.getOrCreateSharedWebView().loadUrl(u) }
-    }
+            if (AutoTouchService.instance == null) {
+                Toast.makeText(this, "Pehle Auto-Touch Accessibility ON karein!", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                return@setOnClickListener
+            }
 
-    private fun setupTab3FlowAndYouTubePipelines() {
-        findViewById<Button>(R.id.btnSaveSchedule).setOnClickListener {
-            saveSettings()
-            val h = etHour.text.toString().toIntOrNull() ?: 19; val m = etMinute.text.toString().toIntOrNull() ?: 0
-            TaskSchedulerReceiver.scheduleDailyUpload(this, h, m)
-            Toast.makeText(this, "⏰ Scheduled!", Toast.LENGTH_SHORT).show()
-        }
-        findViewById<Button>(R.id.btnRunFlowToYouTubeNow).setOnClickListener {
-            saveSettings()
-            AutoTouchService.instance?.startGoogleFlowToYouTubePipeline(etApiKey.text.toString().trim(), etModelName.text.toString().trim(), VideoQueueManager.getPinnedFlowUrl(this), etFlowTopic.text.toString().trim(), etDailyVideoLimit.text.toString().toIntOrNull() ?: 1, etFolderPath.text.toString().trim())
-        }
-        findViewById<Button>(R.id.btnScanFolder).setOnClickListener { saveSettings(); refreshFolderQueueStatus() }
-        findViewById<Button>(R.id.btnResetHistory).setOnClickListener { VideoQueueManager.resetUploadedHistory(this); refreshFolderQueueStatus() }
-        findViewById<Button>(R.id.btnRunYouTubeNow).setOnClickListener {
-            saveSettings()
-            AutoTouchService.instance?.startYouTubeAutoUpload(etApiKey.text.toString().trim(), etModelName.text.toString().trim(), etFolderPath.text.toString().trim(), etFlowTopic.text.toString().trim())
-        }
-    }
-
-    private fun setupTab4Vault() {
-        findViewById<Button>(R.id.btnSaveMemory).setOnClickListener {
-            VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString())
-            AlertDialog.Builder(this).setTitle("🧠 Brain Rules").setMessage(VideoQueueManager.getLearnedLessonsSummary(this)).setPositiveButton("OK", null).show()
-        }
-    }
-
-    private fun setupTab5Settings() {
-        findViewById<Button>(R.id.btnEnableAccessibility).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        findViewById<Button>(R.id.btnEnableStorage).setOnClickListener {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
+            if (rbModeBackgroundWeb.isChecked) {
+                val url = lockedTargetUrl.ifBlank { VideoQueueManager.getPinnedFlowUrl(this) }
+                WebPipelineManager.startAutonomousWebAgent(
+                    context = this,
+                    apiKey = apiKey,
+                    model = model,
+                    goal = goalToRun,
+                    startUrl = url,
+                    folderPath = folderPath
+                )
+                Toast.makeText(this, "🌐 Nax Bot Web Agent started!", Toast.LENGTH_SHORT).show()
+            } else {
+                startPhoneScreenAgentSafely(apiKey, model, goalToRun, folderPath)
             }
         }
-        findViewById<Button>(R.id.btnDisableBatteryOptimization).setOnClickListener {
-            try { startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) } catch (_: Exception) {}
-        }
-        findViewById<Button>(R.id.btnSaveSettings).setOnClickListener { saveSettings(); Toast.makeText(this, "Saved!", Toast.LENGTH_SHORT).show() }
-    }
 
-    @Deprecated("Deprecated")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_VOICE_SPEECH && resultCode == Activity.RESULT_OK && data != null) {
-            data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { etChatInput.setText(it) }
+        btnStopAgent.setOnClickListener {
+            AutoTouchService.instance?.stopCurrentJob()
+            WebPipelineManager.stopEverything(this)
+            Toast.makeText(this, "🛑 Stopped all active tasks.", Toast.LENGTH_SHORT).show()
         }
     }
 
-    override fun onResume() { super.onResume(); updateServiceBadge(); refreshFolderQueueStatus() }
+    private fun setupBrowserTabActions() {
+        btnBrowserBack.setOnClickListener {
+            val wv = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()
+            if (wv?.canGoBack() == true) wv.goBack()
+        }
 
-    private fun updateServiceBadge() {
-        val active = AutoTouchService.instance != null
-        tvServiceBadge.text = if (active) "TOUCH: ACTIVE" else "TOUCH: OFF"
-        tvServiceBadge.setTextColor(if (active) 0xFF10B981.toInt() else 0xFFF87171.toInt())
+        btnBrowserForward.setOnClickListener {
+            val wv = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()
+            if (wv?.canGoForward() == true) wv.goForward()
+        }
+
+        btnBrowserRefresh.setOnClickListener {
+            AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.reload()
+        }
+
+        btnBrowserFlow.setOnClickListener {
+            val flowUrl = VideoQueueManager.getPinnedFlowUrl(this)
+            etWebUrl.setText(flowUrl)
+            AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.loadUrl(flowUrl)
+        }
+
+        btnBrowserGmail.setOnClickListener {
+            val loginUrl = "https://accounts.google.com/"
+            etWebUrl.setText(loginUrl)
+            AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.loadUrl(loginUrl)
+        }
+
+        btnBrowserDesktop.setOnClickListener {
+            val hud = AutoTouchService.instance?.overlayHud ?: return@setOnClickListener
+            val isDesk = hud.toggleDesktopMode()
+            btnBrowserDesktop.text = if (isDesk) "🖥️ Desktop: ON" else "🖥️ Desktop: OFF"
+        }
+
+        btnBrowserDownloads.setOnClickListener {
+            val folderPath = etFolderPath.text.toString().trim()
+            val report = VideoQueueManager.getDownloadedFilesReport(folderPath)
+            AlertDialog.Builder(this)
+                .setTitle("📥 Downloaded Videos in Folder")
+                .setMessage(report)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+
+        btnWebGo.setOnClickListener {
+            var url = etWebUrl.text.toString().trim()
+            if (url.isNotEmpty()) {
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    url = "https://$url"
+                }
+                AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.loadUrl(url)
+            }
+        }
+
+        btnPinFlowUrl.setOnClickListener {
+            val currentUrl = AutoTouchService.instance?.overlayHud?.getOrCreateSharedWebView()?.url
+                ?: etWebUrl.text.toString().trim()
+            if (currentUrl.isNotBlank()) {
+                VideoQueueManager.savePinnedFlowUrl(this, currentUrl)
+                etWebUrl.setText(currentUrl)
+                Toast.makeText(this, "📌 Pinned URL: $currentUrl", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnRunWebAgent.setOnClickListener {
+            saveAllSettingsToPrefs()
+            val apiKey = etApiKey.text.toString().trim()
+            val model = etModelName.text.toString().trim()
+            val folderPath = etFolderPath.text.toString().trim()
+            val url = etWebUrl.text.toString().trim()
+            val goal = etWebTaskGoal.text.toString().trim().ifBlank {
+                VideoQueueManager.getFlowTopic(this)
+            }
+
+            WebPipelineManager.startAutonomousWebAgent(
+                context = this,
+                apiKey = apiKey,
+                model = model,
+                goal = goal,
+                startUrl = url,
+                folderPath = folderPath
+            )
+            Toast.makeText(this, "▶ Nax Bot Web Agent Running!", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun refreshFolderQueueStatus() {
-        val path = etFolderPath.text.toString().trim()
-        val dir = File(path); if (!dir.exists()) dir.mkdirs()
-        val preferNewest = rbUploadNewestFirst.isChecked
-        val allVideos = VideoQueueManager.getVideoFilesInFolder(path, newestFirst = preferNewest)
-        val uploaded = VideoQueueManager.getUploadedSet(this)
-        val pending = allVideos.count { it.absolutePath !in uploaded && it.name !in uploaded }
-        val next = VideoQueueManager.getNextPendingVideo(this, path)?.name ?: "None"
-        tvQueueStatus.text = "Order: ${if (preferNewest) "Newest First" else "Oldest First"}\nTotal: ${allVideos.size} | Pending: $pending\nNext: $next"
+    private fun setupStoryAndPipelineActions() {
+        rgVideoDuration.setOnCheckedChangeListener { _, checkedId ->
+            val sec = when (checkedId) {
+                R.id.rbDuration8s -> 8
+                R.id.rbDuration10s -> 10
+                R.id.rbDuration12s -> 12
+                R.id.rbDuration15s -> 15
+                else -> 10
+            }
+            etCustomDurationSec.setText(sec.toString())
+            VideoQueueManager.setTargetVideoDurationSec(this, sec)
+        }
+
+        rgStoryMode.setOnCheckedChangeListener { _, checkedId ->
+            val mode = when (checkedId) {
+                R.id.rbStorySideMode -> "SIDE_STORY"
+                R.id.rbStoryStandaloneMode -> "STANDALONE"
+                else -> "SERIAL"
+            }
+            VideoQueueManager.setStoryMode(this, mode)
+        }
+
+        rgUploadOrder.setOnCheckedChangeListener { _, checkedId ->
+            val newestFirst = (checkedId == R.id.rbUploadNewestFirst)
+            VideoQueueManager.setUploadNewestFirst(this, newestFirst)
+            refreshQueueCount()
+        }
+
+        btnViewStoryHistory.setOnClickListener {
+            val report = VideoQueueManager.getFullStoryArcReport(this)
+            AlertDialog.Builder(this)
+                .setTitle("📜 Episodic Story Series History (Part 1, 2, 3...)")
+                .setMessage(report)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+
+        btnResetStoryArc.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("🔄 Reset Story Series to Part 1?")
+                .setMessage("Kya aap pichli story history mita kar Part 1 se nayi series shuru karna chahte hain?")
+                .setPositiveButton("Yes, Reset to Ep 1") { _, _ ->
+                    VideoQueueManager.resetStoryArcHistory(this)
+                    etNextEpisodeNumber.setText("1")
+                    Toast.makeText(this, "✅ Story reset to Part 1!", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        btnSaveSchedule.setOnClickListener {
+            saveAllSettingsToPrefs()
+            val hour = etHour.text.toString().toIntOrNull()?.coerceIn(0, 23) ?: 19
+            val minute = etMinute.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0
+            scheduleDailyPipelineAlarm(hour, minute)
+        }
+
+        btnRunFlowToYouTubeNow.setOnClickListener {
+            saveAllSettingsToPrefs()
+            if (AutoTouchService.instance == null) {
+                Toast.makeText(this, "Pehle Settings tab se Auto-Touch ON karein!", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                return@setOnClickListener
+            }
+
+            val apiKey = etApiKey.text.toString().trim()
+            val model = etModelName.text.toString().trim()
+            val topic = etFlowTopic.text.toString().trim()
+            val folderPath = etFolderPath.text.toString().trim()
+            val limit = etDailyVideoLimit.text.toString().toIntOrNull()?.coerceIn(1, 5) ?: 1
+
+            WebPipelineManager.startFlowToYouTubePipeline(
+                context = this,
+                apiKey = apiKey,
+                model = model,
+                flowTopic = topic,
+                folderPath = folderPath,
+                dailyVideoLimit = limit
+            )
+            Toast.makeText(
+                this,
+                "🎬 Nax Bot: Generating Story Part #${VideoQueueManager.getNextEpisodeNumber(this)} (${VideoQueueManager.getTargetVideoDurationSec(this)}s)!",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        btnScanFolder.setOnClickListener {
+            saveAllSettingsToPrefs()
+            refreshQueueCount()
+            Toast.makeText(this, "📂 Folder scanned!", Toast.LENGTH_SHORT).show()
+        }
+
+        btnResetHistory.setOnClickListener {
+            VideoQueueManager.resetUploadedHistory(this)
+            refreshQueueCount()
+            Toast.makeText(this, "🔄 Uploaded video history cleared!", Toast.LENGTH_SHORT).show()
+        }
+
+        btnRunYouTubeNow.setOnClickListener {
+            saveAllSettingsToPrefs()
+            if (AutoTouchService.instance == null) {
+                Toast.makeText(this, "Pehle Auto-Touch Accessibility ON karein!", Toast.LENGTH_LONG).show()
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                return@setOnClickListener
+            }
+            val apiKey = etApiKey.text.toString().trim()
+            val model = etModelName.text.toString().trim()
+            val folderPath = etFolderPath.text.toString().trim()
+            val topic = etFlowTopic.text.toString().trim()
+
+            AutoTouchService.instance?.startYouTubeUploadJob(
+                context = this,
+                apiKey = apiKey,
+                model = model,
+                folderPath = folderPath,
+                topicInstruction = topic
+            )
+            Toast.makeText(this, "▶ Uploading next video to YouTube Shorts...", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun saveSettings() {
-        val newestFirst = rbUploadNewestFirst.isChecked
-        VideoQueueManager.setUploadNewestFirst(this, newestFirst)
-        getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE).edit()
+    private fun setupTrainModelAndVaultActions() {
+        btnPickScreenshotsToTrain.setOnClickListener {
+            saveAllSettingsToPrefs()
+            if (etApiKey.text.toString().trim().isEmpty()) {
+                Toast.makeText(this, "Pehle Settings mein Gemini API Key daalein!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            Toast.makeText(
+                this,
+                "📸 Start se End tak ke screenshots क्रम से (Step 1, 2, 3...) select karein!",
+                Toast.LENGTH_LONG
+            ).show()
+            pickScreenshotsLauncher.launch("image/*")
+        }
+
+        btnStartLiveTeachMode.setOnClickListener {
+            val hud = AutoTouchService.instance?.overlayHud
+            if (hud == null) {
+                Toast.makeText(this, "Pehle Auto-Touch (Nax Bot) ON karein!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val skillName = etSkillTaskName.text.toString().trim().ifEmpty { "GOOGLE_FLOW" }
+            val active = hud.startOrStopLiveTeach(skillName) { savedJson ->
+                runOnUiThread {
+                    etTrainedSkillJson.setText(savedJson)
+                    btnStartLiveTeachMode.text = "🔴 Live Teach (टच रिकॉर्ड)"
+                }
+            }
+            btnStartLiveTeachMode.text = if (active) "💾 Stop & Save Teach" else "🔴 Live Teach (टच रिकॉर्ड)"
+        }
+
+        btnSaveTrainedSkillJson.setOnClickListener {
+            val skillName = etSkillTaskName.text.toString().trim().ifEmpty { "GOOGLE_FLOW" }
+            val jsonText = etTrainedSkillJson.text.toString().trim()
+            if (jsonText.isEmpty()) {
+                Toast.makeText(this, "JSON Blueprint box khali hai!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            VideoQueueManager.saveTrainedSkillBlueprint(this, skillName, jsonText, isVerified = false)
+            Toast.makeText(
+                this,
+                "💾 '$skillName' JSON Blueprint AI Mind mein save ho gaya!",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        btnCopyTrainedSkillJson.setOnClickListener {
+            val jsonText = etTrainedSkillJson.text.toString().trim()
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("NaxBotSkillJson", jsonText))
+            Toast.makeText(this, "📤 Trained JSON copied to clipboard!", Toast.LENGTH_SHORT).show()
+        }
+
+        btnViewAllTrainedSkills.setOnClickListener {
+            val report = VideoQueueManager.getAllTrainedSkillsSummary(this)
+            AlertDialog.Builder(this)
+                .setTitle("📚 All Trained AI Skills in SQLite Mind")
+                .setMessage(report)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+
+        btnSaveMemory.setOnClickListener {
+            val vaultText = etMemoryVault.text.toString().trim()
+            VideoQueueManager.saveMemoryVault(this, vaultText)
+            val lessons = VideoQueueManager.getLearnedLessonsSummary(this)
+            AlertDialog.Builder(this)
+                .setTitle("🧠 Saved Memory & Self-Learned SQLite Rules")
+                .setMessage(lessons)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun setupSettingsActions() {
+        btnEnableAccessibility.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        btnEnableStorage.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (!Environment.isExternalStorageManager()) {
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        intent.data = Uri.parse("package:$packageName")
+                        startActivity(intent)
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }
+                } else {
+                    Toast.makeText(this, "✅ Storage access already granted!", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                requestPermissions(
+                    arrayOf(
+                        android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ),
+                    101
+                )
+            }
+        }
+
+        btnDisableBatteryOptimization.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                    try {
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
+                } else {
+                    Toast.makeText(this, "🛡️ Battery Unrestricted Mode already ON!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        btnSaveSettings.setOnClickListener {
+            saveAllSettingsToPrefs()
+            tvActiveSubtitle.text = GeminiBrain.getAutoModelStatusReport()
+            Toast.makeText(this, "💾 All Custom AI & Story Settings Saved!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun trainAiFromSelectedScreenshots(uris: List<Uri>) {
+        val skillName = etSkillTaskName.text.toString().trim().ifEmpty { "GOOGLE_FLOW" }
+        val apiKey = etApiKey.text.toString().trim()
+        val model = etModelName.text.toString().trim()
+
+        btnPickScreenshotsToTrain.isEnabled = false
+        btnPickScreenshotsToTrain.text = "⏳ AI Screenshots samajh raha hai..."
+
+        lifecycleScope.launch {
+            try {
+                val base64Images = withContext(Dispatchers.IO) {
+                    uris.take(8).mapNotNull { uri ->
+                        uriToScaledBase64Jpeg(uri)
+                    }
+                }
+
+                if (base64Images.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Screenshots read nahi ho paye.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val blueprintJson = GeminiBrain.trainSkillFromScreenshots(
+                    apiKey = apiKey,
+                    model = model,
+                    skillName = skillName,
+                    userInstruction = "Complete start-to-end visual workflow for $skillName",
+                    screenshotsBase64 = base64Images
+                )
+
+                etTrainedSkillJson.setText(blueprintJson)
+                VideoQueueManager.saveTrainedSkillBlueprint(
+                    context = this@MainActivity,
+                    skillName = skillName,
+                    jsonBlueprint = blueprintJson,
+                    isVerified = false
+                )
+
+                VideoQueueManager.appendLog(
+                    this@MainActivity,
+                    "🎓 Trained '$skillName' from ${base64Images.size} screenshots and stored in SQLite Mind!"
+                )
+                Toast.makeText(
+                    this@MainActivity,
+                    "✅ '$skillName' Trained & Stored in AI Mind!",
+                    Toast.LENGTH_LONG
+                ).show()
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "⚠️ Train Error: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                btnPickScreenshotsToTrain.isEnabled = true
+                btnPickScreenshotsToTrain.text = "📸 Screenshots से सिखाएं"
+            }
+        }
+    }
+
+    private fun uriToScaledBase64Jpeg(uri: Uri): String? {
+        return try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                val rawBmp = BitmapFactory.decodeStream(input) ?: return null
+                val scaled = Bitmap.createScaledBitmap(rawBmp, 540, 960, true)
+                if (scaled != rawBmp) rawBmp.recycle()
+                val baos = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, 70, baos)
+                scaled.recycle()
+                Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun startPhoneScreenAgentSafely(
+        apiKey: String,
+        model: String,
+        goal: String,
+        folderPath: String
+    ) {
+        val service = AutoTouchService.instance ?: return
+        val lower = goal.lowercase()
+        if (lower.contains("youtube") && (lower.contains("upload") || lower.contains("short"))) {
+            service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
+            return
+        }
+
+        try {
+            val method = service.javaClass.methods.firstOrNull { m ->
+                m.name in listOf(
+                    "startAutonomousPhoneJob",
+                    "startPhoneAgentJob",
+                    "startGeneralAgentJob",
+                    "startAutonomousTask"
+                )
+            }
+            if (method != null) {
+                when (method.parameterTypes.size) {
+                    4 -> method.invoke(service, this, apiKey, model, goal)
+                    3 -> method.invoke(service, apiKey, model, goal)
+                    else -> service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
+                }
+                Toast.makeText(this, "📱 Nax Bot Phone Agent started!", Toast.LENGTH_SHORT).show()
+            } else {
+                service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
+            }
+        } catch (_: Exception) {
+            service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
+        }
+    }
+
+    private fun scheduleDailyPipelineAlarm(hour: Int, minute: Int) {
+        try {
+            val receiverClass = Class.forName("com.auradroid.agent.DailyUploadReceiver")
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, receiverClass)
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                2001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val calendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                if (timeInMillis <= System.currentTimeMillis()) {
+                    add(Calendar.DAY_OF_YEAR, 1)
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    calendar.timeInMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    calendar.timeInMillis,
+                    pendingIntent
+                )
+            }
+
+            val timeFormatted = String.format(Locale.US, "%02d:%02d", hour, minute)
+            VideoQueueManager.appendLog(this, "⏰ Daily Story + YouTube Pipeline scheduled for $timeFormatted")
+            Toast.makeText(this, "⏰ Daily Auto-Schedule set for $timeFormatted!", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "⏰ Schedule time saved ($hour:$minute)!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun saveAllSettingsToPrefs() {
+        val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+        val durSec = etCustomDurationSec.text.toString().toIntOrNull()?.coerceIn(5, 60) ?: 10
+        val nextEp = etNextEpisodeNumber.text.toString().toIntOrNull()?.coerceAtLeast(1) ?: 1
+        val dailyLimit = etDailyVideoLimit.text.toString().toIntOrNull()?.coerceIn(1, 5) ?: 1
+        val hour = etHour.text.toString().toIntOrNull()?.coerceIn(0, 23) ?: 19
+        val minute = etMinute.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0
+
+        val selectedStoryMode = when {
+            rbStorySideMode.isChecked -> "SIDE_STORY"
+            rbStoryStandaloneMode.isChecked -> "STANDALONE"
+            else -> "SERIAL"
+        }
+
+        prefs.edit()
             .putString("api_key", etApiKey.text.toString().trim())
-            .putString("model_name", etModelName.text.toString().trim())
-            .putString("high_model_name", etHighModelName.text.toString().trim())
+            .putString("model_name", etModelName.text.toString().trim().ifEmpty { "gemini-3.8-flash" })
+            .putString("high_model_name", etHighModelName.text.toString().trim().ifEmpty { "gemini-3.8-pro" })
             .putBoolean("auto_high_model", cbAutoHighModel.isChecked)
             .putBoolean("google_search_grounding", cbGoogleSearchGrounding.isChecked)
             .putBoolean("real_web_touch", cbRealWebTouch.isChecked)
-            .putString("folder_path", etFolderPath.text.toString().trim())
-            .putString("flow_topic", etFlowTopic.text.toString().trim())
-            .putInt("daily_video_limit", etDailyVideoLimit.text.toString().toIntOrNull()?.coerceIn(1, 5) ?: 1)
-            .putBoolean("auto_flow_first", cbAutoGenerateFlowFirst.isChecked)
-            .putInt("sched_hour", etHour.text.toString().toIntOrNull()?.coerceIn(0, 23) ?: 19)
-            .putInt("sched_min", etMinute.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0)
             .putBoolean("use_screen_vision", cbUseScreenVision.isChecked)
             .putBoolean("unstoppable_24h", cb24HourUnstoppable.isChecked)
+            .putString("flow_topic", etFlowTopic.text.toString().trim())
+            .putInt("daily_video_limit", dailyLimit)
+            .putBoolean("auto_flow_first", cbAutoGenerateFlowFirst.isChecked)
+            .putInt("schedule_hour", hour)
+            .putInt("schedule_minute", minute)
+            .putString("folder_path", etFolderPath.text.toString().trim())
             .apply()
-        VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString())
+
+        VideoQueueManager.setStoryMode(this, selectedStoryMode)
+        VideoQueueManager.setCharacterVisualLock(this, etStoryCharacterLock.text.toString().trim())
+        VideoQueueManager.setStoryCustomTwist(this, etStoryCustomTwist.text.toString().trim())
+        VideoQueueManager.setTargetVideoDurationSec(this, durSec)
+        VideoQueueManager.setNextEpisodeNumber(this, nextEp)
+        VideoQueueManager.setFirstRunLiveLearnEnabled(this, cbFirstRunLiveLearn.isChecked)
+        VideoQueueManager.setUploadNewestFirst(this, rbUploadNewestFirst.isChecked)
+        VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString().trim())
     }
 
-    private fun loadSavedSettings() {
-        val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
-        etApiKey.setText(prefs.getString("api_key", ""))
-        etModelName.setText(prefs.getString("model_name", "gemini-2.5-flash"))
-        etHighModelName.setText(prefs.getString("high_model_name", "gemini-2.5-pro"))
-        cbAutoHighModel.isChecked = prefs.getBoolean("auto_high_model", true)
-        cbGoogleSearchGrounding.isChecked = prefs.getBoolean("google_search_grounding", true)
-        cbRealWebTouch.isChecked = prefs.getBoolean("real_web_touch", true)
-        etFolderPath.setText(prefs.getString("folder_path", "/storage/emulated/0/Download/AutoVideos"))
-        etWebUrl.setText(VideoQueueManager.getPinnedFlowUrl(this))
-        etFlowTopic.setText(VideoQueueManager.getFlowTopic(this))
-        etDailyVideoLimit.setText(VideoQueueManager.getDailyVideoLimit(this).toString())
-        val newestFirst = VideoQueueManager.isUploadNewestFirst(this)
-        rbUploadNewestFirst.isChecked = newestFirst
-        rbUploadOldestFirst.isChecked = !newestFirst
-        cbAutoGenerateFlowFirst.isChecked = prefs.getBoolean("auto_flow_first", true)
-        etHour.setText(prefs.getInt("sched_hour", 19).toString())
-        etMinute.setText(String.format(Locale.US, "%02d", prefs.getInt("sched_min", 0)))
-        cbUseScreenVision.isChecked = prefs.getBoolean("use_screen_vision", true)
-        cb24HourUnstoppable.isChecked = prefs.getBoolean("unstoppable_24h", true)
-        etMemoryVault.setText(VideoQueueManager.getMemoryVault(this))
-        prefs.getString("live_logs", null)?.let { tvConsoleLog.text = it }
+    private fun refreshQueueCount() {
+        val folderPath = etFolderPath.text.toString().trim()
+        val preferNewest = VideoQueueManager.isUploadNewestFirst(this)
+        val allVideos = VideoQueueManager.getVideoFilesInFolder(folderPath, newestFirst = preferNewest)
+        val uploaded = VideoQueueManager.getUploadedSet(this)
+        val pendingList = allVideos.filter { it.absolutePath !in uploaded && it.name !in uploaded }
+        val nextFile = pendingList.firstOrNull()?.name ?: "None"
+        val orderLabel = if (preferNewest) "Newest First" else "Oldest First"
+
+        tvQueueStatus.text =
+            "Order: $orderLabel\nTotal: ${allVideos.size} • Pending: ${pendingList.size}\nNext: $nextFile"
+    }
+
+    private fun refreshServiceStatusBadge() {
+        val isRunning = AutoTouchService.instance != null
+        if (isRunning) {
+            tvServiceBadge.text = "TOUCH: ACTIVE"
+            tvServiceBadge.setTextColor(Color.parseColor("#10B981"))
+        } else {
+            tvServiceBadge.text = "TOUCH: OFF"
+            tvServiceBadge.setTextColor(Color.parseColor("#F87171"))
+        }
     }
 }
