@@ -147,6 +147,7 @@ class AutoTouchService : AccessibilityService() {
 
     fun stopCurrentJob() {
         isJobRunning = false
+        WebPipelineManager.stopCurrentJob()
         activeJob?.cancel()
         releaseWakeLock()
         overlayHud?.setCursorOverlayVisible(false)
@@ -228,9 +229,18 @@ class AutoTouchService : AccessibilityService() {
         activeJob = serviceScope.launch {
             acquireWakeLock()
             try {
-                WebPipelineManager.runGoogleFlowPipeline(
-                    this@AutoTouchService, apiKey, model, flowUrl, topicIdea, dailyVideoCount, folderPath
+                if (flowUrl.isNotBlank()) {
+                    VideoQueueManager.savePinnedFlowUrl(this@AutoTouchService, flowUrl)
+                }
+                WebPipelineManager.startFlowToYouTubePipeline(
+                    context = this@AutoTouchService,
+                    apiKey = apiKey,
+                    model = model,
+                    flowTopic = topicIdea,
+                    folderPath = folderPath,
+                    dailyVideoLimit = dailyVideoCount
                 )
+                while (WebPipelineManager.isWebTaskRunning) delay(500)
             } finally {
                 releaseWakeLock()
             }
@@ -250,10 +260,25 @@ class AutoTouchService : AccessibilityService() {
         activeJob = serviceScope.launch {
             acquireWakeLock()
             try {
-                WebPipelineManager.runBackgroundWebTask(
-                    this@AutoTouchService, apiKey, model, initialUrl, userGoal, folderPath,
-                    chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt
+                val effectiveGoal = buildString {
+                    append(userGoal)
+                    if (exactFlowPrompt.isNotBlank() && !userGoal.contains(exactFlowPrompt)) {
+                        append("\n\nUse this exact video prompt: ")
+                        append(exactFlowPrompt)
+                    }
+                    if (chainYouTubeAfterDownload || forceChainYouTube) {
+                        append("\n\nAfter the video is downloaded, continue to YouTube Shorts upload and verify the result.")
+                    }
+                }
+                WebPipelineManager.startAutonomousWebAgent(
+                    context = this@AutoTouchService,
+                    apiKey = apiKey,
+                    model = model,
+                    goal = effectiveGoal,
+                    startUrl = initialUrl,
+                    folderPath = folderPath
                 )
+                while (WebPipelineManager.isWebTaskRunning) delay(500)
             } finally {
                 releaseWakeLock()
             }
@@ -277,6 +302,22 @@ class AutoTouchService : AccessibilityService() {
                 releaseWakeLock()
             }
         }
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    fun startYouTubeUploadJob(
+        context: Context,
+        apiKey: String,
+        model: String,
+        folderPath: String,
+        topicInstruction: String
+    ) {
+        startYouTubeAutoUpload(
+            apiKey = apiKey,
+            model = model,
+            folderPath = folderPath,
+            userPrompt = topicInstruction
+        )
     }
 
     fun startUniversalAiTask(
