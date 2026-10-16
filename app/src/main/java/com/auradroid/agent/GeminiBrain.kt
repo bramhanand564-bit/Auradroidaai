@@ -652,7 +652,7 @@ object GeminiBrain {
         } catch (_: Exception) {
             val partTag = if (episodeNum > 0) "Part $episodeNum " else ""
             VideoMetadata(
-                title = "${episodeTitle.ifBlank { "Cybernetic Tech Story" }} \vert{} $partTag#shorts #viral".take(95),
+                title = "${episodeTitle.ifBlank { "Cybernetic Tech Story" }} | $partTag#shorts #viral".take(95),
                 description = "$storySummary\n\n#shorts #trending #viral"
             )
         }
@@ -864,6 +864,6 @@ object GeminiBrain {
     fun getAutoModelStatusReport(): String {
         val fast = activeFastModel ?: "Auto (3.8/3.7/3.1)"
         val high = activeHighModel ?: "Auto-Pro (3.8/3.1)"
-        return "Fast: $fast | High: $high \vert{} Live Pool:${discoveredLiveModels.size}"
+        return "Fast: $fast | High: $high | Live Pool:${discoveredLiveModels.size}"
     }
 }
