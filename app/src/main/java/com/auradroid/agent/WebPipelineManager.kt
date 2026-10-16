@@ -1,5 +1,13 @@
 package com.auradroid.agent
 
+import android.accessibilityservice.AccessibilityService
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.view.accessibility.AccessibilityWindowInfo
+import androidx.core.content.FileProvider
+import java.io.File
+
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -316,6 +324,201 @@ object WebPipelineManager {
             }
         }
     }
+
+    suspend fun runYouTubeAutoUpload(
+        service: AutoTouchService,
+        apiKey: String,
+        model: String,
+        folderPath: String,
+        userPrompt: String,
+        createAiVideoIfEmpty: Boolean = false
+    ) {
+        if (AutoTouchService.isJobRunning) {
+            VideoQueueManager.appendLog(service, "⚠️ A task is already running!")
+            return
+        }
+        AutoTouchService.isJobRunning = true
+
+        // CRITICAL FIX: Immediately collapse the Browser Mini Window back to the small bot icon so YouTube is 100% uncovered!
+        service.overlayHud?.collapseToCompactStage()
+        service.overlayHud?.show()
+        service.overlayHud?.setCursorOverlayVisible(true)
+
+        try {
+            service.overlayHud?.updateStatus("Step 1/5 • Folder", "Scanning folder for video...", "WORKING")
+            val nextVideo = VideoQueueManager.getNextPendingVideo(service, folderPath)
+            if (nextVideo == null) {
+                if (createAiVideoIfEmpty) {
+                    AutoTouchService.isJobRunning = false
+                    startFlowToYouTubePipeline(
+                        context = service,
+                        apiKey = apiKey,
+                        model = model,
+                        flowTopic = userPrompt,
+                        folderPath = folderPath,
+                        dailyVideoLimit = 1
+                    )
+                    return
+                }
+                AutoTouchService.isJobRunning = false
+                service.overlayHud?.setCursorOverlayVisible(false)
+                service.overlayHud?.updateStatus("Queue Empty", "Tap 'Reset History' or make video!", "ERROR")
+                VideoQueueManager.appendLog(service, "⚠️ No pending video in folder!")
+                return
+            }
+
+            VideoQueueManager.appendLog(service, "🎬 Uploading Video (${if (VideoQueueManager.isUploadNewestFirst(service)) "Newest First" else "Oldest First"}): ${nextVideo.name}")
+            service.overlayHud?.updateStatus("Step 2/5 • Gemini", "Generating viral Title...", "THINKING")
+            val metadata = GeminiBrain.generateYouTubeMetadata(apiKey, model, nextVideo.name, userPrompt)
+
+            copyToClipboard(service, metadata.title)
+            service.overlayHud?.updateStatus("Step 3/5 • YouTube", "Opening YouTube Upload...", "WORKING")
+            launchYouTubeWithVideo(service, nextVideo)
+            delay(5500)
+
+            var nextClickCount = 0
+            var titleFilled = false
+            var descFilled = false
+            val (realW, realH) = service.getRealScreenDimensions()
+
+            for (step in 1..25) {
+                val nodes = PhoneAgentManager.captureScreenNodes(service)
+                val appNodes = nodes.filter { it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+
+                if (appNodes.isEmpty() && nextClickCount < 2) {
+                    delay(2000)
+                    continue
+                }
+
+                val nextBtn = appNodes.firstOrNull {
+                    it.text.equals("Next", true) ||
+                    it.contentDesc.equals("Next", true) ||
+                    it.text.equals("Done", true) ||
+                    it.contentDesc.equals("Done", true)
+                }
+
+                val isOnAddDetailsScreen = isAddDetailsScreenVisible(appNodes) || (nextClickCount >= 2 && nextBtn == null)
+
+                // Step 3: Click 'Next' on Trimmer screen and 'Next' on Editor screen
+                if (!isOnAddDetailsScreen && !titleFilled && nextBtn != null) {
+                    nextClickCount++
+                    service.overlayHud?.updateStatus("Step 3/5 • Editor ($nextClickCount)", "Tapping 'Next'...", "WORKING")
+                    PhoneAgentManager.animateAndPhysicalTapNode(service, nextBtn, "Tap: Next")
+                    delay(4000)
+                    continue
+                }
+
+                // Step 4: Focus Caption Box & Paste AI Title
+                if (!titleFilled && (isOnAddDetailsScreen || nextClickCount >= 2)) {
+                    copyToClipboard(service, metadata.title)
+                    val captionNode = appNodes.firstOrNull {
+                        val combined = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
+                        combined.contains("Caption your Short", true) ||
+                        combined.contains("Create a title", true) ||
+                        combined.contains("caption", true)
+                    } ?: appNodes.firstOrNull { it.isEditable || it.supportsSetText }
+
+                    val capX = captionNode?.centerX ?: (realW * 0.52f)
+                    val capY = captionNode?.centerY ?: (realH * 0.138f)
+
+                    service.overlayHud?.updateStatus("Step 4/5 • Caption", "Focusing Caption Box...", "WORKING")
+                    PhoneAgentManager.animateAndTapXY(service, capX, capY, "Tap: Caption")
+                    delay(2200)
+
+                    service.overlayHud?.updateStatus("Step 4/5 • Typing", "Pasting AI Title...", "WORKING")
+                    service.insertCaptionSingleClean(metadata.title, capX, capY)
+
+                    titleFilled = true
+                    delay(1800)
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    delay(2800)
+                    continue
+                }
+
+                // Optional Description Fill
+                if (titleFilled && !descFilled) {
+                    val addDescNode = appNodes.firstOrNull {
+                        "${it.text} ${it.contentDesc} ${it.hintText}".contains("Add description", true)
+                    }
+                    if (addDescNode != null) {
+                        PhoneAgentManager.animateAndPhysicalTapNode(service, addDescNode, "Tap: Description")
+                        delay(2000)
+                        service.insertCaptionSingleClean(metadata.description, realW * 0.5f, realH * 0.25f)
+                        descFilled = true
+                        delay(1800)
+                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        delay(2200)
+                        continue
+                    } else {
+                        descFilled = true
+                    }
+                }
+
+                // Step 5: Tap bottom 'Upload Short' button
+                if (titleFilled) {
+                    if (service.isKeyboardOpen()) {
+                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        delay(2500)
+                    }
+
+                    val exactUploadX = realW * 0.50f
+                    val exactUploadYPoints = listOf(realH * 0.964f, realH * 0.958f, realH * 0.968f)
+
+                    for (attempt in 1..3) {
+                        val currentNodes = PhoneAgentManager.captureScreenNodes(service).filter {
+                            it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                        }
+                        val onMainYouTubeFeed = currentNodes.any {
+                            it.text.equals("Subscriptions", true) || it.text.equals("Home", true)
+                        } && !isAddDetailsScreenVisible(currentNodes)
+
+                        if (onMainYouTubeFeed && attempt > 1) break
+
+                        val uploadBtnNode = currentNodes.firstOrNull {
+                            val c = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
+                            it.centerY > realH * 0.88f && (
+                                c.contains("Upload Short", true) ||
+                                it.text.equals("Upload", true) ||
+                                c.contains("upload_bottom_button", true)
+                            )
+                        }
+
+                        val tapX = uploadBtnNode?.centerX ?: exactUploadX
+                        val tapY = if (uploadBtnNode != null && uploadBtnNode.centerY >= realH * 0.94f) {
+                            uploadBtnNode.centerY
+                        } else {
+                            exactUploadYPoints[(attempt - 1) % exactUploadYPoints.size]
+                        }
+
+                        service.overlayHud?.updateStatus("Step 5/5 • Upload", "Tapping 'Upload Short' (#$attempt)...", "WORKING")
+                        PhoneAgentManager.animateAndTapXY(service, tapX, tapY, "Tap: Upload Short")
+                        delay(600)
+                        if (uploadBtnNode != null) service.clickNodeAndParents(uploadBtnNode.node)
+                        delay(3500)
+                    }
+
+                    VideoQueueManager.markVideoUploaded(service, nextVideo)
+                    AutoTouchService.isJobRunning = false
+                    service.overlayHud?.setCursorOverlayVisible(false)
+                    service.overlayHud?.updateStatus("🎉 Upload Success!", "'${nextVideo.name.take(18)}' Published!", "DONE")
+                    VideoQueueManager.appendLog(service, "✅ YouTube Upload Published: ${nextVideo.name}")
+                    break
+                }
+                delay(2000)
+            }
+        } catch (e: CancellationException) {
+            // Normal user stop
+        } catch (e: Exception) {
+            AutoTouchService.isJobRunning = false
+            service.overlayHud?.setCursorOverlayVisible(false)
+            service.overlayHud?.updateStatus("Upload Error", e.message ?: "Error", "ERROR")
+            VideoQueueManager.appendLog(service, "❌ Upload Error: ${e.message}")
+        } finally {
+            service.overlayHud?.setCursorOverlayVisible(false)
+            AutoTouchService.isJobRunning = false
+        }
+    }
+
 
     /**
      * Strict 1-Video Credit-Lock Execution for Google Flow:
@@ -666,4 +869,32 @@ object WebPipelineManager {
         """.trimIndent()
         mainHandler.post { webView.evaluateJavascript(js, null) }
     }
+
+    private fun isAddDetailsScreenVisible(appNodes: List<UiNodeSnapshot>): Boolean {
+        return appNodes.any {
+            val c = "${it.text} ${it.contentDesc} ${it.hintText}"
+            c.contains("Add details", true) ||
+            c.contains("Caption your Short", true) ||
+            c.contains("Upload Short", true) ||
+            c.contains("Select audience", true) ||
+            c.contains("Visibility", true)
+        }
+    }
+
+
+    private fun copyToClipboard(context: Context, text: String) {
+        (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ai_title", text))
+    }
+
+    private fun launchYouTubeWithVideo(context: Context, videoFile: File) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", videoFile)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "video/*"
+            setPackage("com.google.android.youtube")
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try { context.startActivity(intent) } catch (_: Exception) {}
+    }
+
 }
