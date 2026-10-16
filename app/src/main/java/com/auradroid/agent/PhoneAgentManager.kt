@@ -297,10 +297,19 @@ object PhoneAgentManager {
                 val nearestNode = nodes.filter {
                     it.centerY >= statusBarLimitY && (it.isClickable || it.text.isNotEmpty() || it.contentDesc.isNotEmpty())
                 }.minByOrNull {
-                    hypot(it.centerX - rawX, it.centerY - rawY)
+                    hypot(
+                        (it.centerX - rawX).toDouble(),
+                        (it.centerY - rawY).toDouble()
+                    )
                 }
 
-                if (nearestNode != null && hypot(nearestNode.centerX - rawX, nearestNode.centerY - rawY) <= 145f) {
+                if (
+                    nearestNode != null &&
+                    hypot(
+                        (nearestNode.centerX - rawX).toDouble(),
+                        (nearestNode.centerY - rawY).toDouble()
+                    ) <= 145.0
+                ) {
                     val label = nearestNode.text.ifEmpty { nearestNode.contentDesc }.take(14).ifEmpty { "Tap" }
                     onTapRecorded(nearestNode.centerX, nearestNode.centerY)
                     animateAndPhysicalTapNode(service, nearestNode, "Tap: $label")
