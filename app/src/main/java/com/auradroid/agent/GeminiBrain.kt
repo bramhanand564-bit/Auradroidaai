@@ -16,6 +16,15 @@ data class VideoMetadata(
     val description: String
 )
 
+data class StoryEpisodePlan(
+    val episodeNumber: Int,
+    val storyMode: String,
+    val episodeTitle: String,
+    val plotSummary: String,
+    val videoPrompt: String,
+    val durationSec: Int
+)
+
 data class ChatPlanResponse(
     val replyText: String,
     val planGoal: String,
@@ -52,25 +61,20 @@ data class WebAgentDecision(
 
 object GeminiBrain {
 
-    // Stores last known working Fast & High models so subsequent steps run with zero delay
     @Volatile
     private var activeFastModel: String? = null
 
     @Volatile
     private var activeHighModel: String? = null
 
-    // Live discovered models from Google API
     @Volatile
     private var discoveredLiveModels: List<String> = emptyList()
     private var lastDiscoveryTimeMs: Long = 0L
 
-    // Permanently dead/expired models (404 / 400) -> Never retry in this session
     private val permanentlyDeadModels = ConcurrentHashMap.newKeySet<String>()
-
-    // Quota-exhausted / busy models (429 / 503) -> Cooldown timestamp until which we skip them
     private val cooldownModelsUntilMs = ConcurrentHashMap<String, Long>()
 
-    // Built-in fallback list covering 2.0 -> 2.5 -> 3.x -> 4.x generations
+    // Prioritizes 4.x / 3.8 / 3.7 / 3.5 / 3.1 Free-Tier models first, then falls back if needed
     private val fallbackSeedModels = listOf(
         "gemini-3.8-flash",
         "gemini-3.7-flash",
@@ -78,32 +82,23 @@ object GeminiBrain {
         "gemini-3.1-flash-lite-preview",
         "gemini-3.1-flash",
         "gemini-3.0-flash",
-        "gemini-2.5-flash",
-        "gemini-flash-latest",
-        "gemini-2.5-flash-lite",
         "gemini-3.8-pro",
         "gemini-3.7-pro",
         "gemini-3.5-pro",
         "gemini-3.1-pro",
-        "gemini-2.5-pro",
+        "gemini-flash-latest",
         "gemini-pro-latest",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite"
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash"
     )
 
-    /**
-     * Extracts numerical version (e.g. "gemini-3.8-flash" -> 3.8, "gemini-2.5-pro" -> 2.5)
-     * so newer generation models are automatically tested and prioritized!
-     */
     private fun extractVersionScore(modelName: String): Double {
         val m = Regex("gemini-(\\d+(?:\\.\\d+)?)").find(modelName.lowercase())
-        return m?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: 2.5
+        return m?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: 3.0
     }
 
-    /**
-     * Queries Google's live `/v1beta/models` endpoint to discover every active Gemini model
-     * available to the user's API key right now.
-     */
     private fun refreshLiveModelsIfNeeded(apiKey: String, forceRefresh: Boolean = false): List<String> {
         val now = System.currentTimeMillis()
         if (!forceRefresh && discoveredLiveModels.isNotEmpty() && (now - lastDiscoveryTimeMs) < 15 * 60 * 1000L) {
@@ -127,7 +122,6 @@ object GeminiBrain {
                 val methods = item.optJSONArray("supportedGenerationMethods")?.toString() ?: ""
                 val lower = rawName.lowercase()
 
-                // Keep only text/multimodal generation Gemini models; skip TTS, embedding, imagen, veo, audio-only
                 val isSupported = methods.contains("generateContent") &&
                         lower.startsWith("gemini") &&
                         !lower.contains("embedding") &&
@@ -148,68 +142,65 @@ object GeminiBrain {
                 lastDiscoveryTimeMs = now
             }
             discoveredLiveModels
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             discoveredLiveModels
         }
     }
 
-    /**
-     * Builds an ordered, self-healing queue of models to try right now:
-     * - Skips any 404/expired models (`permanentlyDeadModels`)
-     * - Skips any 429 quota-exhausted models currently on cooldown (`cooldownModelsUntilMs`)
-     * - Automatically orders by Fast Free-Tier vs High-Reasoning Escalation mode
-     */
     private fun buildSmartCandidateQueue(
         apiKey: String,
-        escalateToHighModel: Boolean
+        userPreferredModel: String,
+        escalateToHighModel: Boolean,
+        highModelName: String
     ): List<String> {
         val now = System.currentTimeMillis()
         val liveList = refreshLiveModelsIfNeeded(apiKey)
-        val combinedPool = (liveList + fallbackSeedModels).distinct()
+        val cleanUserFast = userPreferredModel.trim().removePrefix("models/")
+        val cleanUserHigh = highModelName.trim().removePrefix("models/")
 
-        // Filter out dead (404) models and currently rate-limited (429) models
+        val combinedPool = (listOf(cleanUserHigh, cleanUserFast) + liveList + fallbackSeedModels)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+
         val healthyPool = combinedPool.filter { model ->
             if (model in permanentlyDeadModels) return@filter false
             val cooldownUntil = cooldownModelsUntilMs[model] ?: 0L
             now >= cooldownUntil
         }.ifEmpty {
-            // If every single model was on cooldown, clear cooldowns and try fresh
             cooldownModelsUntilMs.clear()
             combinedPool.filter { it !in permanentlyDeadModels }
         }
 
         val sortedPool = if (escalateToHighModel) {
-            // HIGH-BRAIN MODE (Stuck / Verification Failed):
-            // Prioritize Pro, Thinking, and Highest-Version (4.x -> 3.8 -> 3.5 -> 2.5) Flash models
             healthyPool.sortedWith(
-                compareByDescending<String> { name ->
-                    val l = name.lowercase()
-                    when {
-                        l.contains("pro") && !l.contains("vision") -> 3
-                        l.contains("thinking") -> 3
-                        l.contains("flash") && !l.contains("lite") -> 2
-                        else -> 1
+                compareByDescending<String> { extractVersionScore(it) }
+                    .thenByDescending { name ->
+                        val l = name.lowercase()
+                        when {
+                            l.contains("pro") && !l.contains("vision") -> 4
+                            l.contains("thinking") -> 4
+                            l.contains("flash") && !l.contains("lite") -> 3
+                            else -> 1
+                        }
                     }
-                }.thenByDescending { extractVersionScore(it) }
             )
         } else {
-            // NORMAL FAST FREE-TIER MODE:
-            // Prioritize Flash & Flash-Lite models (Highest Free-Tier Quota + Fastest Speed), newest version first!
             healthyPool.sortedWith(
-                compareByDescending<String> { name ->
-                    val l = name.lowercase()
-                    when {
-                        l.contains("flash") && !l.contains("lite") && !l.contains("8b") -> 4
-                        l.contains("flash-lite") || l.contains("lite") -> 3
-                        l.contains("flash") -> 2
-                        else -> 1
+                compareByDescending<String> { extractVersionScore(it) }
+                    .thenByDescending { name ->
+                        val l = name.lowercase()
+                        when {
+                            l.contains("flash") && !l.contains("lite") && !l.contains("8b") -> 4
+                            l.contains("flash-lite") || l.contains("lite") -> 3
+                            l.contains("pro") -> 2
+                            else -> 1
+                        }
                     }
-                }.thenByDescending { extractVersionScore(it) }
             )
         }
 
         val finalQueue = linkedSetOf<String>()
-        // Put the currently proven working model at index 0 for instant response
         if (escalateToHighModel) {
             activeHighModel?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
             activeFastModel?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
@@ -220,24 +211,20 @@ object GeminiBrain {
         return finalQueue.toList()
     }
 
-    /**
-     * 100% Automatic Self-Healing Gemini API Caller:
-     * Automatically rotates through all discovered & seed models (2.5 -> 3.x -> 4.x),
-     * blacklists 404/expired models, cools down 429 quota models, and supports Multi-Frame Vision + Google Search!
-     */
     private suspend fun callGeminiApi(
         apiKey: String,
         userModel: String,
         prompt: String,
         currentImageJpeg: String? = null,
         previousImageJpeg: String? = null,
+        extraImagesBase64: List<String> = emptyList(),
         escalateToHighModel: Boolean = false,
-        highModelName: String = "AUTO",
+        highModelName: String = "gemini-3.8-pro",
         enableGoogleSearch: Boolean = false
     ): String = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) throw Exception("Gemini API Key missing! Settings tab mein jaakar API Key daalein.")
+        if (apiKey.isBlank()) throw Exception("Gemini API Key missing! Settings tab mein API Key daalein.")
 
-        var candidateQueue = buildSmartCandidateQueue(apiKey, escalateToHighModel)
+        var candidateQueue = buildSmartCandidateQueue(apiKey, userModel, escalateToHighModel, highModelName)
         if (candidateQueue.isEmpty()) {
             permanentlyDeadModels.clear()
             cooldownModelsUntilMs.clear()
@@ -252,8 +239,8 @@ object GeminiBrain {
                 val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     setRequestProperty("Content-Type", "application/json")
-                    connectTimeout = 25000
-                    readTimeout = 25000
+                    connectTimeout = 28000
+                    readTimeout = 28000
                     doOutput = true
                 }
 
@@ -273,6 +260,15 @@ object GeminiBrain {
                             put("data", currentImageJpeg)
                         }))
                     }
+                    extraImagesBase64.forEachIndexed { idx, b64 ->
+                        if (b64.isNotBlank()) {
+                            put(JSONObject().put("text", "TRAINING SCREENSHOT STEP #${idx + 1}:"))
+                            put(JSONObject().put("inline_data", JSONObject().apply {
+                                put("mime_type", "image/jpeg")
+                                put("data", b64)
+                            }))
+                        }
+                    }
                 }
 
                 val payload = JSONObject().apply {
@@ -280,11 +276,11 @@ object GeminiBrain {
                     if (withSearchTool) {
                         put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
                         put("generationConfig", JSONObject().apply {
-                            put("temperature", 0.2)
+                            put("temperature", 0.25)
                         })
                     } else {
                         put("generationConfig", JSONObject().apply {
-                            put("temperature", 0.2)
+                            put("temperature", 0.25)
                             put("responseMimeType", "application/json")
                         })
                     }
@@ -308,19 +304,13 @@ object GeminiBrain {
                     }
                     val finalOut = sb.toString().trim()
                     if (finalOut.isNotEmpty()) {
-                        // Lock in this working model so future calls are super fast!
-                        if (escalateToHighModel) {
-                            activeHighModel = modelName
-                        } else {
-                            activeFastModel = modelName
-                        }
+                        if (escalateToHighModel) activeHighModel = modelName else activeFastModel = modelName
                         return finalOut
                     }
                 } else {
                     lastError = "HTTP $code ($modelName)"
                     when (code) {
                         404, 400 -> {
-                            // Model expired, retired, or unsupported -> Blacklist permanently!
                             if (!withSearchTool) {
                                 permanentlyDeadModels.add(modelName)
                                 if (activeFastModel == modelName) activeFastModel = null
@@ -328,13 +318,11 @@ object GeminiBrain {
                             }
                         }
                         429, 403 -> {
-                            // Free-tier quota exhausted or model not on free tier -> Cooldown for 2 minutes!
                             cooldownModelsUntilMs[modelName] = System.currentTimeMillis() + 120_000L
                             if (activeFastModel == modelName) activeFastModel = null
                             if (activeHighModel == modelName) activeHighModel = null
                         }
                         500, 502, 503, 504 -> {
-                            // Server overloaded -> Short 25s cooldown and jump to next model immediately
                             cooldownModelsUntilMs[modelName] = System.currentTimeMillis() + 25_000L
                         }
                     }
@@ -347,22 +335,20 @@ object GeminiBrain {
             return null
         }
 
-        // Automatically test models one by one until a working Free-Tier model responds!
         for (modelName in candidateQueue) {
             if (enableGoogleSearch) {
                 trySingleModel(modelName, withSearchTool = true)?.let { return@withContext it }
             }
             trySingleModel(modelName, withSearchTool = false)?.let { return@withContext it }
-            delay(150) // Tiny pause before seamlessly switching to the next model
+            delay(140)
         }
 
-        // Final emergency refresh from Google Server if all cached models failed
         val freshLive = refreshLiveModelsIfNeeded(apiKey, forceRefresh = true)
         for (modelName in freshLive) {
             trySingleModel(modelName, withSearchTool = false)?.let { return@withContext it }
         }
 
-        throw Exception("All Free-Tier Gemini models are currently busy ($lastError). Retrying shortly...")
+        throw Exception("All Free-Tier Gemini models busy ($lastError). Retrying...")
     }
 
     private fun extractCleanJsonObject(raw: String): JSONObject {
@@ -376,57 +362,195 @@ object GeminiBrain {
     }
 
     /**
-     * Generates a 100% Policy-Safe 8-second cinematic video prompt for Google Flow.
-     * Automatically includes Hindi Voice & Dialogue when requested!
+     * Customizable Episodic Story Engine (Part 1 -> Part 2 -> Part 3 + Side Stories + 8s/10s/12s/15s Duration!)
+     */
+    suspend fun generateEpisodicStoryPrompt(
+        apiKey: String,
+        model: String,
+        seriesTheme: String,
+        characterLock: String,
+        storyMode: String,
+        episodeNumber: Int,
+        previousEpisodesContext: String,
+        customUserTwist: String,
+        targetDurationSec: Int
+    ): StoryEpisodePlan {
+        val wantsHindiVoice = seriesTheme.contains("hindi", true) ||
+                seriesTheme.contains("voice", true) ||
+                seriesTheme.contains("dialog", true) ||
+                seriesTheme.contains("bol", true)
+
+        val hindiVoiceRule = if (wantsHindiVoice) {
+            """
+            6. HINDI VOICE & DIALOGUE TIMING ($targetDurationSec SECONDS):
+               Include a natural spoken Hindi dialogue in quotes paced for a $targetDurationSec-second scene so Google Flow (Veo) generates clear Hindi audio & lip-sync!
+               Every episode MUST have a completely NEW Hindi dialogue matching this episode's plot!
+            """.trimIndent()
+        } else ""
+
+        val modeInstruction = when (storyMode.uppercase()) {
+            "SERIAL" -> """
+                STORY CONTINUITY MODE: SERIAL EPISODE (PART $episodeNumber)
+                - Read PREVIOUS EPISODES HISTORY carefully.
+                - Advance the technical story forward to Part $episodeNumber! NEVER repeat a previous scene or dialogue.
+                - If Part 1 introduced the problem/discovery, Part 2 must show the next invention/challenge, Part 3 escalates the mission, etc.
+            """.trimIndent()
+            "SIDE_STORY" -> """
+                STORY MODE: SIDE-STORY / SPIN-OFF REEL IN THE SAME UNIVERSE
+                - Create a fun, engaging technical side-story set in the same world and featuring the same tech aesthetic, but showing a unique side gadget, AI drone, or mini-incident!
+            """.trimIndent()
+            else -> """
+                STORY MODE: FRESH STANDALONE REEL
+                - Create a completely fresh, standalone viral technical story scene based on the theme.
+            """.trimIndent()
+        }
+
+        val twistInstruction = if (customUserTwist.isNotBlank()) {
+            "USER'S CUSTOM IDEA / TWIST FOR THIS EPISODE (MUST INCLUDE!): \"$customUserTwist\""
+        } else {
+            "No custom twist specified—use your creative genius to make Part $episodeNumber exciting!"
+        }
+
+        val prompt = """
+            You are an elite AI Showrunner & Video Prompt Director for Google Flow ($targetDurationSec-second cinematic video generator).
+            
+            CORE SERIES THEME: "$seriesTheme"
+            MAIN CHARACTER VISUAL LOCK (Keep consistent across episodes): "$characterLock"
+            TARGET VIDEO DURATION: $targetDurationSec seconds$modeInstruction
+            
+            PREVIOUS EPISODES HISTORY (NEVER REPEAT THESE!):
+            $previousEpisodesContext$twistInstruction
+            
+            STRICT GOOGLE FLOW POLICY SAFETY RULES:
+            1. Google Flow blocks any prompt containing words related to minors or children!
+            2. NEVER use words like: "boy", "girl", "child", "kid", "young", "teen", "minor", "baby", "skin", "blood", "weapon", or "violence".
+            3. Always describe the protagonist using safe adult/sci-fi terms like "adult futuristic cybernetic tech explorer" or "adult holographic engineer".
+            4. Design the scene and camera movement specifically for a $targetDurationSec-second continuous cinematic shot.$hindiVoiceRule
+            
+            Respond strictly in valid JSON:
+            {
+              "episodeTitle": "Short catchy title for Part $episodeNumber (e.g. The Quantum Core Awakening)",
+              "plotSummary": "1-2 sentence summary of what happens in Part $episodeNumber so future episodes remember it",
+              "videoPrompt": "Full 100% policy-safe $targetDurationSec-second cinematic video prompt including character look, camera motion, and Hindi dialogue..."
+            }
+        """.trimIndent()
+
+        return try {
+            val raw = callGeminiApi(apiKey, model, prompt)
+            val obj = extractCleanJsonObject(raw)
+            val epTitle = obj.optString("episodeTitle", "Part $episodeNumber: Cybernetic Evolution")
+            val summary = obj.optString("plotSummary", "Part $episodeNumber advances the technical journey.")
+            val rawVideoPrompt = obj.optString("videoPrompt", seriesTheme).ifBlank { seriesTheme }
+
+            val safeVideoPrompt = rawVideoPrompt
+                .replace(Regex("\\b(young\\s+boy|little\\s+boy|boy|child|kid|minor|teenager|teen|girl)\\b", RegexOption.IGNORE_CASE), "adult futuristic cybernetic tech explorer")
+                .replace(Regex("\\b(skin|bare)\\b", RegexOption.IGNORE_CASE), "metallic suit")
+
+            StoryEpisodePlan(
+                episodeNumber = episodeNumber,
+                storyMode = storyMode.uppercase(),
+                episodeTitle = epTitle,
+                plotSummary = summary,
+                videoPrompt = safeVideoPrompt,
+                durationSec = targetDurationSec
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            val safeFallback = seriesTheme
+                .replace(Regex("\\b(boy|girl|child|kid|young|teen)\\b", RegexOption.IGNORE_CASE), "adult cybernetic tech explorer")
+            StoryEpisodePlan(
+                episodeNumber = episodeNumber,
+                storyMode = storyMode.uppercase(),
+                episodeTitle = "Part $episodeNumber",
+                plotSummary = "Episode $episodeNumber generated.",
+                videoPrompt = safeFallback,
+                durationSec = targetDurationSec
+            )
+        }
+    }
+
+    /**
+     * Backwards-compatible wrapper for quick prompt generation
      */
     suspend fun generateDailyFlowPrompt(
         apiKey: String,
         model: String,
         userTopic: String
     ): String {
-        val wantsHindiVoice = userTopic.contains("hindi", true) ||
-                userTopic.contains("voice", true) ||
-                userTopic.contains("dialog", true) ||
-                userTopic.contains("bol", true)
+        val plan = generateEpisodicStoryPrompt(
+            apiKey = apiKey,
+            model = model,
+            seriesTheme = userTopic,
+            characterLock = "Adult futuristic cybernetic tech explorer",
+            storyMode = "SERIAL",
+            episodeNumber = 1,
+            previousEpisodesContext = "Part 1",
+            customUserTwist = "",
+            targetDurationSec = 10
+        )
+        return plan.videoPrompt
+    }
 
-        val hindiVoiceRule = if (wantsHindiVoice) {
-            """
-            5. HINDI VOICE & DIALOGUE REQUIREMENT:
-               The user explicitly requested Hindi voice and dialogue!
-               You MUST include a clear spoken Hindi line in quotes inside the prompt so Google Flow (Veo) generates audio and lip-sync, for example:
-               `...The character looks at the camera and speaks clearly in Hindi with lip-sync: "भविष्य की इस दुनिया में आपका स्वागत है, अब समय बदल चुका है!" with cinematic ambient sound effects.`
-            """.trimIndent()
-        } else ""
-
+    /**
+     * WM3-Style AI Skill Trainer:
+     * Analyzes a sequence of step-by-step screenshots (from start to finish of any task)
+     * and builds a permanent, self-healing JSON Skill Blueprint!
+     */
+    suspend fun trainSkillFromScreenshots(
+        apiKey: String,
+        model: String,
+        skillName: String,
+        userInstruction: String,
+        screenshotsBase64: List<String>
+    ): String {
         val prompt = """
-            You are an expert AI Video Prompt Director for Google Flow (Veo 8-second video generator with audio).
-            User's core topic/theme: "$userTopic"
+            You are the AuraDroid OS 'Train Model' Visual Skill Architect (powered by Gemini 3.8/3.1).
+            The user has provided ${screenshotsBase64.size} sequential screenshots demonstrating a complete task from start to finish.
             
-            STRICT GOOGLE FLOW SAFETY RULES (CRITICAL):
-            1. Google Flow strictly blocks any prompt containing words related to minors or children!
-            2. NEVER use words like: "boy", "girl", "child", "kid", "young", "teen", "minor", "baby", "skin", "flesh", "blood", "weapon", "fight", or "violence".
-            3. If the user's topic mentions "boy" or "girl", automatically replace it with safe sci-fi/cinematic terms like "futuristic cybernetic android explorer", "robotic sci-fi traveler in a glowing neon suit", or "adult futuristic astronaut".
-            4. Create ONE fresh, vivid, 100% family-safe cinematic 8-second video prompt (35 to 60 words) with smooth camera movement and glowing lighting.
-            $hindiVoiceRule
+            SKILL NAME: "$skillName"
+            USER NOTES: "$userInstruction"
+            
+            Analyze each screenshot in order (Step 1, Step 2, Step 3...) and create a complete, self-healing JSON Execution Blueprint that our autonomous agent can follow every time without getting stuck!
+            For each step, specify:
+            - "step": step number
+            - "screen_identify": how to recognize this screen visually or via DOM text
+            - "action": one of ["CLICK_EL", "CLICK_XY", "TYPE_AND_SUBMIT", "WAIT_FOR_100_PERCENT", "EXTRACT_OR_TAP_CARD", "CLICK_NODE", "TYPE"]
+            - "target": exact button text, placeholder, or visual position (e.g. "+ New project", "What do you want to create?", "Completed video card")
+            - "verify_next": what must change or appear on the next screen to confirm the tap worked
+            - "recovery_hint": what the AI should do if the click doesn't open the next page (e.g. "Use 3x scaled real finger tap or scroll down")
             
             Respond strictly in valid JSON:
             {
-              "videoPrompt": "Detailed 100% policy-safe 8-second cinematic prompt..."
+              "skill": "$skillName",
+              "description": "Trained visual workflow for $skillName",
+              "steps": [
+                {
+                  "step": 1,
+                  "screen_identify": "...",
+                  "action": "...",
+                  "target": "...",
+                  "verify_next": "...",
+                  "recovery_hint": "..."
+                }
+              ]
             }
         """.trimIndent()
 
-        val rawPrompt = try {
-            val raw = callGeminiApi(apiKey, model, prompt)
-            extractCleanJsonObject(raw).optString("videoPrompt", userTopic).ifBlank { userTopic }
+        return try {
+            val raw = callGeminiApi(
+                apiKey = apiKey,
+                userModel = model,
+                prompt = prompt,
+                extraImagesBase64 = screenshotsBase64.take(8),
+                escalateToHighModel = true
+            )
+            extractCleanJsonObject(raw).toString(2)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            userTopic
+            throw Exception("Skill Training Error: ${e.message}")
         }
-
-        return rawPrompt
-            .replace(Regex("\\b(young\\s+boy|little\\s+boy|boy|child|kid|minor|teenager|teen|girl)\\b", RegexOption.IGNORE_CASE), "futuristic android explorer")
-            .replace(Regex("\\b(skin|bare)\\b", RegexOption.IGNORE_CASE), "armor")
     }
 
     suspend fun chatAndBuildPlan(
@@ -437,7 +561,7 @@ object GeminiBrain {
         memoryVault: String
     ): ChatPlanResponse {
         val prompt = """
-            You are Aura Companion, a friendly, smart Hindi/Hinglish speaking Universal Autonomous AI Assistant.
+            You are Nax Bot, a friendly, smart Hindi/Hinglish speaking Universal Autonomous AI Assistant inside AuraDroid OS.
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
@@ -449,20 +573,20 @@ object GeminiBrain {
             "$userMessage"
             
             Your job:
-            1. Talk naturally to the user in clear Hindi/Hinglish.
+            1. Talk naturally to the user in clear Hindi/Hinglish as Nax Bot.
             2. Create a numbered Step-by-Step Execution Plan.
             3. Choose suggestedMode:
-               - "WEB": If the task involves Google Flow, websites, filling web forms, checking daily free video credit limits, generating/downloading AI videos, or GitHub web tasks.
-               - "PHONE": If the task involves controlling native Android apps (like WhatsApp live chat monitoring, Gallery, Settings, Instagram, YouTube App).
-            4. If a website is mentioned (like Google Flow), provide its URL in targetUrl (e.g. "https://labs.google/fx/tools/flow").
+               - "WEB": If the task involves Google Flow, websites, episodic story video creation, or browser tasks.
+               - "PHONE": If the task involves controlling native Android apps (WhatsApp, YouTube App, Settings, Instagram).
+            4. If a website is mentioned, provide its URL in targetUrl (e.g. "https://labs.google/fx/tools/flow").
             
             Respond strictly in valid JSON:
             {
-              "replyText": "Friendly Hindi/Hinglish reply explaining how you understood the task",
-              "planGoal": "Complete concise instruction of the overall goal for the execution engine",
-              "planSteps": "1. Step one...\n2. Step two...\n3. Step three...",
-              "suggestedMode": "PHONE",
-              "targetUrl": ""
+              "replyText": "Friendly Hindi/Hinglish reply from Nax Bot",
+              "planGoal": "Complete concise instruction of the overall goal",
+              "planSteps": "1. Step one...\n2. Step two...",
+              "suggestedMode": "WEB",
+              "targetUrl": "https://labs.google/fx/tools/flow"
             }
         """.trimIndent()
 
@@ -470,17 +594,17 @@ object GeminiBrain {
             val rawJson = callGeminiApi(apiKey, model, prompt)
             val obj = extractCleanJsonObject(rawJson)
             ChatPlanResponse(
-                replyText = obj.optString("replyText", "Maine aapka kaam samajh liya hai aur plan taiyar kar diya hai."),
+                replyText = obj.optString("replyText", "Nax Bot ne aapka plan taiyar kar liya hai!"),
                 planGoal = obj.optString("planGoal", userMessage),
                 planSteps = obj.optString("planSteps", "1. Task analyze karein\n2. Action execute karein"),
-                suggestedMode = obj.optString("suggestedMode", "PHONE").uppercase(),
+                suggestedMode = obj.optString("suggestedMode", "WEB").uppercase(),
                 targetUrl = obj.optString("targetUrl", "")
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             ChatPlanResponse(
-                replyText = "⚠️ AI Plan banane mein dikkat aayi: ${e.message}",
+                replyText = "⚠️ Plan banane mein dikkat aayi: ${e.message}",
                 planGoal = userMessage,
                 planSteps = "1. Execute: $userMessage",
                 suggestedMode = "PHONE",
@@ -493,18 +617,26 @@ object GeminiBrain {
         apiKey: String,
         model: String,
         fileName: String,
-        userInstruction: String
+        userInstruction: String,
+        episodeNum: Int = 0,
+        episodeTitle: String = "",
+        storySummary: String = ""
     ): VideoMetadata {
+        val episodeContext = if (episodeNum > 0) {
+            "IMPORTANT: This video is 'Part $episodeNum' of an ongoing story series! Episode Title: '$episodeTitle'. Story Summary: '$storySummary'. You MUST include 'Part $episodeNum' in the YouTube Short title!"
+        } else ""
+
         val prompt = """
-            You are an expert Social Media & YouTube Shorts SEO Manager.
+            You are an expert YouTube Shorts Viral SEO Manager.
             Video file name: "$fileName"
             Topic / Instruction: "$userInstruction"
+            $episodeContext
             
-            Generate a catchy viral Title/Caption (max 85 chars, include 2 hashtags like #shorts #viral) and a full SEO Description with hashtags.
+            Generate a catchy viral Title/Caption (max 85 chars, include Part number if applicable and #shorts #viral) and a full SEO Description with hashtags.
             Respond strictly in valid JSON:
             {
-              "title": "Viral Title #shorts #viral",
-              "description": "Full SEO description with #hashtags"
+              "title": "Viral Title | Part $episodeNum #shorts #viral",
+              "description": "Full story description with #hashtags"
             }
         """.trimIndent()
 
@@ -512,16 +644,16 @@ object GeminiBrain {
             val rawJson = callGeminiApi(apiKey, model, prompt)
             val obj = extractCleanJsonObject(rawJson)
             VideoMetadata(
-                title = obj.optString("title", fileName.substringBeforeLast(".")).take(95),
-                description = obj.optString("description", "#shorts #viral #trending")
+                title = obj.optString("title", "Tech Story Part ${episodeNum.coerceAtLeast(1)} #shorts #viral").take(95),
+                description = obj.optString("description", "$storySummary\n\n#shorts #viral #trending")
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            val baseName = fileName.substringBeforeLast(".").replace("_", " ").replace("-", " ")
+        } catch (_: Exception) {
+            val partTag = if (episodeNum > 0) "Part $episodeNum " else ""
             VideoMetadata(
-                title = "$baseName #shorts #viral",
-                description = "$baseName\n\n#shorts #trending #viral"
+                title = "${episodeTitle.ifBlank { "Cybernetic Tech Story" }} \vert{} $partTag#shorts #viral".take(95),
+                description = "$storySummary\n\n#shorts #trending #viral"
             )
         }
     }
@@ -535,26 +667,30 @@ object GeminiBrain {
         history: List<String>,
         memoryVault: String,
         learnedLessons: String = "",
+        trainedBlueprint: String = "",
         screenChangedStatus: String = "",
         screenshotBase64: String? = null,
         previousScreenshotBase64: String? = null,
         useHighModel: Boolean = false,
-        highModelName: String = "AUTO",
+        highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): WebAgentDecision {
         val escalationBanner = if (useHighModel) {
             """
             🚨 HIGH-REASONING ESCALATION MODE ACTIVE:
             The previous action FAILED verification (the expected next page/player did NOT open)!
-            Carefully inspect FRAME 2 (Current Screenshot with 540x960 resolution).
-            If standard `CLICK_EL` on a badge number did not work, you can either pick the exact badge number OR return `action="CLICK_XY"` with `tapX` (0..540) and `tapY` (0..960) to physically tap the element on the WebView!
+            Inspect FRAME 2 (Current Screenshot, 540x960 coordinate space) and TRAINED SKILL BLUEPRINT carefully.
+            If `CLICK_EL` on a badge number did not work, pick the exact inner button badge OR return `action="CLICK_XY"` with `tapX` (0..540) and `tapY` (0..960) to physically touch the element!
             """.trimIndent()
         } else ""
 
         val prompt = """
-            You are a Self-Correcting, Vision-Powered Autonomous Web Browser Agent with Step Verification & Chain-of-Thought Reasoning.
+            You are Nax Bot's Self-Healing Vision Web Agent with Trained Blueprint Memory & Step Verification.
             OVERALL GOAL: $goal
             CURRENT URL: $pageUrl$escalationBanner
+            
+            TRAINED SKILL JSON BLUEPRINT (FOLLOW THIS STEP-BY-STEP MAP):
+            ${trainedBlueprint.ifBlank { "Standard web navigation" }}
             
             LONG-TERM SQLITE BRAIN LESSONS (NEVER REPEAT PAST MISTAKES!):
             $learnedLessons
@@ -568,38 +704,30 @@ object GeminiBrain {
             RECENT ACTIONS TAKEN:
             ${history.takeLast(10).joinToString("\n")}
             
-            CURRENT WEBPAGE INTERACTIVE ELEMENTS (WITH YELLOW/RED BADGES `[0]`, `[1]`, `[2]`):
+            CURRENT WEBPAGE INTERACTIVE ELEMENTS (WITH BADGES `[0]`, `[1]`, `[2]`):
             $pageTextAndElements
             
-            THINK-BEFORE-YOU-ACT, VERIFICATION & CREDIT-SAVING RULES:
-            1. First check `STEP VERIFICATION STATUS` and compare FRAME 1 and FRAME 2 in `last_action_observation`. Did the previous click open the next page?
-            2. NEVER generate more than 1 video! If RECENT ACTIONS TAKEN shows you already typed the prompt or clicked `arrow_forward`, DO NOT type or click `arrow_forward` again!
-            3. If you are on the Google Flow landing page and see "+ New project", click its badge number using "CLICK_EL".
-            4. Check the mode pill at the bottom: if it says "Nano Banana", "Image", "x2", or "x4", click it first to switch to "Video • 720p • 8s • x1".
-            5. If the "What do you want to create?" box is empty and no video is rendering, use "TYPE_EL" ONCE on its badge number.
-            6. If you see a percentage like "1%", "18%", "65%" on screen, the video is actively rendering! Return action="WAIT".
-            7. As soon as rendering finishes and a completed video thumbnail card / player appears on screen, return action="DOWNLOAD_VIDEO".
-            8. Always specify `expected_outcome` (what should visibly change on screen after this action, so the verifier can check it on the next step!).
-            
-            Available actions:
-            - "CLICK_EL": Click element by badge index (`elementIndex`).
-            - "CLICK_XY": Physically tap exact WebView coordinates (`tapX` in 0..540, `tapY` in 0..960) when JS click fails.
-            - "TYPE_EL": Type prompt into input box (`elementIndex`, `textToType`).
-            - "SCROLL", "LOAD_URL", "DOWNLOAD_VIDEO", "WAIT", "CHAIN_YOUTUBE", "DONE".
+            CRITICAL RULES:
+            1. Check `STEP VERIFICATION STATUS` and compare FRAME 1 and FRAME 2.
+            2. NEVER generate more than 1 video per run! Once prompt is typed and `arrow_forward` is clicked, NEVER type again!
+            3. On Google Flow landing page, click "+ New project" badge using "CLICK_EL".
+            4. Ensure mode pill is set to Video mode (8s/10s • x1), NOT Nano Banana Image mode.
+            5. While rendering percentage ("1%", "25%", "80%") is visible, return action="WAIT".
+            6. As soon as rendering reaches 100% and the completed video card / Play icon appears, return action="DOWNLOAD_VIDEO".
             
             Respond strictly in valid JSON:
             {
-              "last_action_observation": "Did the previous action succeed and open the expected page?",
-              "thought_process": "Step-by-step reasoning for what to do right now",
-              "expected_outcome": "What should open or change on screen after this action",
+              "last_action_observation": "Did the previous action open the expected screen?",
+              "thought_process": "Step-by-step reasoning",
+              "expected_outcome": "What should visibly change after this action",
               "learned_rule": "",
-              "action": "TYPE_EL",
+              "action": "CLICK_EL",
               "elementIndex": 4,
               "tapX": 270,
               "tapY": 480,
-              "textToType": "Your prompt text here",
+              "textToType": "",
               "url": "",
-              "reason": "Short clear status message for the user"
+              "reason": "Short status message for Nax Bot notch"
             }
         """.trimIndent()
 
@@ -623,14 +751,14 @@ object GeminiBrain {
                 tapY = obj.optDouble("tapY", -1.0).toFloat(),
                 textToType = obj.optString("textToType", ""),
                 url = obj.optString("url", ""),
-                reason = obj.optString("reason", thought.take(60).ifBlank { "Analyzing webpage..." }),
+                reason = obj.optString("reason", thought.take(50).ifBlank { "Analyzing..." }),
                 expectedOutcome = obj.optString("expected_outcome", "Page should update"),
                 thoughtProcess = thought,
                 learnedRule = obj.optString("learned_rule", "")
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             WebAgentDecision(action = "WAIT", reason = "Waiting for webpage...")
         }
     }
@@ -643,6 +771,7 @@ object GeminiBrain {
         history: List<String>,
         memoryVault: String = "",
         learnedLessons: String = "",
+        trainedBlueprint: String = "",
         screenChangedStatus: String = "",
         screenshotBase64: String? = null,
         previousScreenshotBase64: String? = null,
@@ -650,35 +779,26 @@ object GeminiBrain {
         screenHeight: Int = 2408,
         isContinuousMonitorMode: Boolean = false,
         useHighModel: Boolean = false,
-        highModelName: String = "AUTO",
+        highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): AgentDecision {
         val monitorRules = if (isContinuousMonitorMode) {
             """
             CONTINUOUS CHAT MONITORING MODE IS ACTIVE:
-            - NEVER return "DONE"! Keep monitoring the chat continuously until the user stops you.
-            - CRITICAL CHECK: Look at the bottom message input box (`edit=true`).
-              * If there is already typed reply text sitting inside the bottom input box AND the green 'Send' button (`desc='Send'`) is visible on screen, you MUST immediately return action="CLICK_NODE" on the 'Send' button's nodeIndex!
-            - Look at the chat bubbles above the input bar:
-              * Bubbles on the RIGHT side (`centerX > ${screenWidth / 2}`) are messages already sent by YOU.
-              * Bubbles on the LEFT side (`centerX < ${screenWidth / 2}`) are INCOMING messages from the other person.
-            - If the lowest chat bubble is on the LEFT side (incoming message), use action="TYPE" to type a friendly reply in the language they requested!
-            - Only return action="WAIT" when the input box is empty (`text='Message'`) AND the lowest chat bubble is on the RIGHT side (your sent message).
+            - NEVER return "DONE"! Keep monitoring the chat continuously.
+            - If reply text is already typed inside the bottom input box AND the Send button (`desc='Send'`) is visible, immediately return action="CLICK_NODE" on Send!
             """.trimIndent()
         } else ""
 
-        val escalationNote = if (useHighModel) {
-            "🚨 HIGH-REASONING ESCALATION ACTIVE: The previous tap did NOT open the expected screen! Analyze the screenshot carefully and pick the exact nodeIndex or coordinates."
-        } else ""
-
         val prompt = """
-            You are a Self-Correcting, Vision-First Universal Autonomous Android UI Agent with Step Verification & Chain-of-Thought Reasoning.
+            You are Nax Bot's Self-Correcting Android Phone UI Agent.
             Phone screen resolution: EXACTLY ${screenWidth}x${screenHeight} pixels.
-            OVERALL GOAL: $goal
+            OVERALL GOAL: $goal$monitorRules
             
-            $escalationNote$monitorRules
+            TRAINED SKILL BLUEPRINT:
+            ${trainedBlueprint.ifBlank { "Standard phone navigation" }}
             
-            LONG-TERM SQLITE BRAIN LESSONS (NEVER REPEAT PAST MISTAKES!):
+            LONG-TERM SQLITE BRAIN LESSONS:
             $learnedLessons
             
             USER'S SAVED MEMORY VAULT:
@@ -690,23 +810,14 @@ object GeminiBrain {
             RECENT ACTIONS HISTORY:
             ${history.takeLast(10).joinToString("\n")}
             
-            CURRENT SCREEN UI ELEMENTS (Index | Text | ContentDesc | ViewId | Editable | Clickable | ExactPixelCenterXY):
+            CURRENT SCREEN UI ELEMENTS:
             $screenSummary
-            
-            CRITICAL RULES FOR ACCURATE TAPPING:
-            1. First compare FRAME 1 (Previous) and FRAME 2 (Current) in `last_action_observation`, and reason carefully in `thought_process`.
-            2. ALWAYS PREFER "CLICK_NODE" over "CLICK_XY" whenever the target button/icon exists in CURRENT SCREEN UI ELEMENTS!
-            3. NEVER tap inside the top Android Status Bar (`y < 120` pixels).
-            4. Always write what screen/change you expect next in `expected_outcome`.
-            
-            Available actions:
-            - "CLICK_NODE", "CLICK_XY", "TYPE", "SCROLL", "BACK", "OPEN_APP", "WAIT", "DONE".
             
             Return strictly valid JSON:
             {
-              "last_action_observation": "Did the previous action work or did the screen stay the same?",
-              "thought_process": "Step-by-step reasoning for the best next action",
-              "expected_outcome": "What should happen on screen after this action",
+              "last_action_observation": "Did the previous action work?",
+              "thought_process": "Step-by-step reasoning",
+              "expected_outcome": "What should happen next",
               "learned_rule": "",
               "action": "CLICK_NODE",
               "nodeIndex": 3,
@@ -714,7 +825,7 @@ object GeminiBrain {
               "y": 1200,
               "textToType": "",
               "appPackageOrSetting": "",
-              "reason": "Brief explanation of this step"
+              "reason": "Short status for Nax Bot"
             }
         """.trimIndent()
 
@@ -738,26 +849,21 @@ object GeminiBrain {
                 y = obj.optDouble("y", 1000.0).toFloat(),
                 textToType = obj.optString("textToType", ""),
                 appPackageOrSetting = obj.optString("appPackageOrSetting", ""),
-                reason = obj.optString("reason", thought.take(60).ifBlank { "Proceeding" }),
+                reason = obj.optString("reason", thought.take(50).ifBlank { "Proceeding" }),
                 expectedOutcome = obj.optString("expected_outcome", "Screen should update"),
                 thoughtProcess = thought,
                 learnedRule = obj.optString("learned_rule", "")
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            AgentDecision(action = "WAIT", reason = "Waiting for response...")
+        } catch (_: Exception) {
+            AgentDecision(action = "WAIT", reason = "Waiting...")
         }
     }
 
-    /**
-     * Returns a short status of which Free-Tier models were auto-discovered & active
-     */
     fun getAutoModelStatusReport(): String {
-        val fast = activeFastModel ?: "Auto-Detecting..."
-        val high = activeHighModel ?: "Auto-Detecting..."
-        val deadCount = permanentlyDeadModels.size
-        val liveCount = discoveredLiveModels.size
-        return "Active Fast: $fast | High:$high | Live Pool: $liveCount | Skipped(404):$deadCount"
+        val fast = activeFastModel ?: "Auto (3.8/3.7/3.1)"
+        val high = activeHighModel ?: "Auto-Pro (3.8/3.1)"
+        return "Fast: $fast | High: $high \vert{} Live Pool:${discoveredLiveModels.size}"
     }
 }
