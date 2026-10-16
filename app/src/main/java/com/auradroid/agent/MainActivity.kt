@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.util.Base64
@@ -66,12 +67,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navTabDoctor: Button
     private lateinit var navTabSettings: Button
 
-    // Tab 1: Chat & Universal Planner
+    // Tab 1: AquaBubble Chat, Smart Timer & Planner
     private lateinit var btnClearChat: Button
     private lateinit var tvChatHistory: TextView
     private lateinit var etChatInput: EditText
     private lateinit var btnVoiceMic: Button
     private lateinit var btnSendChat: Button
+    private lateinit var tvAutoTimerSummary: TextView
     private lateinit var tvPlanSteps: TextView
     private lateinit var rgExecutionMode: RadioGroup
     private lateinit var rbModeBackgroundWeb: RadioButton
@@ -94,7 +96,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRunWebAgent: Button
     private lateinit var webPreviewContainer: FrameLayout
 
-    // Tab 3: Customizable Story Series + Duration + Folder Queue
+    // Tab 3: AI Story Showrunner + Viral Frame Vision SEO + Custom Folder Queue
     private lateinit var etFlowTopic: EditText
     private lateinit var etStoryCharacterLock: EditText
     private lateinit var rgStoryMode: RadioGroup
@@ -111,7 +113,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etNextEpisodeNumber: EditText
     private lateinit var btnViewStoryHistory: Button
     private lateinit var btnResetStoryArc: Button
+    private lateinit var cbOneSecAiConfirm: CheckBox
     private lateinit var cbFirstRunLiveLearn: CheckBox
+    private lateinit var cbVideoFrameVisionSeo: CheckBox
     private lateinit var etDailyVideoLimit: EditText
     private lateinit var cbAutoGenerateFlowFirst: CheckBox
     private lateinit var etHour: EditText
@@ -119,6 +123,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSaveSchedule: Button
     private lateinit var btnRunFlowToYouTubeNow: Button
     private lateinit var etFolderPath: EditText
+    private lateinit var btnPickAnyFolder: Button
     private lateinit var rgUploadOrder: RadioGroup
     private lateinit var rbUploadNewestFirst: RadioButton
     private lateinit var rbUploadOldestFirst: RadioButton
@@ -138,7 +143,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etMemoryVault: EditText
     private lateinit var btnSaveMemory: Button
 
-    // Tab 5: Customizable AI Engine Settings & Logs
+    // Tab 5: Customizable AI Engine Settings & Detailed Logs
     private lateinit var btnEnableAccessibility: Button
     private lateinit var btnEnableStorage: Button
     private lateinit var btnDisableBatteryOptimization: Button
@@ -175,6 +180,27 @@ class MainActivity : AppCompatActivity() {
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@registerForActivityResult
         trainAiFromSelectedScreenshots(uris)
+    }
+
+    // Any Storage Folder Picker Launcher (SAF Document Tree)
+    private val folderPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri: Uri? ->
+        if (treeUri == null) return@registerForActivityResult
+        try {
+            contentResolver.takePersistableUriPermission(
+                treeUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: Exception) {}
+
+        val resolvedPath = resolveTreeUriToFilePath(treeUri)
+        if (resolvedPath.isNotBlank()) {
+            etFolderPath.setText(resolvedPath)
+            saveAllSettingsToPrefs()
+            refreshQueueCount()
+            Toast.makeText(this, "📂 Selected Folder: $resolvedPath", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -243,6 +269,7 @@ class MainActivity : AppCompatActivity() {
         etChatInput = findViewById(R.id.etChatInput)
         btnVoiceMic = findViewById(R.id.btnVoiceMic)
         btnSendChat = findViewById(R.id.btnSendChat)
+        tvAutoTimerSummary = findViewById(R.id.tvAutoTimerSummary)
         tvPlanSteps = findViewById(R.id.tvPlanSteps)
         rgExecutionMode = findViewById(R.id.rgExecutionMode)
         rbModeBackgroundWeb = findViewById(R.id.rbModeBackgroundWeb)
@@ -280,7 +307,9 @@ class MainActivity : AppCompatActivity() {
         etNextEpisodeNumber = findViewById(R.id.etNextEpisodeNumber)
         btnViewStoryHistory = findViewById(R.id.btnViewStoryHistory)
         btnResetStoryArc = findViewById(R.id.btnResetStoryArc)
+        cbOneSecAiConfirm = findViewById(R.id.cbOneSecAiConfirm)
         cbFirstRunLiveLearn = findViewById(R.id.cbFirstRunLiveLearn)
+        cbVideoFrameVisionSeo = findViewById(R.id.cbVideoFrameVisionSeo)
         etDailyVideoLimit = findViewById(R.id.etDailyVideoLimit)
         cbAutoGenerateFlowFirst = findViewById(R.id.cbAutoGenerateFlowFirst)
         etHour = findViewById(R.id.etHour)
@@ -288,6 +317,7 @@ class MainActivity : AppCompatActivity() {
         btnSaveSchedule = findViewById(R.id.btnSaveSchedule)
         btnRunFlowToYouTubeNow = findViewById(R.id.btnRunFlowToYouTubeNow)
         etFolderPath = findViewById(R.id.etFolderPath)
+        btnPickAnyFolder = findViewById(R.id.btnPickAnyFolder)
         rgUploadOrder = findViewById(R.id.rgUploadOrder)
         rbUploadNewestFirst = findViewById(R.id.rbUploadNewestFirst)
         rbUploadOldestFirst = findViewById(R.id.rbUploadOldestFirst)
@@ -334,11 +364,15 @@ class MainActivity : AppCompatActivity() {
         cbUseScreenVision.isChecked = VideoQueueManager.isScreenVisionEnabled(this)
         cb24HourUnstoppable.isChecked = VideoQueueManager.is24HourUnstoppableEnabled(this)
 
+        tvAutoTimerSummary.text = VideoQueueManager.getParsedScheduleSummary(this)
         etFlowTopic.setText(VideoQueueManager.getFlowTopic(this))
         etStoryCharacterLock.setText(VideoQueueManager.getCharacterVisualLock(this))
         etStoryCustomTwist.setText(VideoQueueManager.getStoryCustomTwist(this))
         etNextEpisodeNumber.setText(VideoQueueManager.getNextEpisodeNumber(this).toString())
+
+        cbOneSecAiConfirm.isChecked = VideoQueueManager.isOneSecAiConfirmEnabled(this)
         cbFirstRunLiveLearn.isChecked = VideoQueueManager.isFirstRunLiveLearnEnabled(this)
+        cbVideoFrameVisionSeo.isChecked = VideoQueueManager.isVideoFrameVisionSeoEnabled(this)
 
         when (VideoQueueManager.getStoryMode(this)) {
             "SIDE_STORY" -> rbStorySideMode.isChecked = true
@@ -378,7 +412,7 @@ class MainActivity : AppCompatActivity() {
         val initialSkill = etSkillTaskName.text.toString().trim().ifEmpty { "GOOGLE_FLOW" }
         etTrainedSkillJson.setText(VideoQueueManager.getTrainedSkillBlueprint(this, initialSkill))
 
-        tvConsoleLog.text = prefs.getString("live_logs", "[System] AuraDroid OS • Nax Bot Ready.") ?: ""
+        tvConsoleLog.text = prefs.getString("live_logs", "[System] AuraDroid OS • Nax Bot Liquid Glass Ready.") ?: ""
     }
 
     private fun setupBottomNavigation() {
@@ -389,7 +423,7 @@ class MainActivity : AppCompatActivity() {
             tabDoctorLayout.visibility = if (activeIndex == 4) View.VISIBLE else View.GONE
             tabSettingsLayout.visibility = if (activeIndex == 5) View.VISIBLE else View.GONE
 
-            val activeColor = Color.parseColor("#3B82F6")
+            val activeColor = Color.parseColor("#38BDF8")
             val inactiveColor = Color.parseColor("#94A3B8")
 
             navTabChat.setTextColor(if (activeIndex == 1) activeColor else inactiveColor)
@@ -432,7 +466,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupChatAndPlannerActions() {
         btnClearChat.setOnClickListener {
-            tvChatHistory.text = "🤖 Nax Bot: Chat clear ho gayi! Naya kaam ya story idea batayein."
+            tvChatHistory.text = "🤖 Nax Bot: Chat clear ho gayi! Naya kaam, story idea ya timer batayein."
             tvPlanSteps.text = "Abhi koi plan nahi hai."
             lockedPlanGoal = ""
             lockedTargetUrl = ""
@@ -446,7 +480,7 @@ class MainActivity : AppCompatActivity() {
                         RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                     )
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
-                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Nax Bot ko apna kaam bolkar batayein...")
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Nax Bot ko apna kaam ya time bolkar batayein...")
                 }
                 voiceRecognizerLauncher.launch(intent)
             } catch (_: Exception) {
@@ -457,7 +491,7 @@ class MainActivity : AppCompatActivity() {
         btnSendChat.setOnClickListener {
             val userMsg = etChatInput.text.toString().trim()
             if (userMsg.isEmpty()) {
-                Toast.makeText(this, "Pehle apna kaam likhein!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Pehle apna kaam ya timer likhein!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -480,10 +514,16 @@ class MainActivity : AppCompatActivity() {
                     memoryVault = vault
                 )
                 btnSendChat.isEnabled = true
-                btnSendChat.text = "प्लान बनाएं (Gemini 3.8/3.1)"
+                btnSendChat.text = "✨ प्लान और टाइमर सेट करें (3.8 AI)"
 
                 tvChatHistory.append("\n\n🤖 Nax Bot: ${resp.replyText}")
                 tvPlanSteps.text = resp.planSteps
+                tvAutoTimerSummary.text = resp.parsedTimerSummary
+                VideoQueueManager.saveParsedScheduleSummary(this@MainActivity, resp.parsedTimerSummary)
+
+                // If user message or AI timer summary contains a time (e.g., 19:00 or 11 baje), auto-lock alarm!
+                tryExtractAndScheduleChatTime(userMsg + " " + resp.parsedTimerSummary)
+
                 lockedPlanGoal = resp.planGoal
                 lockedTargetUrl = resp.targetUrl
 
@@ -521,7 +561,7 @@ class MainActivity : AppCompatActivity() {
                     startUrl = url,
                     folderPath = folderPath
                 )
-                Toast.makeText(this, "🌐 Nax Bot Web Agent started!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "🌐 Nax Bot Smart Hybrid Agent (1s Verify) started!", Toast.LENGTH_SHORT).show()
             } else {
                 startPhoneScreenAgentSafely(apiKey, model, goalToRun, folderPath)
             }
@@ -531,6 +571,32 @@ class MainActivity : AppCompatActivity() {
             AutoTouchService.instance?.stopCurrentJob()
             WebPipelineManager.stopEverything(this)
             Toast.makeText(this, "🛑 Stopped all active tasks.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun tryExtractAndScheduleChatTime(combinedText: String) {
+        val hhMmRegex = Regex("\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b")
+        val match = hhMmRegex.find(combinedText)
+        if (match != null) {
+            val h = match.groupValues[1].toIntOrNull() ?: return
+            val m = match.groupValues[2].toIntOrNull() ?: 0
+            etHour.setText(String.format(Locale.US, "%02d", h))
+            etMinute.setText(String.format(Locale.US, "%02d", m))
+            scheduleDailyPipelineAlarm(h, m)
+            return
+        }
+
+        val bajeRegex = Regex("\\b(1[0-2]|[1-9])\\s*(baje|बजे|pm|am)\\b", RegexOption.IGNORE_CASE)
+        val bMatch = bajeRegex.find(combinedText)
+        if (bMatch != null) {
+            var h = bMatch.groupValues[1].toIntOrNull() ?: return
+            val lower = combinedText.lowercase()
+            if ((lower.contains("raat") || lower.contains("रात") || lower.contains("shaam") || lower.contains("शाम") || lower.contains("pm")) && h < 12) {
+                h += 12
+            }
+            etHour.setText(String.format(Locale.US, "%02d", h))
+            etMinute.setText("00")
+            scheduleDailyPipelineAlarm(h, 0)
         }
     }
 
@@ -615,7 +681,7 @@ class MainActivity : AppCompatActivity() {
                 startUrl = url,
                 folderPath = folderPath
             )
-            Toast.makeText(this, "▶ Nax Bot Web Agent Running!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "▶ Nax Bot Web Agent (1s AI Confirm) Running!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -645,6 +711,14 @@ class MainActivity : AppCompatActivity() {
             val newestFirst = (checkedId == R.id.rbUploadNewestFirst)
             VideoQueueManager.setUploadNewestFirst(this, newestFirst)
             refreshQueueCount()
+        }
+
+        btnPickAnyFolder.setOnClickListener {
+            try {
+                folderPickerLauncher.launch(null)
+            } catch (_: Exception) {
+                Toast.makeText(this, "Folder picker not supported; type path directly.", Toast.LENGTH_SHORT).show()
+            }
         }
 
         btnViewStoryHistory.setOnClickListener {
@@ -727,16 +801,79 @@ class MainActivity : AppCompatActivity() {
             val apiKey = etApiKey.text.toString().trim()
             val model = etModelName.text.toString().trim()
             val folderPath = etFolderPath.text.toString().trim()
-            val topic = etFlowTopic.text.toString().trim()
+            val baseTopic = etFlowTopic.text.toString().trim()
 
-            AutoTouchService.instance?.startYouTubeUploadJob(
-                context = this,
-                apiKey = apiKey,
-                model = model,
-                folderPath = folderPath,
-                topicInstruction = topic
-            )
-            Toast.makeText(this, "▶ Uploading next video to YouTube Shorts...", Toast.LENGTH_SHORT).show()
+            val nextVideo = VideoQueueManager.getNextPendingVideo(this, folderPath)
+            if (nextVideo == null) {
+                Toast.makeText(this, "📂 Is folder mein koi pending MP4 video nahi mili!", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+
+            btnRunYouTubeNow.isEnabled = false
+            btnRunYouTubeNow.text = "👁️ AI वीडियो के फ्रेम्स देखकर वायरल टाइटल बना रहा है..."
+
+            lifecycleScope.launch {
+                var finalInstruction = baseTopic
+                if (VideoQueueManager.isVideoFrameVisionSeoEnabled(this@MainActivity) && apiKey.isNotBlank()) {
+                    val frames = withContext(Dispatchers.IO) {
+                        VideoQueueManager.extractVideoFramesBase64(nextVideo)
+                    }
+                    if (frames.isNotEmpty()) {
+                        val (epNum, epTitle, epSum) = VideoQueueManager.getLastGeneratedEpisodeInfo(this@MainActivity)
+                        val meta = GeminiBrain.generateYouTubeMetadataWithVision(
+                            apiKey = apiKey,
+                            model = model,
+                            videoFramesBase64 = frames,
+                            fileName = nextVideo.name,
+                            userInstruction = baseTopic,
+                            episodeNum = epNum,
+                            episodeTitle = epTitle,
+                            storySummary = epSum
+                        )
+                        finalInstruction = "${meta.title}\n${meta.description}"
+                        VideoQueueManager.appendDetailedLog(
+                            context = this@MainActivity,
+                            modelUsed = VideoQueueManager.getHighModelName(this@MainActivity),
+                            clickSense = "Frame Vision SEO",
+                            actionDesc = "Viral Title: ${meta.title}",
+                            whyReason = "Inspected ${frames.size} real frames from ${nextVideo.name}",
+                            verifyStatus = "READY FOR YT"
+                        )
+                    }
+                }
+
+                btnRunYouTubeNow.isEnabled = true
+                btnRunYouTubeNow.text = "▶ फोल्डर की अगली वीडियो फोटो देखकर वायरल टाइटल संग YouTube पर डालें"
+
+                AutoTouchService.instance?.startYouTubeUploadJob(
+                    context = this@MainActivity,
+                    apiKey = apiKey,
+                    model = model,
+                    folderPath = folderPath,
+                    topicInstruction = finalInstruction
+                )
+                Toast.makeText(this@MainActivity, "▶ Uploading to YouTube Shorts with Viral Title!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun resolveTreeUriToFilePath(treeUri: Uri): String {
+        return try {
+            val docId = DocumentsContract.getTreeDocumentId(treeUri)
+            val parts = docId.split(":")
+            if (parts.isNotEmpty()) {
+                val type = parts[0]
+                val rel = if (parts.size > 1) parts[1] else ""
+                if ("primary".equals(type, ignoreCase = true)) {
+                    "${Environment.getExternalStorageDirectory().absolutePath}/$rel".trimEnd('/')
+                } else {
+                    "/storage/$type/$rel".trimEnd('/')
+                }
+            } else {
+                etFolderPath.text.toString()
+            }
+        } catch (_: Exception) {
+            etFolderPath.text.toString()
         }
     }
 
@@ -781,7 +918,7 @@ class MainActivity : AppCompatActivity() {
             VideoQueueManager.saveTrainedSkillBlueprint(this, skillName, jsonText, isVerified = false)
             Toast.makeText(
                 this,
-                "💾 '$skillName' JSON Blueprint AI Mind mein save ho gaya!",
+                "💾 '$skillName' JSON Blueprint AI Mind mein save ho gaya (1s AI Confirm ON)!",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -893,7 +1030,7 @@ class MainActivity : AppCompatActivity() {
                     apiKey = apiKey,
                     model = model,
                     skillName = skillName,
-                    userInstruction = "Complete start-to-end visual workflow for $skillName",
+                    userInstruction = "Complete start-to-end visual workflow for $skillName with 1s AI confirmation",
                     screenshotsBase64 = base64Images
                 )
 
@@ -911,7 +1048,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 Toast.makeText(
                     this@MainActivity,
-                    "✅ '$skillName' Trained & Stored in AI Mind!",
+                    "✅ '$skillName' Trained & Stored in AI Mind (1s AI Confirm Ready)!",
                     Toast.LENGTH_LONG
                 ).show()
             } catch (e: Exception) {
@@ -967,7 +1104,7 @@ class MainActivity : AppCompatActivity() {
                     3 -> method.invoke(service, apiKey, model, goal)
                     else -> service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
                 }
-                Toast.makeText(this, "📱 Nax Bot Phone Agent started!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "📱 Nax Bot Direct Phone Screen Agent started!", Toast.LENGTH_SHORT).show()
             } else {
                 service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
             }
@@ -1012,9 +1149,12 @@ class MainActivity : AppCompatActivity() {
             }
 
             val timeFormatted = String.format(Locale.US, "%02d:%02d", hour, minute)
-            VideoQueueManager.appendLog(this, "⏰ Daily Story + YouTube Pipeline scheduled for $timeFormatted")
+            val msg = "⏰ Auto-Timer Locked: Daily Story + YouTube Pipeline scheduled for $timeFormatted"
+            tvAutoTimerSummary.text = msg
+            VideoQueueManager.saveParsedScheduleSummary(this, msg)
+            VideoQueueManager.appendLog(this, msg)
             Toast.makeText(this, "⏰ Daily Auto-Schedule set for $timeFormatted!", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Toast.makeText(this, "⏰ Schedule time saved ($hour:$minute)!", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1055,7 +1195,9 @@ class MainActivity : AppCompatActivity() {
         VideoQueueManager.setStoryCustomTwist(this, etStoryCustomTwist.text.toString().trim())
         VideoQueueManager.setTargetVideoDurationSec(this, durSec)
         VideoQueueManager.setNextEpisodeNumber(this, nextEp)
+        VideoQueueManager.setOneSecAiConfirmEnabled(this, cbOneSecAiConfirm.isChecked)
         VideoQueueManager.setFirstRunLiveLearnEnabled(this, cbFirstRunLiveLearn.isChecked)
+        VideoQueueManager.setVideoFrameVisionSeoEnabled(this, cbVideoFrameVisionSeo.isChecked)
         VideoQueueManager.setUploadNewestFirst(this, rbUploadNewestFirst.isChecked)
         VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString().trim())
     }
@@ -1077,7 +1219,7 @@ class MainActivity : AppCompatActivity() {
         val isRunning = AutoTouchService.instance != null
         if (isRunning) {
             tvServiceBadge.text = "TOUCH: ACTIVE"
-            tvServiceBadge.setTextColor(Color.parseColor("#10B981"))
+            tvServiceBadge.setTextColor(Color.parseColor("#2DD4BF"))
         } else {
             tvServiceBadge.text = "TOUCH: OFF"
             tvServiceBadge.setTextColor(Color.parseColor("#F87171"))
