@@ -527,7 +527,10 @@ class MainActivity : AppCompatActivity() {
                 lockedPlanGoal = resp.planGoal
                 lockedTargetUrl = resp.targetUrl
 
-                if (resp.suggestedMode == "WEB") {
+                // Explicit real-device requests must never be silently redirected to the in-app WebView.
+                if (isPhoneControlIntent(userMsg) || isPhoneControlIntent(resp.planGoal)) {
+                    rbModePhoneScreen.isChecked = true
+                } else if (resp.suggestedMode == "WEB") {
                     rbModeBackgroundWeb.isChecked = true
                 } else {
                     rbModePhoneScreen.isChecked = true
@@ -551,7 +554,11 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            if (rbModeBackgroundWeb.isChecked) {
+            // User's explicit real-phone intent overrides an AI-suggested WEB mode.
+            if (isPhoneControlIntent(goalToRun)) {
+                rbModePhoneScreen.isChecked = true
+                startPhoneScreenAgentSafely(apiKey, model, goalToRun)
+            } else if (rbModeBackgroundWeb.isChecked) {
                 val url = lockedTargetUrl.ifBlank { VideoQueueManager.getPinnedFlowUrl(this) }
                 WebPipelineManager.startAutonomousWebAgent(
                     context = this,
@@ -561,9 +568,9 @@ class MainActivity : AppCompatActivity() {
                     startUrl = url,
                     folderPath = folderPath
                 )
-                Toast.makeText(this, "🌐 Nax Bot Smart Hybrid Agent (1s Verify) started!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "🌐 Nax Bot Web Agent started in in-app browser.", Toast.LENGTH_SHORT).show()
             } else {
-                startPhoneScreenAgentSafely(apiKey, model, goalToRun, folderPath)
+                startPhoneScreenAgentSafely(apiKey, model, goalToRun)
             }
         }
 
@@ -1076,41 +1083,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Detect explicit requests to operate the real Android device. These must use
+     * AccessibilityService actions, never the app's embedded browser/WebView.
+     */
+    private fun isPhoneControlIntent(text: String): Boolean {
+        val value = text.lowercase()
+        val signals = listOf(
+            "real phone", "control my phone", "control the phone", "control phone",
+            "phone ko control", "phone control", "phone screen", "on my phone",
+            "mere phone", "mere mobile", "mobile ko control", "mobile screen",
+            "android device", "actual device", "device ko control",
+            "फोन को कंट्रोल", "फोन कंट्रोल", "मोबाइल को कंट्रोल", "मेरे फोन",
+            "फोन की स्क्रीन", "मोबाइल की स्क्रीन", "असली फोन"
+        )
+        return signals.any { value.contains(it) }
+    }
+
     private fun startPhoneScreenAgentSafely(
         apiKey: String,
         model: String,
-        goal: String,
-        folderPath: String
+        goal: String
     ) {
-        val service = AutoTouchService.instance ?: return
-        val lower = goal.lowercase()
-        if (lower.contains("youtube") && (lower.contains("upload") || lower.contains("short"))) {
-            service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
+        val service = AutoTouchService.instance
+        if (service == null) {
+            Toast.makeText(this, "Pehle Auto-Touch Accessibility ON karein!", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
 
-        try {
-            val method = service.javaClass.methods.firstOrNull { m ->
-                m.name in listOf(
-                    "startAutonomousPhoneJob",
-                    "startPhoneAgentJob",
-                    "startGeneralAgentJob",
-                    "startAutonomousTask"
-                )
-            }
-            if (method != null) {
-                when (method.parameterTypes.size) {
-                    4 -> method.invoke(service, this, apiKey, model, goal)
-                    3 -> method.invoke(service, apiKey, model, goal)
-                    else -> service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
-                }
-                Toast.makeText(this, "📱 Nax Bot Direct Phone Screen Agent started!", Toast.LENGTH_SHORT).show()
-            } else {
-                service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
-            }
-        } catch (_: Exception) {
-            service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
-        }
+        // Call the real, implemented native-phone entry point directly.
+        // Never reflect for a nonexistent method and never fall back to YouTube Web Agent.
+        service.startUniversalAiTask(apiKey, model, goal)
+        Toast.makeText(
+            this,
+            "📱 Nax Bot Real Phone Agent started — controlling Android screen.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun scheduleDailyPipelineAlarm(hour: Int, minute: Int) {
