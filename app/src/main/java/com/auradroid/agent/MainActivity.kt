@@ -524,7 +524,13 @@ class MainActivity : AppCompatActivity() {
                 // If user message or AI timer summary contains a time (e.g., 19:00 or 11 baje), auto-lock alarm!
                 tryExtractAndScheduleChatTime(userMsg + " " + resp.parsedTimerSummary)
 
-                lockedPlanGoal = resp.planGoal
+                lockedPlanGoal = if (
+                    isPhoneControlIntent(userMsg) && !isPhoneControlIntent(resp.planGoal)
+                ) {
+                    "${'${'}resp.planGoal}\n[REAL PHONE CONTROL REQUIRED: operate the real phone screen using Android AccessibilityService; do not control the in-app browser or WebView.]"
+                } else {
+                    resp.planGoal
+                }
                 lockedTargetUrl = resp.targetUrl
 
                 // Explicit real-device requests must never be silently redirected to the in-app WebView.
