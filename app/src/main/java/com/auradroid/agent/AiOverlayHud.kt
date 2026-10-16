@@ -655,7 +655,6 @@ class AiOverlayHud(private val context: Context) {
             layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22))
             setOnClickListener {
                 AutoTouchService.instance?.stopCurrentJob()
-                WebPipelineManager.stopEverything(context)
                 updateStatus("Nax Bot", "Stopped", "IDLE")
             }
         }
@@ -861,6 +860,10 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
+    fun moveBotAndShowTap(x: Float, y: Float, label: String) {
+        showTapEffect(x, y, label)
+    }
+
     private fun dpToPx(dp: Int): Int {
         return TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
@@ -875,7 +878,6 @@ class AiOverlayHud(private val context: Context) {
  * Features 4x large solid color-changing eyes and 15 rich expressive emotions!
  */
 class NaxBotAvatarView(context: Context) : View(context) {
-
     private var currentEmotion = "IDLE"
     private var animPhase = 0f
     private var blinkFactor = 1f
@@ -883,59 +885,50 @@ class NaxBotAvatarView(context: Context) : View(context) {
 
     private val headPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#F8FAFC") // Pure cute soft marshmallow white
+        color = Color.parseColor("#F8FAFC")
     }
-
     private val headRimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 3.5f
+        strokeWidth = 2.5f
         color = Color.parseColor("#CBD5E1")
     }
-
-    private val eyePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.parseColor("#0F172A")
-    }
-
+    private val eyePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val bridgeLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 4.2f
+        strokeWidth = 2.2f
         strokeCap = Paint.Cap.ROUND
-        color = Color.parseColor("#0F172A")
     }
-
     private val browPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 4f
+        strokeWidth = 2.5f
         strokeCap = Paint.Cap.ROUND
     }
-
     private val blushPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#88FB7185")
+        color = Color.parseColor("#66FB7185")
     }
-
     private val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 4.5f
+        strokeWidth = 3.5f
     }
-
+    private val mouthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.8f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.parseColor("#334155")
+    }
     private val mouthPath = Path()
-
     private val pulseAnimator = ValueAnimator.ofFloat(0f, (Math.PI * 2).toFloat()).apply {
         duration = 2200L
         repeatCount = ValueAnimator.INFINITE
-        addUpdateListener {
-            animPhase = it.animatedValue as Float
-            val now = System.currentTimeMillis()
-            if (now - lastBlinkTime > 3400L) {
-                val elapsed = now - lastBlinkTime - 3400L
-                blinkFactor = if (elapsed < 160L) {
-                    0.12f
-                } else {
-                    lastBlinkTime = now
-                    1f
-                }
+        addUpdateListener { animator ->
+            animPhase = animator.animatedValue as Float
+            val elapsed = System.currentTimeMillis() - lastBlinkTime
+            blinkFactor = if (elapsed in 3400L..3550L) {
+                0.12f
+            } else {
+                if (elapsed > 3550L) lastBlinkTime = System.currentTimeMillis()
+                1f
             }
             invalidate()
         }
@@ -952,7 +945,7 @@ class NaxBotAvatarView(context: Context) : View(context) {
     }
 
     fun setEmotion(emotion: String) {
-        currentEmotion = emotion.uppercase()
+        currentEmotion = emotion.trim().uppercase().ifBlank { "IDLE" }
         invalidate()
     }
 
@@ -963,51 +956,211 @@ class NaxBotAvatarView(context: Context) : View(context) {
         if (w <= 0f || h <= 0f) return
 
         val cx = w / 2f
-        val cy = h / 2f + sin(animPhase.toDouble()).toFloat() * 1.6f
+        val cy = h / 2f + sin(animPhase.toDouble()).toFloat() * 1.2f
         val headRx = w * 0.44f
         val headRy = h * 0.40f
-
-        // 1. Choose Solid Inside Eye Color & Aura Color for all 15 Emotions
-        val solidEyeColor = when (currentEmotion) {
-            "IDLE" -> Color.parseColor("#0F172A")         // 1. Pure Deep Black
-            "THINKING" -> Color.parseColor("#2563EB")     // 2. Solid Royal Blue
-            "WORKING" -> Color.parseColor("#10B981")      // 3. Solid Emerald Green
-            "RENDERING", "WAITING" -> Color.parseColor("#F59E0B") // 4. Solid Golden Amber
-            "HAPPY", "DONE" -> Color.parseColor("#059669") // 5. Solid Happy Green
-            "EXCITED" -> Color.parseColor("#06B6D4")      // 6. Solid Bright Cyan
-            "CONFUSED", "VERIFYING" -> Color.parseColor("#F97316") // 7. Solid Warm Orange
-            "HIGH_BRAIN", "PRO" -> Color.parseColor("#9333EA") // 8. Solid Royal Purple
-            "SEARCHING" -> Color.parseColor("#0284C7")    // 9. Solid Sky-Teal Blue
-            "DOWNLOADING" -> Color.parseColor("#14B8A6")  // 10. Solid Aqua Teal
-            "UPLOADING" -> Color.parseColor("#22C55E")    // 11. Solid Lime Green
-            "SURPRISED" -> Color.parseColor("#3B82F6")    // 12. Solid Electric Blue
-            "ERROR", "ANGRY" -> Color.parseColor("#DC2626") // 13. Solid Pure Red
-            "SAD", "TIMEOUT" -> Color.parseColor("#1D4ED8") // 14. Solid Deep Sad Blue
-            "SLEEPY", "COOLDOWN" -> Color.parseColor("#475569") // 15. Solid Soft Slate
+        val eyeColor = when (currentEmotion) {
+            "THINKING", "SEARCHING" -> Color.parseColor("#2563EB")
+            "WORKING", "UPLOADING" -> Color.parseColor("#10B981")
+            "RENDERING", "WAITING", "DOWNLOADING" -> Color.parseColor("#F59E0B")
+            "HAPPY", "DONE" -> Color.parseColor("#059669")
+            "EXCITED" -> Color.parseColor("#06B6D4")
+            "CONFUSED", "VERIFYING", "SURPRISED" -> Color.parseColor("#F97316")
+            "HIGH_BRAIN", "PRO" -> Color.parseColor("#9333EA")
+            "ERROR", "ANGRY" -> Color.parseColor("#DC2626")
+            "SAD", "TIMEOUT" -> Color.parseColor("#1D4ED8")
+            "SLEEPY", "COOLDOWN" -> Color.parseColor("#475569")
             else -> Color.parseColor("#0F172A")
         }
 
-        // Draw subtle outer glow when active
         if (currentEmotion != "IDLE") {
-            auraPaint.color = solidEyeColor
-            auraPaint.alpha = 110
-            val auraRect = RectF(cx - headRx - 2f, cy - headRy - 2f, cx + headRx + 2f, cy + headRy + 2f)
-            canvas.drawRoundRect(auraRect, headRy, headRy, auraPaint)
+            auraPaint.color = eyeColor
+            auraPaint.alpha = 95
+            canvas.drawRoundRect(
+                RectF(cx - headRx - 2f, cy - headRy - 2f, cx + headRx + 2f, cy + headRy + 2f),
+                headRy, headRy, auraPaint
+            )
         }
 
-        // Draw cute soft white Baymax-style oval head
         val headRect = RectF(cx - headRx, cy - headRy, cx + headRx, cy + headRy)
         canvas.drawRoundRect(headRect, headRy, headRy, headPaint)
-        headRimPaint.color = if (currentEmotion == "IDLE") Color.parseColor("#CBD5E1") else solidEyeColor
+        headRimPaint.color = if (currentEmotion == "IDLE") Color.parseColor("#CBD5E1") else eyeColor
         canvas.drawRoundRect(headRect, headRy, headRy, headRimPaint)
 
-        // Eye positions & 4x large solid radius
-        var eyeOffsetX = 0f
-        var eyeOffsetY = 0f
+        val eyeOffsetX = when (currentEmotion) {
+            "SEARCHING" -> sin(animPhase.toDouble() * 2).toFloat() * w * 0.025f
+            "CONFUSED" -> w * 0.015f
+            else -> 0f
+        }
+        val eyeOffsetY = when (currentEmotion) {
+            "SAD", "TIMEOUT" -> h * 0.035f
+            "THINKING" -> -h * 0.025f
+            else -> 0f
+        }
+        val eyeRadius = minOf(w * 0.078f, h * 0.125f)
+        val eyeY = cy - h * 0.025f + eyeOffsetY
+        eyePaint.color = eyeColor
+        val visibleEyeRadiusY = eyeRadius * blinkFactor.coerceIn(0.12f, 1f)
+        canvas.drawOval(
+            RectF(cx - w * 0.18f - eyeRadius + eyeOffsetX, eyeY - visibleEyeRadiusY,
+                cx - w * 0.18f + eyeRadius + eyeOffsetX, eyeY + visibleEyeRadiusY), eyePaint
+        )
+        canvas.drawOval(
+            RectF(cx + w * 0.18f - eyeRadius + eyeOffsetX, eyeY - visibleEyeRadiusY,
+                cx + w * 0.18f + eyeRadius + eyeOffsetX, eyeY + visibleEyeRadiusY), eyePaint
+        )
+        bridgeLinePaint.color = eyeColor
+        canvas.drawLine(cx - w * 0.07f, eyeY, cx + w * 0.07f, eyeY, bridgeLinePaint)
+
+        if (currentEmotion in setOf("HAPPY", "DONE", "EXCITED", "SURPRISED")) {
+            blushPaint.alpha = 145
+            canvas.drawCircle(cx - w * 0.29f, cy + h * 0.14f, minOf(w, h) * 0.055f, blushPaint)
+            canvas.drawCircle(cx + w * 0.29f, cy + h * 0.14f, minOf(w, h) * 0.055f, blushPaint)
+        }
+
+        browPaint.color = eyeColor
+        if (currentEmotion in setOf("ANGRY", "CONFUSED", "ERROR")) {
+            canvas.drawLine(cx - w * 0.27f, eyeY - eyeRadius * 1.5f,
+                cx - w * 0.10f, eyeY - eyeRadius * 1.9f, browPaint)
+            canvas.drawLine(cx + w * 0.10f, eyeY - eyeRadius * 1.9f,
+                cx + w * 0.27f, eyeY - eyeRadius * 1.5f, browPaint)
+        }
+
+        mouthPath.reset()
+        val mouthY = cy + h * 0.20f
+        val mouthWidth = w * 0.105f
         when (currentEmotion) {
-            "THINKING" -> {
-                eyeOffsetX = sin(animPhase.toDouble()).toFloat() * 2.2f
-                eyeOffsetY = -2.2f
+            "SAD", "TIMEOUT", "ERROR", "ANGRY" -> {
+                mouthPath.moveTo(cx - mouthWidth, mouthY + h * 0.035f)
+                mouthPath.quadTo(cx, mouthY - h * 0.055f, cx + mouthWidth, mouthY + h * 0.035f)
             }
-            "SEARCHING" -> {
-                eyeOffsetX = sin(animPhase * 2.0).toFloat() * 4.
+            "SURPRISED", "CONFUSED" -> {
+                canvas.drawCircle(cx, mouthY, minOf(w, h) * 0.045f, mouthPaint)
+            }
+            "HAPPY", "DONE", "EXCITED" -> {
+                mouthPath.moveTo(cx - mouthWidth, mouthY - h * 0.005f)
+                mouthPath.quadTo(cx, mouthY + h * 0.085f, cx + mouthWidth, mouthY - h * 0.005f)
+            }
+            else -> {
+                mouthPath.moveTo(cx - mouthWidth * 0.7f, mouthY)
+                mouthPath.quadTo(cx, mouthY + h * 0.018f, cx + mouthWidth * 0.7f, mouthY)
+            }
+        }
+        canvas.drawPath(mouthPath, mouthPaint)
+    }
+}
+
+private class NaxHandCursorCanvas(context: Context) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#F8FAFC"); textSize = 27f; typeface = Typeface.DEFAULT_BOLD }
+    private val screenOffset = IntArray(2)
+
+    private var handX = 540f; private var handY = 400f; private var startX = 540f; private var startY = 400f
+    private var targetX = 540f; private var targetY = 400f; private var rippleProgress = 0f; private var pressScale = 1f
+    private var phase = 0f; private var currentLabel = ""; private var handMood = "WORKING"
+
+    private var moveAnimator: ValueAnimator? = null
+    private var rippleAnimator: ValueAnimator? = null
+
+    private val ticker = object : Runnable {
+        override fun run() { phase += 0.2f; invalidate(); postDelayed(this, 40) }
+    }
+
+    init { post(ticker) }
+
+    fun setHandMood(mood: String) { handMood = mood.uppercase(); invalidate() }
+
+    fun animateHandToTap(destX: Float, destY: Float, label: String) {
+        startX = handX; startY = handY; targetX = destX; targetY = destY; currentLabel = label
+        moveAnimator?.cancel()
+        moveAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 340; interpolator = DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                handX = startX + (targetX - startX) * f; handY = startY + (targetY - startY) * f
+                invalidate()
+            }
+            start()
+        }
+        rippleAnimator?.cancel()
+        rippleAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            startDelay = 260; duration = 620
+            addUpdateListener { anim ->
+                val p = anim.animatedValue as Float; rippleProgress = p
+                pressScale = if (p < 0.35f) 1f - (p / 0.35f) * 0.16f else 0.84f + ((p - 0.35f) / 0.65f) * 0.16f
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    fun triggerTapAnimation(destX: Float, destY: Float, label: String) {
+        animateHandToTap(destX, destY, label)
+    }
+
+    fun triggerSwipeAnimation(startX: Float, startY: Float, endX: Float, endY: Float) {
+        handX = startX
+        handY = startY
+        animateHandToTap(endX, endY, "Swipe")
+    }
+
+    fun stopAnimations() { removeCallbacks(ticker); moveAnimator?.cancel(); rippleAnimator?.cancel() }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (currentLabel.isEmpty()) return
+        getLocationOnScreen(screenOffset)
+        val ox = screenOffset[0].toFloat(); val oy = screenOffset[1].toFloat()
+        val tipX = handX - ox; val tipY = (handY - oy) + sin(phase * 0.8f) * 2.5f
+
+        val accentColor = when (handMood) { "ERROR", "SAD" -> Color.parseColor("#EF4444"); "DONE", "HAPPY" -> Color.parseColor("#10B981"); else -> Color.parseColor("#00E5FF") }
+
+        if (rippleProgress > 0f && rippleProgress < 1f) {
+            val alpha = ((1f - rippleProgress) * 210).toInt().coerceIn(0, 255)
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 4.5f; paint.color = Color.argb(alpha, 0, 229, 255)
+            canvas.drawCircle(targetX - ox, targetY - oy, 12f + rippleProgress * 62f, paint)
+        }
+
+        canvas.save(); canvas.translate(tipX, tipY); canvas.scale(pressScale, pressScale)
+        paint.style = Paint.Style.FILL; paint.color = Color.argb(55, 0, 0, 0)
+        canvas.drawRoundRect(RectF(-22f, 20f, 34f, 74f), 26f, 26f, paint)
+
+        val handFillColor = Color.parseColor("#F8FAFC"); val handStrokeColor = Color.parseColor("#334155")
+        val thumbRect = RectF(-34f, 28f, -6f, 52f)
+        paint.style = Paint.Style.FILL; paint.color = handFillColor
+        canvas.rotate(-22f, -20f, 40f); canvas.drawRoundRect(thumbRect, 14f, 14f, paint)
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.6f; paint.color = handStrokeColor
+        canvas.drawRoundRect(thumbRect, 14f, 14f, paint); canvas.rotate(22f, -20f, 40f)
+
+        val midFingerRect = RectF(6f, 10f, 22f, 38f); val ringFingerRect = RectF(18f, 16f, 33f, 42f)
+        paint.style = Paint.Style.FILL; paint.color = handFillColor
+        canvas.drawRoundRect(ringFingerRect, 10f, 10f, paint); paint.style = Paint.Style.STROKE; paint.color = handStrokeColor; canvas.drawRoundRect(ringFingerRect, 10f, 10f, paint)
+        paint.style = Paint.Style.FILL; paint.color = handFillColor
+        canvas.drawRoundRect(midFingerRect, 10f, 10f, paint); paint.style = Paint.Style.STROKE; paint.color = handStrokeColor; canvas.drawRoundRect(midFingerRect, 10f, 10f, paint)
+
+        val indexFingerRect = RectF(-9f, -2f, 10f, 36f)
+        paint.style = Paint.Style.FILL; paint.color = handFillColor
+        canvas.drawRoundRect(indexFingerRect, 11f, 11f, paint); paint.style = Paint.Style.STROKE; paint.color = handStrokeColor; canvas.drawRoundRect(indexFingerRect, 11f, 11f, paint)
+
+        val palmRect = RectF(-20f, 22f, 32f, 70f)
+        paint.style = Paint.Style.FILL; paint.color = handFillColor; canvas.drawRoundRect(palmRect, 24f, 24f, paint)
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.6f; paint.color = handStrokeColor; canvas.drawRoundRect(palmRect, 24f, 24f, paint)
+
+        val cuffRect = RectF(-12f, 64f, 24f, 75f)
+        paint.style = Paint.Style.FILL; paint.color = Color.parseColor("#E2E8F0"); canvas.drawRoundRect(cuffRect, 8f, 8f, paint)
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f; paint.color = handStrokeColor; canvas.drawRoundRect(cuffRect, 8f, 8f, paint)
+
+        paint.style = Paint.Style.FILL; paint.color = accentColor
+        canvas.drawCircle(6f, 46f, 4.5f, paint); canvas.drawCircle(0f, 0f, 4f, paint)
+        canvas.restore()
+
+        val textWidth = textPaint.measureText(currentLabel)
+        val tagLeft = (tipX + 42f).coerceAtMost(width - textWidth - 34f).coerceAtLeast(16f)
+        val tagTop = (tipY + 18f).coerceAtMost(height - 70f).coerceAtLeast(50f)
+        val tagRect = RectF(tagLeft, tagTop, tagLeft + textWidth + 24f, tagTop + 40f)
+
+        paint.style = Paint.Style.FILL; paint.color = Color.parseColor("#E6181A20"); canvas.drawRoundRect(tagRect, 14f, 14f, paint)
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.8f; paint.color = accentColor; canvas.drawRoundRect(tagRect, 14f, 14f, paint)
+        canvas.drawText(currentLabel, tagLeft + 12f, tagTop + 28f, textPaint)
+    }
+}
