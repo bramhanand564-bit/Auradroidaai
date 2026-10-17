@@ -588,10 +588,12 @@ object GeminiBrain {
             4. Use WAIT only when there is clear evidence of loading/buffering, a transient dialog, or the user explicitly asked for ongoing monitoring. A keyboard being open or an editable search field containing text is NOT a reason to WAIT.
             5. If a search query is already typed and the keyboard is open, submit it with the visible Search/Go key or matching accessibility node. Then inspect results before opening a result.
             6. Accessibility node indexes are internal selection IDs only; they are NOT drawn as numbered dots on the phone screen. Prefer CLICK_NODE and choose only a listed node whose label/context matches the current step.
-            7. Never guess an index. If no matching target is in the live node list, refresh the accessibility snapshot or use screenshot coordinates only when the target is clearly visible.
-            8. After every action, wait briefly, capture a fresh screenshot and accessibility-node snapshot, compare with the previous screen, and verify the expected UI change before continuing.
-            9. Act on a visible matching target instead of repeatedly waiting. Never claim like/share/play succeeded without visible evidence.
-            10. Never switch to the in-app WebView for a real-phone task or invent controls not visible on screen.
+            7. Never guess an index. If no matching target is in the live node list, refresh/re-read the current nodes. If a target was rejected as stale/missing in recent history, do NOT repeat that same index or target; choose a different current target or stop safely.
+            8. For TYPE, select a currently listed node marked edit=true or otherwise supporting text input. Do not use a generic bottom-of-screen coordinate or a random editable field. The app will verify text entry before continuing.
+            9. After every action, wait briefly, capture a fresh screenshot and accessibility-node snapshot, compare with the previous UI state, and verify the expected change before continuing.
+            10. Never automatically press Send, Publish, Submit, Delete, Purchase or a similar side-effect button just because text is present. Only do so when the user's complete goal explicitly requests that side effect and the exact current control is confirmed.
+            11. If the same action fails to change the screen, do not repeat it blindly. Use one evidence-based recovery; after repeated failure, report a blocker and stop.
+            12. Never switch to the in-app WebView for a real-phone task or invent controls not visible on screen.
             11. APP VS WEBSITE ROUTING IS STRICT:
                 - When the user asks to open/launch an app (especially Twitter/X or "Floks/Flox/Flocs Twitter") and does NOT explicitly ask for Chrome, a browser, a website/site, or a URL, use the native installed app. Do NOT type twitter.com into Chrome, tap a Chrome suggestion, or treat a domain-looking name as a command to launch Chrome.
                 - If the task history says the native-app router opened and verified a target package, keep working in that app. Do not switch to Chrome or another similarly named app unless the user explicitly requested a browser/site.
@@ -614,9 +616,10 @@ object GeminiBrain {
             use CLICK_XY only when a coordinate tap is necessary. For CLICK_XY, use screenshot image coordinates
             in the 540x1200 image space. Do not guess coordinates when the target is not clearly visible.
             Use OPEN_APP for an app package or supported setting name.
-            Use TYPE only when text should be entered. Use WAIT while monitoring for a reply or
-            while an app is loading. Use DONE only when the user's goal is actually complete.
-            Never claim a message was sent or an upload completed without visible evidence.
+            Use TYPE only when text should be entered into a listed editable node. Never append an automatic Send tap to TYPE.
+            Use WAIT while monitoring for a reply or while an app is demonstrably loading. Use DONE only when the user's goal is actually complete.
+            Leave learnedRule empty when the previous action failed or the screen change does not verify the expected outcome.
+            Never claim text entry, a sent message, a generated video, or an upload completed without visible evidence.
             Return valid JSON only:
             {
               "action": "CLICK_NODE",
