@@ -296,10 +296,10 @@ object AppAutomationRouter {
                     host.startsWith("ff", true)
                 )
             // This WebView router intentionally refuses local/private-network URLs.
-            if (host == "localhost" || host.endsWith(".local") || host.endsWith(".internal") ||
-                isPrivateIpv4 || isPrivateIpv6) return null
+            val isBlockedHost = host == "localhost" || host.endsWith(".local") ||
+                host.endsWith(".internal") || isPrivateIpv4 || isPrivateIpv6
             // A saved Flow URL is only valid for an explicitly Flow-related task.
-            if (!isFlowDestination) return normalized
+            if (!isBlockedHost && !isFlowDestination) return normalized
         }
         return "https://www.google.com/"
     }
