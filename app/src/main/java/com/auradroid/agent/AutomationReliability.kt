@@ -431,6 +431,74 @@ data class TaskRunRecord(
  * Lightweight persistent run ledger. A process-death interrupted UI task is marked PAUSED,
  * never silently reported as completed or automatically replayed.
  */
+/**
+ * Local task-mix and outcome telemetry. This records task counts by adapter only; it is not
+ * Android usage-access tracking and must not be described as users' total app-usage percentage.
+ */
+object TaskAnalytics {
+    private const val PREFS = "nax_task_metrics_v1"
+    private const val KEY_COUNTS = "adapter_counts"
+
+    @Synchronized
+    fun recordStart(context: Context, adapterId: String) {
+        mutate(context, adapterId) { row ->
+            row.put("started", row.optInt("started") + 1)
+            row.put("lastStartedAt", System.currentTimeMillis())
+        }
+    }
+
+    @Synchronized
+    fun recordTerminal(context: Context, adapterId: String, status: TaskStatus) {
+        val key = when (status) {
+            TaskStatus.COMPLETED -> "completed"
+            TaskStatus.FAILED -> "failed"
+            TaskStatus.CANCELLED -> "cancelled"
+            else -> return
+        }
+        mutate(context, adapterId) { row ->
+            row.put(key, row.optInt(key) + 1)
+            row.put("lastOutcomeAt", System.currentTimeMillis())
+        }
+    }
+
+    @Synchronized
+    fun taskMixSummary(context: Context, limit: Int = 5): String {
+        val all = read(context)
+        val adapters = all.keys().asSequence().mapNotNull { key ->
+            val name = key ?: return@mapNotNull null
+            val row = all.optJSONObject(name) ?: return@mapNotNull null
+            Triple(name, row, row.optInt("started"))
+        }.filter { it.third > 0 }.sortedByDescending { it.third }.take(limit).toList()
+        val total = all.keys().asSequence().mapNotNull { key -> key?.let { all.optJSONObject(it) } }
+            .sumOf { it.optInt("started") }
+        if (total == 0) return "No task history measured yet."
+        return adapters.joinToString(" • ") { (name, row, started) ->
+            val share = (started * 100.0 / total).toInt()
+            val completed = row.optInt("completed")
+            val failed = row.optInt("failed")
+            val decided = completed + failed
+            val success = if (decided == 0) "n/a" else "${(completed * 100.0 / decided).toInt()}% success"
+            "$name $share% of recorded tasks ($success)"
+        }
+    }
+
+    private fun read(context: Context): JSONObject {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_COUNTS, "{}") ?: "{}"
+        return runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+    }
+
+    private fun mutate(context: Context, adapterId: String, change: (JSONObject) -> Unit) {
+        val all = read(context)
+        val key = adapterId.ifBlank { "UNKNOWN" }
+        val row = all.optJSONObject(key) ?: JSONObject()
+        change(row)
+        all.put(key, row)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_COUNTS, all.toString()).apply()
+    }
+}
+
 object TaskExecutionStore {
     private const val PREFS = "nax_task_execution_state"
     private const val KEY_RUNS = "runs_v1"
@@ -453,6 +521,7 @@ object TaskExecutionStore {
         )
         val prior = read(context).map { previous ->
             if (previous.status == TaskStatus.RUNNING || previous.status == TaskStatus.VERIFYING) {
+                TaskAnalytics.recordTerminal(context, previous.adapterId, TaskStatus.CANCELLED)
                 previous.copy(
                     status = TaskStatus.CANCELLED,
                     message = "Superseded by a newer task; previous work was not marked completed.",
@@ -461,6 +530,7 @@ object TaskExecutionStore {
             } else previous
         }
         save(context, listOf(record) + prior.take(MAX_HISTORY - 1))
+        TaskAnalytics.recordStart(context, adapterId)
         return id
     }
 
@@ -484,6 +554,9 @@ object TaskExecutionStore {
             message = message.take(700),
             updatedAt = System.currentTimeMillis()
         )
+        if (old.status != status && status in setOf(TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED)) {
+            TaskAnalytics.recordTerminal(context, old.adapterId, status)
+        }
         save(context, records.take(MAX_HISTORY))
     }
 
