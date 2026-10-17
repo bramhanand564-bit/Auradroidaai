@@ -433,11 +433,13 @@ class AutoTouchService : AccessibilityService() {
         var parent = runCatching { node.parent }.getOrNull()
         var depth = 0
         while (parent != null && depth < 5) {
+            val currentParent = parent ?: break
             val clicked = runCatching {
-                parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                currentParent.isClickable &&
+                    currentParent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             }.getOrDefault(false)
             if (clicked) return true
-            parent = runCatching { parent.parent }.getOrNull()
+            parent = runCatching { currentParent.parent }.getOrNull()
             depth++
         }
         return false
