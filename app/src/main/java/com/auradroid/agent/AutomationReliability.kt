@@ -569,6 +569,7 @@ object TaskExecutionStore {
         }
         save(context, listOf(record) + prior.take(MAX_HISTORY - 1))
         TaskAnalytics.recordStart(context, adapterId)
+        MainActivity.onTaskStatusUpdated?.invoke()
         return id
     }
 
@@ -596,6 +597,7 @@ object TaskExecutionStore {
             TaskAnalytics.recordTerminal(context, old.adapterId, status)
         }
         save(context, records.take(MAX_HISTORY))
+        MainActivity.onTaskStatusUpdated?.invoke()
     }
 
     @Synchronized
@@ -618,6 +620,7 @@ object TaskExecutionStore {
             }
         }
         save(context, records.take(MAX_HISTORY))
+        MainActivity.onTaskStatusUpdated?.invoke()
         return "⚠️ ${interrupted.size} interrupted task(s) marked PAUSED; no task was auto-replayed: ${interrupted.first().goal.take(100)}"
     }
 
