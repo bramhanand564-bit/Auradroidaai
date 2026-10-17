@@ -459,7 +459,10 @@ class AiOverlayHud(private val context: Context) {
                     y = dpToPx(40)
                 }
 
-                podRootLayout = buildThreeStagePodUi()
+                podRootLayout = buildThreeStagePodUi().apply {
+                    // Preserve text-input suppression if the overlay window has to be rebuilt.
+                    visibility = if (podHiddenForTextInput) View.GONE else View.VISIBLE
+                }
                 windowManager.addView(podRootLayout, podLayoutParams)
                 isAdded = true
                 currentStage = 1
