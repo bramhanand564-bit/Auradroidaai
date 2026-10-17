@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.graphics.Rect
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -111,6 +112,14 @@ object PhoneAgentManager {
             var consecutiveVerificationFails = 0
             var consecutiveAiFailures = 0
             var consecutiveNoProgressWaits = 0
+            var consecutiveFreshTargetRejects = 0
+            var pendingActionFingerprint: String? = null
+            var pendingActionBeforeSignature = 0
+            var pendingLearnedRuleToVerify = ""
+            var lastNoProgressActionFingerprint = ""
+            var consecutiveSameActionNoProgress = 0
+            var screenshotFailureLogged = false
+            val seenLearnedRules = mutableSetOf<String>()
 
             for (step in 1..maxSteps) {
                 val pinnedAtStepStart = pinnedNativePackage
@@ -171,32 +180,6 @@ object PhoneAgentManager {
                 // Keep the compact status pod off search boxes and keyboard suggestions while a real text field is focused.
                 service.overlayHud?.hidePodForFocusedTextInput(nodes.any { it.isEditable && it.isFocused })
 
-                // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
-                // If reply text is sitting inside the bottom message input box AND the green Send button is visible, tap Send immediately!
-                val unsentInputNode = nodes.firstOrNull {
-                    nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
-                    it.isEditable && it.text.isNotBlank()
-                    !it.text.equals("Message", true) &&
-                    !it.text.equals("Type a message", true) &&
-                    !it.text.equals("Search...", true)
-                }
-                val sendBtnNode = nodes.firstOrNull {
-                    nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
-                        (it.contentDesc.equals("Send", true) ||
-                         it.contentDesc.equals("भेजें", true) ||
-                         it.viewId.equals("send", true) ||
-                         it.viewId.contains("send_btn", true))
-                }
-                if (unsentInputNode != null && sendBtnNode != null) {
-                    service.overlayHud?.setCursorOverlayVisible(true)
-                    service.overlayHud?.updateStatus("Step $step • Sending", "Tapping Send button...", "WORKING")
-                    VideoQueueManager.appendLog(service, "📨 Auto-Sending typed message via Send button!")
-                    animateAndPhysicalTapNode(service, sendBtnNode, "Tap: Send")
-                    history.add("Step $step: Auto-Tapped Send button for '${unsentInputNode.text.take(20)}'")
-                    delay(2500)
-                    continue
-                }
-
                 // Android exposes the IME as a separate accessibility window. Prefer
                 // the actual app window so an open keyboard is not misidentified as the app.
                 val foregroundAppNode = nodes.firstOrNull {
@@ -216,24 +199,69 @@ object PhoneAgentManager {
                     }
                     appendLine("VISIBLE NODES (index, app package, text, description, hint, view id, edit/click, screen coordinates):")
                     nodes.forEach {
-                        appendLine("[${it.index}] pkg='${it.packageName}' text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})")
+                        appendLine("[${it.index}] pkg='${it.packageName}' window=${it.windowType} class='${it.className}' text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} focus=${it.isFocused} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})")
                     }
                 }
 
                 // Compare accessibility state and the freshly captured phone screenshot.
                 // This catches visual changes even when the accessibility node text is unchanged.
                 val currentScreenshotB64 = service.captureScreenshotBase64()
-                val currentSig = 31 * screenDump.hashCode() + currentScreenshotB64.hashCode()
+                if (currentScreenshotB64 == null && !screenshotFailureLogged) {
+                    screenshotFailureLogged = true
+                    VideoQueueManager.appendLog(
+                        service,
+                        "⚠️ Screenshot capture unavailable. Continuing with accessibility evidence only; coordinate taps will be blocked."
+                    )
+                }
+                // Avoid treating cursor blinking, clock changes and animated overlays as UI progress.
+                val currentSig = stableScreenSignature(nodes)
+                val didScreenChange = step == 1 || currentSig != previousScreenSignature
+
+                if (step > 1 && pendingActionFingerprint != null) {
+                    val completedFingerprint = pendingActionFingerprint!!
+                    if (currentSig == pendingActionBeforeSignature) {
+                        if (completedFingerprint == lastNoProgressActionFingerprint) {
+                            consecutiveSameActionNoProgress++
+                        } else {
+                            lastNoProgressActionFingerprint = completedFingerprint
+                            consecutiveSameActionNoProgress = 1
+                        }
+                        pendingLearnedRuleToVerify = ""
+                        if (consecutiveSameActionNoProgress >= 3) {
+                            service.overlayHud?.updateStatus(
+                                "Task paused safely",
+                                "The same action failed to change the screen 3 times. No more taps or typing will be attempted.",
+                                "ERROR"
+                            )
+                            VideoQueueManager.appendLog(
+                                service,
+                                "⛔ Stuck-action circuit breaker stopped repeated no-progress action: $completedFingerprint"
+                            )
+                            break
+                        }
+                    } else {
+                        consecutiveSameActionNoProgress = 0
+                        lastNoProgressActionFingerprint = ""
+                        consecutiveFreshTargetRejects = 0
+                        val verifiedRule = pendingLearnedRuleToVerify.trim()
+                        if (verifiedRule.isNotBlank() && seenLearnedRules.add(verifiedRule.lowercase())) {
+                            VideoQueueManager.recordLearnedLesson(service, verifiedRule, domainKey)
+                            VideoQueueManager.appendLog(service, "🧠 Brain rule verified by a screen change: $verifiedRule")
+                        }
+                        pendingLearnedRuleToVerify = ""
+                    }
+                    pendingActionFingerprint = null
+                }
 
                 val screenChangedStatus = if (step == 1) {
                     "Initial step."
-                } else if (currentSig != previousScreenSignature) {
+                } else if (didScreenChange) {
                     consecutiveVerificationFails = 0
                     consecutiveNoProgressWaits = 0
-                    "SCREEN_CHANGED: YES (The UI updated after the last action)."
+                    "SCREEN_CHANGED: YES (The accessibility UI state changed after the last action)."
                 } else {
                     consecutiveVerificationFails++
-                    "SCREEN_CHANGED: NO (Warning: The screen UI did NOT change after the last action! Pick a different node or coordinate)."
+                    "SCREEN_CHANGED: NO (The accessibility UI state did NOT change after the last action; do not repeat the same target blindly)."
                 }
                 previousScreenSignature = currentSig
 
@@ -331,11 +359,6 @@ object PhoneAgentManager {
                     consecutiveAiFailures = 0
                 }
 
-                if (decision.learnedRule.isNotBlank()) {
-                    VideoQueueManager.recordLearnedLesson(service, decision.learnedRule, domainKey)
-                    VideoQueueManager.appendLog(service, "🧠 New Brain Rule Learned: ${decision.learnedRule}")
-                }
-
                 if (isContinuousMonitor && decision.action.equals("DONE", true)) {
                     decision = decision.copy(
                         action = "WAIT",
@@ -407,10 +430,16 @@ object PhoneAgentManager {
                 if (decision.action.equals("CLICK_NODE", true) || decision.action.equals("TYPE", true)) {
                     val originalTarget = nodes.firstOrNull { it.index == decision.nodeIndex }
                     if (originalTarget == null) {
-                        val blocked = "Fresh-target guard blocked ${decision.action}: model index ${decision.nodeIndex} was not in the captured snapshot."
-                        VideoQueueManager.appendLog(service, "🛡️ $blocked")
+                        val blocked = "Fresh-target guard blocked ${decision.action}: model index ${decision.nodeIndex} was not in the current snapshot."
+                        consecutiveFreshTargetRejects++
+                        VideoQueueManager.appendLog(service, "🛡️ $blocked (consecutive rejects: $consecutiveFreshTargetRejects/3)")
                         history.add("Step $step: $blocked")
-                        delay(500)
+                        if (consecutiveFreshTargetRejects >= 3) {
+                            service.overlayHud?.updateStatus("Task paused safely", "The requested control could not be matched to the current screen after 3 attempts.", "ERROR")
+                            VideoQueueManager.appendLog(service, "⛔ Paused after 3 stale/missing node selections. Tap the intended field manually once, then retry.")
+                            break
+                        }
+                        delay(350)
                         continue
                     }
 
@@ -418,8 +447,14 @@ object PhoneAgentManager {
                         val blocked = "Pinned-app guard blocked target '" +
                             originalTarget.text.ifBlank { originalTarget.contentDesc }.ifBlank { originalTarget.viewId } +
                             "' from package " + originalTarget.packageName
-                        VideoQueueManager.appendLog(service, "🛡️ " + blocked)
+                        consecutiveFreshTargetRejects++
+                        VideoQueueManager.appendLog(service, "🛡️ " + blocked + " (consecutive rejects: " + consecutiveFreshTargetRejects + "/3)")
                         history.add("Step " + step + ": " + blocked)
+                        if (consecutiveFreshTargetRejects >= 3) {
+                            service.overlayHud?.updateStatus("Task paused safely", "The selected control belongs to another app. The task was stopped to protect the wrong app from taps.", "ERROR")
+                            VideoQueueManager.appendLog(service, "⛔ Paused after repeated cross-app target rejections.")
+                            break
+                        }
                         delay(350)
                         continue
                     }
@@ -433,14 +468,38 @@ object PhoneAgentManager {
                         forTyping = decision.action.equals("TYPE", true)
                     )
                     if (liveTarget == null) {
-                        val blocked = "Fresh-target guard rejected stale/missing target '${originalTarget.text.ifBlank { originalTarget.contentDesc }.ifBlank { originalTarget.viewId }}'; no tap or typing was performed."
-                        VideoQueueManager.appendLog(service, "🛡️ $blocked")
+                        val targetLabel = originalTarget.text.ifBlank { originalTarget.contentDesc }
+                            .ifBlank { originalTarget.hintText }
+                            .ifBlank { originalTarget.viewId }
+                            .ifBlank { originalTarget.className }
+                        val blocked = "Fresh-target guard rejected target '$targetLabel' (pkg=${originalTarget.packageName}, class=${originalTarget.className}, xy=${originalTarget.centerX.toInt()},${originalTarget.centerY.toInt()}); no tap or typing was performed."
+                        consecutiveFreshTargetRejects++
+                        VideoQueueManager.appendLog(service, "🛡️ $blocked (consecutive rejects: $consecutiveFreshTargetRejects/3)")
                         history.add("Step $step: $blocked")
-                        delay(500)
+                        if (consecutiveFreshTargetRejects >= 3) {
+                            service.overlayHud?.updateStatus("Task paused safely", "The target could not be safely rebound to the live screen after 3 attempts.", "ERROR")
+                            VideoQueueManager.appendLog(service, "⛔ Stopped repeated stale-target loop. No blind tap or typing was dispatched.")
+                            break
+                        }
+                        delay(350)
                         continue
                     }
+                    consecutiveFreshTargetRejects = 0
                     executionNodes = latestNodes
                     decision = decision.copy(nodeIndex = liveTarget.index)
+                }
+
+                if (decision.action.equals("CLICK_XY", true) && currentScreenshotB64 == null) {
+                    consecutiveFreshTargetRejects++
+                    val blocked = "Coordinate action blocked because screenshot capture is unavailable (attempt $consecutiveFreshTargetRejects/3)."
+                    VideoQueueManager.appendLog(service, "🛡️ $blocked")
+                    history.add("Step $step: $blocked")
+                    if (consecutiveFreshTargetRejects >= 3) {
+                        service.overlayHud?.updateStatus("Task paused safely", "Visual coordinates cannot be verified because screenshot capture failed.", "ERROR")
+                        break
+                    }
+                    delay(350)
+                    continue
                 }
 
                 service.overlayHud?.setCursorOverlayVisible(true)
@@ -470,6 +529,30 @@ object PhoneAgentManager {
                 }
 
                 history.add("Step $step:${decision.action} ($executedSummary) -${decision.reason}")
+                if (decision.action.equals("TYPE", true) && executedSummary.startsWith("TYPE_NOT_VERIFIED:")) {
+                    service.overlayHud?.setCursorOverlayVisible(false)
+                    service.overlayHud?.updateStatus("Text entry unverified", "The input value could not be verified. The agent paused to avoid duplicate typing.", "ERROR")
+                    VideoQueueManager.appendLog(service, "⛔ ${executedSummary.removePrefix("TYPE_NOT_VERIFIED:").trim()} Task paused; no repeated text insertion was attempted.")
+                    break
+                }
+
+                val actionFingerprint = when (decision.action.uppercase()) {
+                    "CLICK_NODE" -> executionNodes.firstOrNull { it.index == decision.nodeIndex }?.let { node ->
+                        "CLICK_NODE|${node.packageName}|${node.className}|${node.viewId}|${node.text}|${node.contentDesc}|${node.hintText}|${(node.centerX / 24f).toInt()}|${(node.centerY / 24f).toInt()}"
+                    } ?: "CLICK_NODE|index=${decision.nodeIndex}"
+                    "CLICK_XY" -> "CLICK_XY|${(decision.x / 12f).toInt()}|${(decision.y / 12f).toInt()}|${decision.reason.take(36).lowercase()}"
+                    "TYPE" -> {
+                        val node = executionNodes.firstOrNull { it.index == decision.nodeIndex }
+                        "TYPE|${node?.packageName}|${node?.className}|${node?.viewId}|${(node?.centerX ?: -1f).toInt() / 24}|${(node?.centerY ?: -1f).toInt() / 24}|${decision.textToType.hashCode()}"
+                    }
+                    "SCROLL", "BACK", "OPEN_APP" -> "${decision.action.uppercase()}|${decision.appPackageOrSetting}|${decision.reason.take(36).lowercase()}"
+                    else -> null
+                }
+                if (actionFingerprint != null) {
+                    pendingActionFingerprint = actionFingerprint
+                    pendingActionBeforeSignature = currentSig
+                    pendingLearnedRuleToVerify = decision.learnedRule.trim()
+                }
                 delay(stepDelay)
             }
         } catch (e: CancellationException) {
@@ -510,55 +593,43 @@ object PhoneAgentManager {
                 }
             }
             "CLICK_NODE", "CLICK_XY" -> {
-                // 1. Semantic Snap for WhatsApp/Chat Send button
-                if (reasonLower.contains("send") || reasonLower.contains("reply")) {
-                    val sendNode = nodes.firstOrNull {
-                        nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
-                            (it.contentDesc.equals("Send", true) ||
-                             it.contentDesc.equals("भेजें", true) ||
-                             it.viewId.equals("send", true))
+                // Honor the selected node exactly; never replace it with a guessed Send/menu target.
+                if (decision.action.equals("CLICK_NODE", true)) {
+                    val targetNode = nodes.firstOrNull { it.index == decision.nodeIndex }
+                    if (targetNode == null || !nodeAllowedInPinnedTask(targetNode, pinnedNativePackage)) {
+                        return "TYPE_NOT_VERIFIED: selected node disappeared or crossed the pinned-app boundary"
                     }
-                    if (sendNode != null) {
-                        onTapRecorded(sendNode.centerX, sendNode.centerY)
-                        animateAndPhysicalTapNode(service, sendNode, "Tap: Send")
-                        return "Tapped Send Node (${sendNode.centerX.toInt()},${sendNode.centerY.toInt()})"
-                    }
+                    val label = targetNode.text.ifBlank { targetNode.contentDesc }
+                        .ifBlank { targetNode.hintText }.take(40).ifBlank { "Unlabelled control" }
+                    onTapRecorded(targetNode.centerX, targetNode.centerY)
+                    animateAndPhysicalTapNode(service, targetNode, "Tap: ${label.take(15)}")
+                    return "Tapped validated node #${targetNode.index} ($label)"
                 }
 
-                // 2. Semantic Snap for Top-Right 3-Dot Menu
+                // Match the 3-dot menu semantically only when the model chose coordinate mode.
                 val wantsThreeDotMenu = reasonLower.contains("three-dot") ||
                         reasonLower.contains("3-dot") ||
                         reasonLower.contains("three dot") ||
                         reasonLower.contains("more options") ||
                         reasonLower.contains("menu")
-
-                if (wantsThreeDotMenu) {
+                if (decision.action.equals("CLICK_XY", true) && wantsThreeDotMenu) {
                     val threeDotNode = nodes.firstOrNull {
                         nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
                             (it.contentDesc.contains("More options", true) ||
                              it.contentDesc.contains("अधिक विकल्प", true) ||
                              it.viewId.contains("menuitem_overflow", true) ||
                              it.viewId.contains("action_more", true))
-                    } ?: nodes.filter {
-                        nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
-                            it.centerX > realW * 0.78f && it.centerY in (realH * 0.05f)..(realH * 0.13f)
-                    }.maxByOrNull { it.centerX }
-
+                    }
                     if (threeDotNode != null) {
                         onTapRecorded(threeDotNode.centerX, threeDotNode.centerY)
                         animateAndPhysicalTapNode(service, threeDotNode, "Tap: 3-Dot Menu")
-                        return "Tapped 3-Dot Node (${threeDotNode.centerX.toInt()},${threeDotNode.centerY.toInt()})"
+                        return "Tapped semantically matched 3-dot menu"
                     }
                 }
 
-                if (decision.action.equals("CLICK_NODE", true)) {
-                    val targetNode = nodes.firstOrNull { it.index == decision.nodeIndex }
-                    if (targetNode != null) {
-                        val label = targetNode.text.ifEmpty { targetNode.contentDesc }.take(15).ifEmpty { "Button" }
-                        onTapRecorded(targetNode.centerX, targetNode.centerY)
-                        animateAndPhysicalTapNode(service, targetNode, "Tap: $label")
-                        return "Tapped Node #${targetNode.index} ($label)"
-                    }
+                // Reject model defaults like (-1, -1) instead of turning them into a corner tap.
+                if (decision.x < 0f || decision.x > 540f || decision.y < 0f || decision.y > 1200f) {
+                    return "Blocked invalid CLICK_XY coordinates (${decision.x}, ${decision.y}); no tap was performed"
                 }
 
                 // The vision screenshot is deliberately resized to 540x1200 before it is sent
@@ -597,40 +668,26 @@ object PhoneAgentManager {
                     return "Magnet-Tapped '$label'"
                 }
 
-                if (repeatCount >= 2 && nearestNode != null) {
-                    onTapRecorded(nearestNode.centerX, nearestNode.centerY)
-                    animateAndPhysicalTapNode(service, nearestNode, "Retry Tap")
-                    return "Anti-Stuck Node Tap"
-                }
-
                 onTapRecorded(rawX, rawY)
                 animateAndTapXY(service, rawX, rawY, "Tap: (${rawX.toInt()},${rawY.toInt()})")
                 return "Tapped XY (${rawX.toInt()},${rawY.toInt()})"
             }
             "TYPE" -> {
-                val target = nodes.firstOrNull { it.index == decision.nodeIndex }
-                    ?: nodes.firstOrNull { it.isEditable || it.supportsSetText }
-                val tx = target?.centerX ?: (realW * 0.45f)
-                val ty = target?.centerY ?: (realH * 0.94f)
-                animateAndTapXY(service, tx, ty, "Focus Input")
-                delay(1200)
-                service.insertCaptionSingleClean(decision.textToType, tx, ty)
-                delay(900)
-
-                // Immediately check if a Send button (like in WhatsApp) is now visible, and tap it automatically!
-                val freshNodes = captureScreenNodes(service)
-                val sendBtn = freshNodes.firstOrNull {
-                    nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
-                        (it.contentDesc.equals("Send", true) ||
-                         it.contentDesc.equals("भेजें", true) ||
-                         it.viewId.equals("send", true))
+                if (decision.textToType.isBlank()) {
+                    return "TYPE_NOT_VERIFIED: empty text payload; no typing action was attempted"
                 }
-                if (sendBtn != null) {
-                    animateAndPhysicalTapNode(service, sendBtn, "Tap: Send")
-                    return "Typed & Sent '${decision.textToType.take(18)}'"
-                }
+                val target = nodes.firstOrNull {
+                    it.index == decision.nodeIndex &&
+                        nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                        (it.isEditable || it.supportsSetText)
+                } ?: return "TYPE_NOT_VERIFIED: the exact selected target is not an editable field; no fallback coordinate was used"
 
-                return "Typed '${decision.textToType.take(18)}'"
+                return typeTextIntoTarget(
+                    service = service,
+                    originalTarget = target,
+                    expectedText = decision.textToType,
+                    pinnedNativePackage = pinnedNativePackage
+                )
             }
             "SCROLL" -> {
                 service.performScrollDownGesture()
@@ -645,9 +702,10 @@ object PhoneAgentManager {
     }
 
     /**
-     * Rebind an AI-selected accessibility target to the newest live screen snapshot.
-     * A reused numeric index is never sufficient: package/window and a stable view id
-     * or exact semantic label must match before a tap or typing action can execute.
+     * Rebind an AI-selected node to the live accessibility tree.
+     * First use package/window + stable view ID/label. For anonymous web inputs that
+     * drop their hint after focus, allow a structural match only when class, role and
+     * position agree and the nearest candidate is unambiguous.
      */
     private fun remapToLiveTarget(
         original: UiNodeSnapshot,
@@ -658,36 +716,178 @@ object PhoneAgentManager {
             .map { normalizeAppText(it) }
             .filter { it.isNotBlank() }
             .toSet()
-        if (original.viewId.isBlank() && originalLabels.isEmpty()) return null
 
-        return currentNodes.asSequence()
-            .filter {
-                it.packageName == original.packageName &&
-                    it.windowType == original.windowType &&
-                    (!forTyping || it.isEditable || it.supportsSetText)
-            }
-            .mapNotNull { candidate ->
-                val sameViewId = original.viewId.isNotBlank() && candidate.viewId == original.viewId
-                val candidateLabels = listOf(candidate.text, candidate.contentDesc, candidate.hintText)
-                    .map { normalizeAppText(it) }
-                    .filter { it.isNotBlank() }
-                    .toSet()
-                val sameLabel = originalLabels.any { it in candidateLabels }
-                if (!sameViewId && !sameLabel) return@mapNotNull null
+        val candidates = currentNodes.filter { candidate ->
+            candidate.packageName == original.packageName &&
+                candidate.windowType == original.windowType &&
+                (!forTyping || candidate.isEditable || candidate.supportsSetText) &&
+                (forTyping || !original.isClickable || candidate.isClickable) &&
+                (original.className.isBlank() || candidate.className == original.className)
+        }
+        if (candidates.isEmpty()) return null
 
-                val distance = hypot(
-                    (candidate.centerX - original.centerX).toDouble(),
-                    (candidate.centerY - original.centerY).toDouble()
+        val semanticallyMatched = candidates.mapNotNull { candidate ->
+            val sameViewId = original.viewId.isNotBlank() &&
+                candidate.viewId.isNotBlank() && candidate.viewId == original.viewId
+            val candidateLabels = listOf(candidate.text, candidate.contentDesc, candidate.hintText)
+                .map { normalizeAppText(it) }
+                .filter { it.isNotBlank() }
+                .toSet()
+            val sameLabel = originalLabels.isNotEmpty() && originalLabels.any { it in candidateLabels }
+            if (!sameViewId && !sameLabel) return@mapNotNull null
+            val distance = hypot(
+                (candidate.centerX - original.centerX).toDouble(),
+                (candidate.centerY - original.centerY).toDouble()
+            )
+            val score = (if (sameViewId) 1000 else 0) +
+                (if (sameLabel) 250 else 0) +
+                (if (candidate.className == original.className) 30 else 0) -
+                distance.toInt().coerceAtMost(500)
+            Triple(candidate, score, distance)
+        }.sortedByDescending { it.second }
+
+        if (semanticallyMatched.isNotEmpty()) {
+            val best = semanticallyMatched.first()
+            val next = semanticallyMatched.getOrNull(1)
+            val stableIdentity = original.viewId.isNotBlank() && best.first.viewId == original.viewId
+            val distinctBest = next == null || best.second - next.second >= 35 ||
+                abs(best.third - next.third) >= 45.0
+            if (stableIdentity || (best.third <= 240.0 && distinctBest)) return best.first
+        }
+
+        // Anonymous WebView/Compose fields may have no text, hint or ID.
+        val structuralMatches = candidates.map { candidate ->
+            candidate to hypot(
+                (candidate.centerX - original.centerX).toDouble(),
+                (candidate.centerY - original.centerY).toDouble()
+            )
+        }.sortedBy { it.second }
+        val nearest = structuralMatches.firstOrNull() ?: return null
+        val next = structuralMatches.getOrNull(1)
+        val withinFreshnessRadius = nearest.second <= 150.0
+        val unambiguous = next == null || next.second - nearest.second >= 50.0
+        return if (withinFreshnessRadius && unambiguous) nearest.first else null
+    }
+
+    private fun stableScreenSignature(nodes: List<UiNodeSnapshot>): Int {
+        return nodes.map { node ->
+            listOf(
+                node.packageName,
+                node.windowType.toString(),
+                node.className,
+                normalizeAppText(node.text),
+                normalizeAppText(node.contentDesc),
+                normalizeAppText(node.hintText),
+                node.viewId,
+                node.isEditable.toString(),
+                node.isFocused.toString(),
+                node.isClickable.toString(),
+                (node.centerX / 16f).toInt().toString(),
+                (node.centerY / 16f).toInt().toString()
+            ).joinToString("¦")
+        }.sorted().joinToString("\n").hashCode()
+    }
+
+    private fun targetTextIsVisible(
+        original: UiNodeSnapshot,
+        expectedText: String,
+        nodes: List<UiNodeSnapshot>
+    ): Boolean {
+        val prefix = expectedText.trimStart().take(12)
+        val normalizedPrefix = normalizeAppText(prefix)
+        if (normalizedPrefix.length < 6) return false
+        return nodes.any { node ->
+            val sameTarget =
+                node.packageName == original.packageName &&
+                node.windowType == original.windowType &&
+                (node.isEditable || node.supportsSetText) &&
+                (
+                    (original.viewId.isNotBlank() && node.viewId == original.viewId) ||
+                    (original.className == node.className &&
+                        hypot(
+                            (node.centerX - original.centerX).toDouble(),
+                            (node.centerY - original.centerY).toDouble()
+                        ) <= 180.0)
                 )
-                // Prefer matching view IDs, then exact visible labels, with proximity as a tie-breaker.
-                val score = (if (sameViewId) 1000 else 0) +
-                    (if (sameLabel) 250 else 0) +
-                    (if (candidate.className == original.className) 30 else 0) -
-                    distance.toInt().coerceAtMost(500)
-                candidate to score
+            if (!sameTarget) return@any false
+            val value = listOf(node.text, node.contentDesc).joinToString(" ")
+            normalizeAppText(value).contains(normalizedPrefix)
+        }
+    }
+
+    private suspend fun typeTextIntoTarget(
+        service: AutoTouchService,
+        originalTarget: UiNodeSnapshot,
+        expectedText: String,
+        pinnedNativePackage: String?
+    ): String {
+        if (expectedText.isBlank()) return "TYPE_NOT_VERIFIED: text was empty"
+        if (!nodeAllowedInPinnedTask(originalTarget, pinnedNativePackage)) {
+            return "TYPE_NOT_VERIFIED: target belongs to a different app"
+        }
+
+        var liveTarget = remapToLiveTarget(
+            originalTarget,
+            captureScreenNodes(service),
+            forTyping = true
+        ) ?: return "TYPE_NOT_VERIFIED: input field could not be reacquired; no fallback coordinates were used"
+
+        val setTextArgs = Bundle().apply {
+            putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                expectedText
+            )
+        }
+        val setTextAccepted = runCatching {
+            liveTarget.node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            liveTarget.node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)
+        }.getOrDefault(false)
+
+        delay(300)
+        var latestNodes = captureScreenNodes(service)
+        if (targetTextIsVisible(originalTarget, expectedText, latestNodes)) {
+            return "Typed & verified '${expectedText.take(18)}' in the selected input"
+        }
+        // Do not paste a second copy if Android accepted SET_TEXT but the web component
+        // does not expose its value through accessibility.
+        if (setTextAccepted) {
+            return "TYPE_NOT_VERIFIED: ACTION_SET_TEXT was accepted, but the input value was not observable in the fresh tree"
+        }
+
+        service.copyToClipboard(expectedText)
+        liveTarget = remapToLiveTarget(originalTarget, latestNodes, forTyping = true)
+            ?: return "TYPE_NOT_VERIFIED: input field vanished before safe paste fallback"
+
+        val focusAccepted = runCatching {
+            liveTarget.node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        }.getOrDefault(false)
+        if (!focusAccepted && !liveTarget.isFocused) {
+            val clickAccepted = runCatching {
+                service.clickNodeAndParents(liveTarget.node)
+            }.getOrDefault(false)
+            if (!clickAccepted) {
+                return "TYPE_NOT_VERIFIED: the current input field would not accept focus; no coordinate tap was used"
             }
-            .maxByOrNull { it.second }
-            ?.first
+            delay(250)
+        }
+
+        latestNodes = captureScreenNodes(service)
+        liveTarget = remapToLiveTarget(originalTarget, latestNodes, forTyping = true)
+            ?: return "TYPE_NOT_VERIFIED: input field could not be rebound after focus"
+        if (!nodeAllowedInPinnedTask(liveTarget, pinnedNativePackage)) {
+            return "TYPE_NOT_VERIFIED: focus moved outside the target app"
+        }
+
+        val pasteAccepted = runCatching {
+            liveTarget.node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        }.getOrDefault(false)
+        delay(350)
+        latestNodes = captureScreenNodes(service)
+        return if (pasteAccepted && targetTextIsVisible(originalTarget, expectedText, latestNodes)) {
+            "Typed & verified '${expectedText.take(18)}' using safe paste fallback"
+        } else {
+            "TYPE_NOT_VERIFIED: paste was not visibly verified in the selected input"
+        }
     }
 
     /**
