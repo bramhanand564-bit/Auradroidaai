@@ -950,6 +950,7 @@ object WebPipelineManager {
                     VideoQueueManager.appendLog(context, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(context)}")
                 }
                 TaskRunController.finish(taskRunId)
+                VideoQueueManager.appendLog(context, "⏹ Web task controller released; latest task state is saved.")
                 isWebTaskRunning = false
             }
         }
