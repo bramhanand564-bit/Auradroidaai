@@ -230,6 +230,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        TaskExecutionStore.reconcileInterrupted(this)?.let { notice ->
+            VideoQueueManager.appendLog(this, notice)
+        }
+        TaskExecutionStore.latest(this)?.let { run ->
+            VideoQueueManager.appendLog(
+                this,
+                "📋 Latest task: ${run.status} • ${run.adapterId} • ${run.goal.take(90)} • ${run.message.take(120)}"
+            )
+        }
         refreshQueueCount()
         refreshServiceStatusBadge()
     }
@@ -531,16 +540,23 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     resp.planGoal
                 }
-                lockedTargetUrl = resp.targetUrl
-
-                // Explicit real-device requests must never be silently redirected to the in-app WebView.
-                if (isPhoneControlIntent(userMsg) || isPhoneControlIntent(resp.planGoal)) {
-                    rbModePhoneScreen.isChecked = true
-                } else if (resp.suggestedMode == "WEB") {
+                val route = AppAutomationRouter.chooseRoute(
+                    goal = userMsg,
+                    suggestedMode = resp.suggestedMode,
+                    forcePhoneUi = isPhoneControlIntent(userMsg) || isPhoneControlIntent(resp.planGoal),
+                    suggestedUrl = resp.targetUrl,
+                    pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(this@MainActivity)
+                )
+                lockedTargetUrl = route.startUrl
+                if (route.mode == AutomationMode.BACKGROUND_WEB) {
                     rbModeBackgroundWeb.isChecked = true
                 } else {
                     rbModePhoneScreen.isChecked = true
                 }
+                VideoQueueManager.appendLog(
+                    this@MainActivity,
+                    "🧭 Planned route: ${route.mode} • adapter=${route.profile?.id ?: "UNIVERSAL"} • ${route.reason}"
+                )
                 tvActiveSubtitle.text = GeminiBrain.getAutoModelStatusReport()
             }
         }
@@ -565,7 +581,11 @@ class MainActivity : AppCompatActivity() {
                 rbModePhoneScreen.isChecked = true
                 startPhoneScreenAgentSafely(apiKey, model, goalToRun)
             } else if (rbModeBackgroundWeb.isChecked) {
-                val url = lockedTargetUrl.ifBlank { VideoQueueManager.getPinnedFlowUrl(this) }
+                val url = AppAutomationRouter.resolveStartUrl(
+                    goal = goalToRun,
+                    suggestedUrl = lockedTargetUrl,
+                    pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(this)
+                )
                 WebPipelineManager.startAutonomousWebAgent(
                     context = this,
                     apiKey = apiKey,
@@ -681,10 +701,15 @@ class MainActivity : AppCompatActivity() {
             val apiKey = etApiKey.text.toString().trim()
             val model = etModelName.text.toString().trim()
             val folderPath = etFolderPath.text.toString().trim()
-            val url = etWebUrl.text.toString().trim()
+            val enteredUrl = etWebUrl.text.toString().trim()
             val goal = etWebTaskGoal.text.toString().trim().ifBlank {
                 VideoQueueManager.getFlowTopic(this)
             }
+            val url = AppAutomationRouter.resolveStartUrl(
+                goal = goal,
+                suggestedUrl = enteredUrl,
+                pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(this)
+            )
 
             WebPipelineManager.startAutonomousWebAgent(
                 context = this,
@@ -1171,48 +1196,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scheduleDailyPipelineAlarm(hour: Int, minute: Int) {
+        val safeHour = hour.coerceIn(0, 23)
+        val safeMinute = minute.coerceIn(0, 59)
+        val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean("daily_pipeline_enabled", true)
+            // Both key pairs are kept for compatibility with older saved settings.
+            .putInt("schedule_hour", safeHour)
+            .putInt("schedule_minute", safeMinute)
+            .putInt("sched_hour", safeHour)
+            .putInt("sched_min", safeMinute)
+            .apply()
+
         try {
-            val receiverClass = Class.forName("com.auradroid.agent.DailyUploadReceiver")
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, receiverClass)
-            val pendingIntent = PendingIntent.getBroadcast(
-                this,
-                2001,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val calendar = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, hour)
-                set(Calendar.MINUTE, minute)
-                set(Calendar.SECOND, 0)
-                if (timeInMillis <= System.currentTimeMillis()) {
-                    add(Calendar.DAY_OF_YEAR, 1)
-                }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    calendar.timeInMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    calendar.timeInMillis,
-                    pendingIntent
-                )
-            }
-
-            val timeFormatted = String.format(Locale.US, "%02d:%02d", hour, minute)
-            val msg = "⏰ Auto-Timer Locked: Daily Story + YouTube Pipeline scheduled for $timeFormatted"
+            TaskSchedulerReceiver.scheduleDailyUpload(this, safeHour, safeMinute)
+            val timeFormatted = String.format(Locale.US, "%02d:%02d", safeHour, safeMinute)
+            val msg = "⏰ Daily automation scheduled for $timeFormatted. The phone and Accessibility service must be available at run time."
             tvAutoTimerSummary.text = msg
             VideoQueueManager.saveParsedScheduleSummary(this, msg)
             VideoQueueManager.appendLog(this, msg)
-            Toast.makeText(this, "⏰ Daily Auto-Schedule set for $timeFormatted!", Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-            Toast.makeText(this, "⏰ Schedule time saved ($hour:$minute)!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "⏰ Daily schedule set for $timeFormatted", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            val msg = "⚠️ Schedule failed: ${e.message ?: "check alarm permission/settings"}"
+            tvAutoTimerSummary.text = msg
+            VideoQueueManager.appendLog(this, msg)
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
     }
 
