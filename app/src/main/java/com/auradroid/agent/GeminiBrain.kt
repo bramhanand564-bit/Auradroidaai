@@ -605,18 +605,35 @@ object GeminiBrain {
             val evidenceAppearsOnScreen = normalizedEvidence.length >= 8 &&
                 screen.contains(normalizedEvidence)
             val goalText = goal.lowercase()
-            val sensitiveEvidence = when {
-                listOf("publish", "publish now", "post this", "post it", "make public").any { goalText.contains(it) } ->
-                    listOf("published", "post published", "your post is live", "successfully posted", "video is public", "video published", "upload complete", "uploaded successfully").any { screen.contains(it) }
-                listOf("send message", "send this message", "send an email", "send email", "send the message").any { goalText.contains(it) } ->
-                    listOf("message sent", "sent successfully", "email sent", "delivered", "message delivered").any { screen.contains(it) }
-                listOf("delete", "remove this", "remove the").any { goalText.contains(it) } ->
-                    listOf("deleted successfully", "item deleted", "removed successfully", "moved to trash", "deleted").any { screen.contains(it) }
-                listOf("pay", "payment", "purchase", "buy this", "place an order", "book this", "subscribe", "follow this account").any { goalText.contains(it) } ->
-                    listOf("payment successful", "order confirmed", "booking confirmed", "purchased successfully", "subscription confirmed", "followed successfully").any { screen.contains(it) }
-                listOf("upload", "upload video", "upload file").any { goalText.contains(it) } ->
-                    listOf("upload complete", "uploaded successfully", "video uploaded", "video published", "saved as draft").any { screen.contains(it) }
-                else -> true
+            val asksUpload = Regex("""\\b(upload|uploading)\\b""").containsMatchIn(goalText)
+            val asksPublish = goalText.contains("publish") || Regex(
+                """\\b(post (this|it|the|to|on)|share (this|it|the)|make public)\\b"""
+            ).containsMatchIn(goalText)
+            val asksSend = Regex("""\\b(send|sending)\\b""").containsMatchIn(goalText)
+            val asksDelete = Regex("""\\b(delete|deleting|remove|removing|erase|erasing)\\b""").containsMatchIn(goalText)
+            val asksTransaction = Regex(
+                """\\b(pay|payment|purchase|buy this|place an order|order this|book this|reserve|subscribe|renew subscription)\\b"""
+            ).containsMatchIn(goalText)
+            val asksFollow = Regex("""\\b(unfollow|follow)\\s+(@[a-z0-9_.-]+|this account|the account|this user|the user)\\b""")
+                .containsMatchIn(goalText) && !Regex("""\\bfollow (the )?(steps|instructions|guide|process)\\b""").containsMatchIn(goalText)
+            val asksLike = Regex("""\\b(like|unlike) (this|the) (post|video|photo|comment|reel)\\b""")
+                .containsMatchIn(goalText)
+            val asksSubmit = Regex("""\\b(submit|submit this|submit the|apply for)\\b""").containsMatchIn(goalText)
+            val asksSave = Regex("""\\b(save changes|save this file|save the file|save draft|save this|save the changes)\\b""")
+                .containsMatchIn(goalText)
+            val requiredOutcomeProofs = buildList {
+                if (asksUpload) add(listOf("upload complete", "uploaded successfully", "video uploaded", "video published", "upload successful", "saved as draft"))
+                if (asksPublish) add(listOf("published", "post published", "your post is live", "successfully posted", "post has been shared", "your post has been shared", "video is public", "video published", "story shared"))
+                if (asksSend) add(listOf("message sent", "sent successfully", "email sent", "delivered", "message delivered", "message was sent", "your message has been sent"))
+                if (asksDelete) add(listOf("deleted successfully", "item deleted", "removed successfully", "moved to trash", "moved to bin", "deleted", "removed"))
+                if (asksTransaction) add(listOf("payment successful", "payment complete", "transaction successful", "order confirmed", "your order is confirmed", "booking confirmed", "reservation confirmed", "purchased successfully", "subscription confirmed"))
+                if (asksFollow) add(listOf("followed successfully", "following", "request sent", "following you"))
+                if (asksLike) add(listOf("liked", "added to likes", "you liked this"))
+                if (asksSubmit) add(listOf("submitted successfully", "form submitted", "application submitted", "response recorded", "thank you for submitting"))
+                if (asksSave) add(listOf("saved successfully", "changes saved", "draft saved", "file saved", "saved"))
+            }
+            val sensitiveEvidence = requiredOutcomeProofs.all { alternatives ->
+                alternatives.any { phrase -> screen.contains(phrase) }
             }
             if (modelVerified && evidenceAppearsOnScreen && sensitiveEvidence) {
                 TaskCompletionVerification(true, evidence.take(350), reason.take(500))
