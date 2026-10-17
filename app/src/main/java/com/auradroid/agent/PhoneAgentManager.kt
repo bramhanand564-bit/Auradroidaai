@@ -149,8 +149,10 @@ object PhoneAgentManager {
                     }
                 }
 
+                // Compare both accessibility state and the freshly captured screenshot.
+                // This catches visual changes even when the accessibility node text is unchanged.
                 val currentScreenshotB64 = service.captureScreenshotBase64()
-                val currentSig = screenDump.hashCode()
+                val currentSig = 31 * screenDump.hashCode() + currentScreenshotB64.hashCode()
 
                 val screenChangedStatus = if (step == 1) {
                     "Initial step."
