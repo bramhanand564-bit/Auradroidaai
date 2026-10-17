@@ -613,7 +613,7 @@ object PhoneAgentManager {
                     }
                     val label = targetNode.text.ifBlank { targetNode.contentDesc }
                         .ifBlank { targetNode.hintText }.take(40).ifBlank { "Unlabelled control" }
-                    val sideEffect = sensitiveControlAction(targetNode)
+                    val sideEffect = sensitiveControlAction(targetNode, decision.reason)
                     if (sideEffect != null && !goalExplicitlyRequestsSideEffect(userGoal, sideEffect)) {
                         return "ACTION_BLOCKED_UNAUTHORIZED: '$sideEffect' control is not explicitly requested by the user's original task"
                     }
@@ -648,6 +648,11 @@ object PhoneAgentManager {
                     }
                 }
 
+                // Do not rely on a visual coordinate to bypass the side-effect confirmation guard.
+                val describedSideEffect = sensitiveControlActionFromText(decision.reason)
+                if (describedSideEffect != null && !goalExplicitlyRequestsSideEffect(userGoal, describedSideEffect)) {
+                    return "ACTION_BLOCKED_UNAUTHORIZED: '$describedSideEffect' action is not explicitly requested by the user's original task"
+                }
                 // Reject model defaults like (-1, -1) instead of turning them into a corner tap.
                 if (decision.x < 0f || decision.x > 540f || decision.y < 0f || decision.y > 1200f) {
                     return "Blocked invalid CLICK_XY coordinates (${decision.x}, ${decision.y}); no tap was performed"
@@ -685,7 +690,7 @@ object PhoneAgentManager {
                 ) {
                     val label = nearestNode.text.ifBlank { nearestNode.contentDesc }
                         .ifBlank { nearestNode.hintText }.take(30).ifBlank { "Tap" }
-                    val sideEffect = sensitiveControlAction(nearestNode)
+                    val sideEffect = sensitiveControlAction(nearestNode, decision.reason)
                     if (sideEffect != null && !goalExplicitlyRequestsSideEffect(userGoal, sideEffect)) {
                         return "ACTION_BLOCKED_UNAUTHORIZED: '$sideEffect' control is not explicitly requested by the user's original task"
                     }
@@ -798,10 +803,17 @@ object PhoneAgentManager {
         return if (withinFreshnessRadius && unambiguous) nearest.first else null
     }
 
-    private fun sensitiveControlAction(node: UiNodeSnapshot): String? {
-        val label = listOf(node.text, node.contentDesc, node.hintText, node.viewId)
+    private fun sensitiveControlAction(node: UiNodeSnapshot, context: String = ""): String? {
+        val label = listOf(node.text, node.contentDesc, node.hintText, node.viewId, context)
             .joinToString(" ")
             .lowercase()
+            .replace('_', ' ')
+            .replace('-', ' ')
+        return sensitiveControlActionFromText(label)
+    }
+
+    private fun sensitiveControlActionFromText(rawText: String): String? {
+        val label = rawText.lowercase().replace('_', ' ').replace('-', ' ')
         return when {
             Regex("""\b(send|send message|reply|reply now|भेजें)\b""").containsMatchIn(label) -> "send"
             Regex("""\b(publish|publish now|post now)\b""").containsMatchIn(label) -> "publish"
