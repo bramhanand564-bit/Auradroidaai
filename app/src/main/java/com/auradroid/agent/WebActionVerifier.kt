@@ -325,7 +325,23 @@ object WebActionVerifier {
                 window.__naxElements = [];
                 var lines = [];
 
-                var all = Array.from(document.querySelectorAll('button, a, input, textarea, [contenteditable="true"], [role="button"], [role="tab"], video, [class*="card"], [class*="project"], [class*="result"], [class*="media"], [class*="player"], [class*="thumb"]'));
+                var all = Array.from(document.querySelectorAll(
+                    'button, a[href], input, textarea, select, [contenteditable="true"], ' +
+                    '[role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], ' +
+                    '[role="switch"], [role="checkbox"], [role="radio"], [role="combobox"], [aria-haspopup], ' +
+                    '[tabindex]:not([tabindex="-1"]), video, [class*="card"], [class*="project"], ' +
+                    '[class*="result"], [class*="media"], [class*="player"], [class*="thumb"]'
+                ));
+                // Reserve list capacity for genuine controls before lower-confidence card/container candidates.
+                function targetPriority(el) {
+                    var tag = (el.tagName || '').toLowerCase();
+                    var role = el.getAttribute('role') || '';
+                    if (/^(button|a|input|textarea|select)$/.test(tag)) return 0;
+                    if (/^(button|link|tab|menuitem|option|switch|checkbox|radio|combobox)$/.test(role)) return 1;
+                    if (el.hasAttribute('aria-haspopup') || el.hasAttribute('tabindex')) return 2;
+                    return 3;
+                }
+                all.sort(function(a, b) { return targetPriority(a) - targetPriority(b); });
                 var idx = 0;
 
                 for (var i = 0; i < all.length; i++) {
@@ -743,7 +759,7 @@ object WebActionVerifier {
                     "Goal evidence verified: download completion message is visible."
                 } else null
             listOf("generate", "create", "render", "make a video", "make an image").any { g.contains(it) } ->
-                if ((snapshot.hasCompletedProjectCard || snapshot.hasActiveVideoStream) &&
+                if ((snapshot.hasActiveVideoStream || snapshot.renderingProgressLabel == "100%") &&
                     !snapshot.isFlowRenderingInProgress) {
                     "Goal evidence verified: completed media/result is present and rendering is not active."
                 } else if (hasAny("generation complete", "created successfully", "render complete", "completed successfully")) {
