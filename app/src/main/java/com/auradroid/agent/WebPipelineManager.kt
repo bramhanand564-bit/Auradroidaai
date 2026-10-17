@@ -364,10 +364,14 @@ object WebPipelineManager {
 
                 for (step in 1..36) {
                     if (!isWebTaskRunning) break
-                    if (!TaskRunController.awaitIfRunning(context, taskRunId, step)) {
-                        terminalTaskStatus = TaskStatus.CANCELLED
-                        terminalTaskMessage = "Web task stopped while paused/cancelled; no completion was claimed."
-                        break
+                    when (TaskRunController.awaitBeforeStep(context, taskRunId, step)) {
+                        TaskGateResult.STOP -> {
+                            terminalTaskStatus = TaskStatus.CANCELLED
+                            terminalTaskMessage = "Web task stopped while paused/cancelled; no completion was claimed."
+                            break
+                        }
+                        TaskGateResult.REFRESH -> continue
+                        TaskGateResult.READY -> Unit
                     }
                     TaskExecutionStore.update(
                         context, taskRunId, TaskStatus.VERIFYING, step,
@@ -518,6 +522,18 @@ object WebPipelineManager {
                             delay(450L)
                             continue
                         }
+                    }
+
+                    // Pause can arrive while Gemini is deciding. Never dispatch a stale DOM target
+                    // after resume; refresh the page snapshot and request a new decision first.
+                    when (TaskRunController.awaitBeforeStep(context, taskRunId, step)) {
+                        TaskGateResult.STOP -> {
+                            terminalTaskStatus = TaskStatus.CANCELLED
+                            terminalTaskMessage = "Web task stopped before the next action was dispatched."
+                            break
+                        }
+                        TaskGateResult.REFRESH -> continue
+                        TaskGateResult.READY -> Unit
                     }
 
                     hud.updateStatus("Web • ${decision.action}", decision.reason, "AUTO")
