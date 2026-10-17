@@ -824,7 +824,8 @@ object WebPipelineManager {
                     if (t.indexOf('New project') !== -1 || t === '+ New project') {
                         var r = b.getBoundingClientRect();
                         if (r.width > 20 && r.height > 20) {
-                            b.click();
+                            // Sense 1 activates through DOM; later senses return coordinates only.
+                            if ($senseLevel === 1) b.click();
                             return JSON.stringify({
                                 found: true,
                                 x: Math.round(r.left + r.width / 2),
@@ -845,19 +846,24 @@ object WebPipelineManager {
                     val clean = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"") ?: "{}"
                     val obj = JSONObject(clean)
                     if (obj.optBoolean("found", false)) {
-                        val offsetX = if (senseLevel >= 3) 12f else 0f
-                        scope.launch {
-                            WebActionVerifier.dispatchRealWebTouch(
-                                webView = webView,
-                                hud = hud,
-                                cssX = obj.optDouble("x", 270.0).toFloat() + offsetX,
-                                cssY = obj.optDouble("y", 700.0).toFloat(),
-                                viewportCssWidth = obj.optDouble("vw", 540.0).toFloat(),
-                                viewportCssHeight = obj.optDouble("vh", 960.0).toFloat(),
-                                label = "+ New project"
-                            )
+                        if (senseLevel == 1) {
+                            if (cont.isActive) cont.resume(true)
+                        } else {
+                            val offsetX = if (senseLevel >= 4) 12f else 0f
+                            scope.launch {
+                                val touchOk = WebActionVerifier.dispatchRealWebTouch(
+                                    webView = webView,
+                                    hud = hud,
+                                    cssX = obj.optDouble("x", 270.0).toFloat() + offsetX,
+                                    cssY = obj.optDouble("y", 700.0).toFloat(),
+                                    viewportCssWidth = obj.optDouble("vw", 540.0).toFloat(),
+                                    viewportCssHeight = obj.optDouble("vh", 960.0).toFloat(),
+                                    holdDurationMs = if (senseLevel >= 3) 150L else 95L,
+                                    label = "+ New project"
+                                )
+                                if (cont.isActive) cont.resume(touchOk)
+                            }
                         }
-                        if (cont.isActive) cont.resume(true)
                     } else {
                         if (cont.isActive) cont.resume(false)
                     }
