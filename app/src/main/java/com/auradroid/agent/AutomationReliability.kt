@@ -121,6 +121,11 @@ object AppAutomationRouter {
 
     fun profileForGoal(goal: String): AppAutomationProfile? {
         val value = goal.lowercase()
+        // Upload/publish tasks target Studio, not the consumer YouTube app.
+        if (value.contains("youtube") &&
+            listOf("upload", "publish", "post", "short", "studio", "creator").any { value.contains(it) }) {
+            return profiles.firstOrNull { it.id == "YOUTUBE_STUDIO" }
+        }
         // More specific profiles must win over their parent product.
         return profiles.firstOrNull { profile ->
             profile.aliases.sortedByDescending { it.length }.any { alias -> value.contains(alias) }
@@ -203,8 +208,14 @@ object AppAutomationRouter {
             return profile.webHome
         }
 
-        normalizeHttpUrl(suggestedUrl)?.let { return it }
-        // Never reuse the pinned Google Flow page for an unrelated task.
+        normalizeHttpUrl(suggestedUrl)?.let { normalized ->
+            val host = runCatching { URI(normalized).host?.lowercase().orEmpty() }.getOrDefault("")
+            val isFlowDestination = host == "labs.google" || host.endsWith(".labs.google") ||
+                host == "flow.google" || host.endsWith(".flow.google") ||
+                host == "labs.google.com" || host.endsWith(".labs.google.com")
+            // A saved Flow URL is only valid for an explicitly Flow-related task.
+            if (!isFlowDestination) return normalized
+        }
         return "https://www.google.com/"
     }
 
