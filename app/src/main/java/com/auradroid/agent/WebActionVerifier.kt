@@ -21,7 +21,16 @@ data class DomSnapshot(
     val hasCompletedProjectCard: Boolean,
     val isFlowRenderingInProgress: Boolean,
     val renderingProgressLabel: String,
-    val isInvalidModelModeSelected: Boolean
+    val isInvalidModelModeSelected: Boolean,
+    // Private verification evidence. These values are used locally and are not automatically sent to the model.
+    val pageText: String = "",
+    val scrollY: Float = 0f,
+    val formStateFingerprint: Int = 0,
+    val activeElementSummary: String = "",
+    val activeElementValue: String = "",
+    val readyState: String = "unknown",
+    val hasVisibleErrorMessage: Boolean = false,
+    val hasVisibleSuccessMessage: Boolean = false
 )
 
 data class StepVerificationResult(
