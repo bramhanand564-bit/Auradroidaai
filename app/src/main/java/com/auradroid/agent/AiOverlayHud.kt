@@ -1187,19 +1187,29 @@ class NaxHandCursorCanvas(context: Context) : View(context) {
 
     private var currentAnimator: ValueAnimator? = null
 
+    private fun screenToCanvas(x: Float, y: Float): Pair<Float, Float> {
+        // Accessibility node bounds are screen coordinates; Canvas draws in view-local coordinates.
+        val location = IntArray(2)
+        getLocationOnScreen(location)
+        return Pair(x - location[0], y - location[1])
+    }
+
     fun triggerTapAnimation(x: Float, y: Float, label: String) {
-        tapX = x
-        tapY = y
+        val local = screenToCanvas(x, y)
+        tapX = local.first
+        tapY = local.second
         tapLabel = label
         isSwiping = false
         startEffectAnimator()
     }
 
     fun triggerSwipeAnimation(x1: Float, y1: Float, x2: Float, y2: Float) {
-        swipeX1 = x1
-        swipeY1 = y1
-        swipeX2 = x2
-        swipeY2 = y2
+        val start = screenToCanvas(x1, y1)
+        val end = screenToCanvas(x2, y2)
+        swipeX1 = start.first
+        swipeY1 = start.second
+        swipeX2 = end.first
+        swipeY2 = end.second
         isSwiping = true
         startEffectAnimator()
     }
@@ -1242,6 +1252,43 @@ class NaxHandCursorCanvas(context: Context) : View(context) {
             val radius = 16f + rippleProgress * 64f
             canvas.drawCircle(tapX, tapY, radius, ripplePaint)
             canvas.drawCircle(tapX, tapY, 14f, dotPaint)
+
+            // Restore the visible animated hand: the index fingertip stays anchored on
+            // the exact tap target while the palm gently presses down and releases.
+            val handShiftY = if (rippleProgress < 0.45f) rippleProgress * 10f else (1f - rippleProgress) * 8f
+            val hx = tapX + 18f
+            val hy = tapY + 14f + handShiftY
+            val handFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                style = Paint.Style.FILL
+            }
+            val handOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#0F172A")
+                style = Paint.Style.STROKE
+                strokeWidth = 4f
+                strokeJoin = Paint.Join.ROUND
+                strokeCap = Paint.Cap.ROUND
+            }
+            val hand = Path().apply {
+                moveTo(hx - 13f, hy + 35f)
+                lineTo(hx - 20f, hy + 18f)
+                quadTo(hx - 23f, hy + 9f, hx - 15f, hy + 7f)
+                quadTo(hx - 9f, hy + 6f, hx - 5f, hy + 16f)
+                lineTo(hx - 5f, hy - 18f)
+                quadTo(hx - 5f, hy - 28f, hx + 2f, hy - 28f)
+                quadTo(hx + 9f, hy - 28f, hx + 9f, hy - 18f)
+                lineTo(hx + 10f, hy + 3f)
+                lineTo(hx + 17f, hy - 2f)
+                quadTo(hx + 25f, hy - 6f, hx + 28f, hy + 2f)
+                lineTo(hx + 32f, hy + 7f)
+                quadTo(hx + 41f, hy + 4f, hx + 44f, hy + 14f)
+                lineTo(hx + 40f, hy + 34f)
+                quadTo(hx + 37f, hy + 42f, hx + 27f, hy + 42f)
+                lineTo(hx - 4f, hy + 42f)
+                close()
+            }
+            canvas.drawPath(hand, handFill)
+            canvas.drawPath(hand, handOutline)
 
             if (tapLabel.isNotBlank()) {
                 val tw = labelTextPaint.measureText(tapLabel)
