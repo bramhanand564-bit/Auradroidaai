@@ -77,7 +77,7 @@ object AppAutomationRouter {
         ),
         AppAutomationProfile(
             id = "GOOGLE_DRIVE", displayName = "Google Drive",
-            aliases = listOf("google drive", "drive"),
+            aliases = listOf("google drive", "drive app", "drive folder"),
             packageNames = listOf("com.google.android.apps.docs"),
             webHome = "https://drive.google.com/"
         ),
