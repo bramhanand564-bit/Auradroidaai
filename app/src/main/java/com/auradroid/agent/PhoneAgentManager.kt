@@ -686,6 +686,7 @@ object PhoneAgentManager {
                 if (status != TaskStatus.COMPLETED) {
                     VideoQueueManager.appendLog(service, "📋 Task state saved: $status • $message")
                 }
+                VideoQueueManager.appendLog(service, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(service)}")
             }
             service.overlayHud?.setCursorOverlayVisible(false)
             service.overlayHud?.hidePodForFocusedTextInput(false)
