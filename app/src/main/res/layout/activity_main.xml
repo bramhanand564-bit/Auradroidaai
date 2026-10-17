@@ -256,7 +256,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:checked="true"
-                                android:text="🌐 Smart Hybrid Mode (1st Run Phone/Live में सीखकर वेरीफाई करे ➔ फिर Background में चलाए)"
+                                android:text="🌐 Background Web Mode (YouTube Studio / in-app browser; upload web में चलेगा)"
                                 android:textColor="#38BDF8"
                                 android:textSize="13.5sp" />
 
@@ -264,7 +264,7 @@
                                 android:id="@+id/rbModePhoneScreen"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="📱 Direct Phone Screen Mode (जब फोन खाली हो/सो रहे हों—असली स्क्रीनशॉट व ऐप्स पर काम करे)"
+                                android:text="📱 Real Phone App Mode (YouTube का असली Android app खोलकर upload करे)"
                                 android:textColor="#F0F9FF"
                                 android:textSize="13.5sp" />
                         </RadioGroup>
