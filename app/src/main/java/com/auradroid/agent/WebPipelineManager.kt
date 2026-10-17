@@ -347,7 +347,7 @@ object WebPipelineManager {
             pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(context)
         )
         val resolvedStartUrl = route.startUrl
-        val webAdapterId = route.profile?.id ?: "CUSTOM_WEB"
+        val webAdapterId = AppAutomationRouter.memoryDomainForWebGoal(goal, resolvedStartUrl)
         val taskRunId = TaskExecutionStore.start(context, goal, AutomationMode.BACKGROUND_WEB, webAdapterId)
         TaskRunController.begin(taskRunId)
         VideoQueueManager.appendLog(
