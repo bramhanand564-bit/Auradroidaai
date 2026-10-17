@@ -327,6 +327,7 @@ object AppAutomationRouter {
 }
 
 enum class TaskStatus { QUEUED, RUNNING, VERIFYING, PAUSED, COMPLETED, FAILED, CANCELLED }
+enum class TaskGateResult { READY, REFRESH, STOP }
 
 data class TaskRunRecord(
     val id: String,
@@ -519,8 +520,12 @@ object TaskRunController {
     fun isPaused(): Boolean = pauseRequested
     fun hasActiveTask(): Boolean = !activeTaskId.isNullOrBlank() && !cancelRequested
 
-    suspend fun awaitIfRunning(context: Context, taskId: String, step: Int): Boolean {
-        if (activeTaskId != taskId) return false
+    /**
+     * Returns REFRESH after pause/resume so callers discard the old snapshot/AI decision.
+     * STOP means this run no longer owns the controller or the user cancelled it.
+     */
+    suspend fun awaitBeforeStep(context: Context, taskId: String, step: Int): TaskGateResult {
+        if (activeTaskId != taskId) return TaskGateResult.STOP
         var announcedPause = false
         while (activeTaskId == taskId && pauseRequested && !cancelRequested) {
             if (!announcedPause) {
@@ -533,15 +538,16 @@ object TaskRunController {
             }
             delay(250)
         }
-        if (activeTaskId != taskId || cancelRequested) return false
+        if (activeTaskId != taskId || cancelRequested) return TaskGateResult.STOP
         if (announcedPause) {
             TaskExecutionStore.update(
                 context, taskId, TaskStatus.RUNNING, step,
-                "Resumed by user; refreshing screen state before continuing."
+                "Resumed by user; discard the old decision and refresh the screen before continuing."
             )
-            VideoQueueManager.appendLog(context, "▶️ Task resumed; the next action will use a fresh screen snapshot.")
+            VideoQueueManager.appendLog(context, "▶️ Task resumed; refreshing screen state before the next action.")
+            return TaskGateResult.REFRESH
         }
-        return true
+        return TaskGateResult.READY
     }
 
     @Synchronized
