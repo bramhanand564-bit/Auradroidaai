@@ -536,7 +536,8 @@ object WebActionVerifier {
         before: DomSnapshot?,
         after: DomSnapshot,
         actionTaken: String,
-        expectedOutcome: String
+        expectedOutcome: String,
+        countFailure: Boolean = true
     ): StepVerificationResult {
         lastSnapshot = after
         val action = actionTaken.uppercase()
@@ -558,7 +559,7 @@ object WebActionVerifier {
             )
         }
         if (before == null) {
-            consecutiveStuckCount++
+            if (countFailure) consecutiveStuckCount++
             return StepVerificationResult(
                 passed = false,
                 verificationReport = "VERIFY FAILED: no pre-action snapshot exists for ${action}.",
@@ -612,7 +613,7 @@ object WebActionVerifier {
         }
 
         if (success) {
-            consecutiveStuckCount = 0
+            if (countFailure) consecutiveStuckCount = 0
             val evidence = when {
                 urlChanged -> "URL changed"
                 formStateChanged || activeValueChanged -> "form/control state changed"
@@ -630,8 +631,9 @@ object WebActionVerifier {
             )
         }
 
-        consecutiveStuckCount++
-        val nextSense = (consecutiveStuckCount + 1).coerceIn(2, 4)
+        if (countFailure) consecutiveStuckCount++
+        val failureNumber = consecutiveStuckCount + if (countFailure) 0 else 1
+        val nextSense = (failureNumber + 1).coerceIn(2, 4)
         val reason = when {
             errorAppeared -> "visible error state appeared"
             action == "TYPE_EL" -> "requested text was not found in the active field/page state"
