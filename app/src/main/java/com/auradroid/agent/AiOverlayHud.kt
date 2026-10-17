@@ -482,20 +482,9 @@ class AiOverlayHud(private val context: Context) {
     }
 
     fun setCursorOverlayVisible(visible: Boolean) {
+        // Only the short-lived tap/swipe confirmation animation is drawn; never persist target markers.
         mainHandler.post {
-            val hasTargets = pointerCanvasView?.hasTargetDots() == true
-            pointerCanvasView?.visibility = if (visible || hasTargets) View.VISIBLE else View.GONE
-        }
-    }
-
-    fun setClickableTargetDots(dots: List<NaxTargetDot>) {
-        mainHandler.post {
-            pointerCanvasView?.setTargetDots(dots)
-            if (dots.isEmpty() && !AutoTouchService.isJobRunning) {
-                pointerCanvasView?.visibility = View.GONE
-            } else if (dots.isNotEmpty() && AutoTouchService.isJobRunning) {
-                pointerCanvasView?.visibility = View.VISIBLE
-            }
+            pointerCanvasView?.visibility = if (visible) View.VISIBLE else View.GONE
         }
     }
 
@@ -1168,30 +1157,12 @@ class NaxBotAvatarView(context: Context) : View(context) {
 /**
  * Visual Hand Pointer & Ripple Overlay Canvas for Nax Bot Touch Verification
  */
-data class NaxTargetDot(val index: Int, val x: Float, val y: Float, val label: String)
-
 class NaxHandCursorCanvas(context: Context) : View(context) {
 
     private var tapX = -1f
     private var tapY = -1f
     private var tapLabel = ""
     private var rippleProgress = 0f
-    private var targetDots: List<NaxTargetDot> = emptyList()
-    private val targetDotFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.parseColor("#E60F172A")
-    }
-    private val targetDotStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-        color = Color.parseColor("#38BDF8")
-    }
-    private val targetDotText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = 25f
-        textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
-    }
 
     private var swipeX1 = -1f
     private var swipeY1 = -1f
@@ -1229,16 +1200,6 @@ class NaxHandCursorCanvas(context: Context) : View(context) {
         getLocationOnScreen(location)
         return Pair(x - location[0], y - location[1])
     }
-
-    fun setTargetDots(dots: List<NaxTargetDot>) {
-        targetDots = dots.map { dot ->
-            val local = screenToCanvas(dot.x, dot.y)
-            dot.copy(x = local.first, y = local.second)
-        }
-        invalidate()
-    }
-
-    fun hasTargetDots(): Boolean = targetDots.isNotEmpty()
 
     fun triggerTapAnimation(x: Float, y: Float, label: String) {
         val local = screenToCanvas(x, y)
@@ -1283,14 +1244,6 @@ class NaxHandCursorCanvas(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-
-        // Persistent numbered markers map to the same accessibility node indices used by CLICK_NODE.
-        targetDots.forEach { target ->
-            val radius = 18f
-            canvas.drawCircle(target.x, target.y, radius, targetDotFill)
-            canvas.drawCircle(target.x, target.y, radius, targetDotStroke)
-            canvas.drawText(target.index.toString(), target.x, target.y + targetDotText.textSize * 0.34f, targetDotText)
-        }
 
         if (rippleProgress <= 0f || rippleProgress >= 1f) return
         val alpha = ((1f - rippleProgress) * 255).toInt().coerceIn(0, 255)
