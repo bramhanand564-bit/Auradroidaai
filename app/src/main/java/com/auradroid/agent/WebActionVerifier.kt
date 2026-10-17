@@ -504,38 +504,183 @@ object WebActionVerifier {
         expectedOutcome: String
     ): StepVerificationResult {
         lastSnapshot = after
-        if (before == null || actionTaken == "WAIT" || actionTaken == "START") {
+        val action = actionTaken.uppercase()
+        if (action == "WAIT") {
+            // WAIT is an observation interval, not a completed user task step.
             return StepVerificationResult(
                 passed = true,
-                verificationReport = "1s AI Confirm: Initial / Wait state verified.",
+                verificationReport = "OBSERVE ONLY: Wait completed; no task-action success inferred.",
                 consecutiveFailures = consecutiveStuckCount,
                 recommendedSense = 1
             )
         }
+        if (action == "START") {
+            return StepVerificationResult(
+                passed = true,
+                verificationReport = "Initial DOM state captured; no user action claimed.",
+                consecutiveFailures = consecutiveStuckCount,
+                recommendedSense = 1
+            )
+        }
+        if (before == null) {
+            consecutiveStuckCount++
+            return StepVerificationResult(
+                passed = false,
+                verificationReport = "VERIFY FAILED: no pre-action snapshot exists for ${action}.",
+                consecutiveFailures = consecutiveStuckCount,
+                recommendedSense = 2
+            )
+        }
 
         val urlChanged = before.url != after.url
-        val domChanged = before.domFingerprint != after.domFingerprint ||
-                abs(before.elementCount - after.elementCount) >= 1
+        val targetUrl = expectedOutcome.trim()
+        val urlMatchesRequested = action == "LOAD_URL" && targetUrl.isNotBlank() &&
+            after.url.startsWith(targetUrl, ignoreCase = true)
+        val elementStateChanged = before.interactiveElementsText != after.interactiveElementsText
+        val formStateChanged = before.formStateFingerprint != after.formStateFingerprint
+        val activeControlChanged = before.activeElementSummary != after.activeElementSummary
+        val activeValueChanged = before.activeElementValue != after.activeElementValue
+        val scrollChanged = abs(before.scrollY - after.scrollY) >= 24f
         val streamAppeared = !before.hasActiveVideoStream && after.hasActiveVideoStream
         val renderStarted = !before.isFlowRenderingInProgress && after.isFlowRenderingInProgress
+        val renderProgressChanged = before.renderingProgressLabel != after.renderingProgressLabel
+        val errorAppeared = !before.hasVisibleErrorMessage && after.hasVisibleErrorMessage
+        val successAppeared = !before.hasVisibleSuccessMessage && after.hasVisibleSuccessMessage
+        val beforeText = before.pageText.replace(Regex("\\s+"), " ").trim()
+        val afterText = after.pageText.replace(Regex("\\s+"), " ").trim()
+        val prefixLength = commonPrefixLength(beforeText, afterText)
+        val pageTextChanged = beforeText != afterText &&
+            (kotlin.math.abs(beforeText.length - afterText.length) >= 6 ||
+                prefixLength < minOf(beforeText.length, afterText.length) - 5)
+        val basicStateChanged = urlChanged || elementStateChanged || formStateChanged ||
+            activeControlChanged || activeValueChanged || streamAppeared || renderStarted ||
+            renderProgressChanged || errorAppeared || successAppeared || pageTextChanged
 
-        return if (urlChanged || domChanged || streamAppeared || renderStarted) {
+        val success = when (action) {
+            "LOAD_URL" -> urlMatchesRequested || (urlChanged && after.readyState != "loading")
+            "TYPE_EL" -> {
+                val requestedText = expectedOutcome.trim()
+                formStateChanged && (requestedText.isBlank() ||
+                    after.activeElementValue.contains(requestedText, ignoreCase = false) ||
+                    after.pageText.contains(requestedText, ignoreCase = false))
+            }
+            "SCROLL" -> scrollChanged || (elementStateChanged && pageTextChanged)
+            "DOWNLOAD_VIDEO" -> streamAppeared || successAppeared ||
+                (pageTextChanged && containsDownloadCompletion(after.pageText))
+            "DONE" -> false // Completion is checked separately against the user's overall goal.
+            "CLICK_EL", "CLICK_XY", "CLICK_NEW_PROJECT", "SUBMIT_FLOW_PROMPT" -> {
+                // A route, dialog, result, control/form state or meaningful text change counts.
+                // Merely dispatching a click never counts as success.
+                basicStateChanged && !errorAppeared
+            }
+            else -> basicStateChanged && !errorAppeared
+        }
+
+        if (success) {
             consecutiveStuckCount = 0
-            StepVerificationResult(
+            val evidence = when {
+                urlChanged -> "URL changed"
+                formStateChanged || activeValueChanged -> "form/control state changed"
+                scrollChanged -> "scroll position changed"
+                streamAppeared -> "video stream appeared"
+                renderProgressChanged || renderStarted -> "render progress changed"
+                successAppeared -> "visible success status appeared"
+                else -> "meaningful DOM/page state changed"
+            }
+            return StepVerificationResult(
                 passed = true,
-                verificationReport = "1s AI CONFIRMED SUCCESS: Screen progressed after $actionTaken ($expectedOutcome).",
+                verificationReport = "CONFIRMED: ${action} verified by ${evidence}.",
                 consecutiveFailures = 0,
                 recommendedSense = 1
             )
-        } else {
-            consecutiveStuckCount++
-            val nextSense = (consecutiveStuckCount + 1).coerceIn(2, 4)
-            StepVerificationResult(
-                passed = false,
-                verificationReport = "1s AI CONFIRM FAILED (#$consecutiveStuckCount): Screen did NOT change after$actionTaken! Switching to ${getSenseName(nextSense)}.",
-                consecutiveFailures = consecutiveStuckCount,
-                recommendedSense = nextSense
-            )
+        }
+
+        consecutiveStuckCount++
+        val nextSense = (consecutiveStuckCount + 1).coerceIn(2, 4)
+        val reason = when {
+            errorAppeared -> "visible error state appeared"
+            action == "TYPE_EL" -> "requested text was not found in the active field/page state"
+            action == "LOAD_URL" -> "requested URL was not reached"
+            action == "SCROLL" -> "scroll position/content did not move"
+            else -> "no meaningful post-action state change was observed"
+        }
+        return StepVerificationResult(
+            passed = false,
+            verificationReport = "VERIFY FAILED (#${consecutiveStuckCount}): ${reason} after ${action}; use ${getSenseName(nextSense)} or reassess target.",
+            consecutiveFailures = consecutiveStuckCount,
+            recommendedSense = nextSense
+        )
+    }
+
+    private fun commonPrefixLength(a: String, b: String): Int {
+        val max = minOf(a.length, b.length)
+        var i = 0
+        while (i < max && a[i] == b[i]) i++
+        return i
+    }
+
+    private fun containsDownloadCompletion(text: String): Boolean {
+        val s = text.lowercase()
+        return listOf("download complete", "downloaded successfully", "file saved", "download finished")
+            .any { s.contains(it) }
+    }
+
+    /**
+     * Require task-specific visible evidence before accepting the model's DONE decision.
+     * Returns a report only when success is supported; otherwise the caller must reassess.
+     */
+    fun verifyGoalCompletion(goal: String, snapshot: DomSnapshot): String? {
+        val g = goal.lowercase()
+        val page = (snapshot.title + " " + snapshot.url + " " + snapshot.pageText + " " +
+            snapshot.interactiveElementsText).lowercase()
+        if (snapshot.hasVisibleErrorMessage) return null
+
+        fun hasAny(vararg phrases: String): Boolean = phrases.any { page.contains(it) }
+
+        return when {
+            listOf("upload", "uploaded", "youtube studio").any { g.contains(it) } ->
+                if (hasAny("upload complete", "uploaded successfully", "video uploaded", "processing checks",
+                        "video published", "saved as draft", "upload complete!")) {
+                    "Goal evidence verified: page shows an upload/processing/publish confirmation."
+                } else null
+            listOf("publish", "post this", "post the", "publish the").any { g.contains(it) } ->
+                if (hasAny("published", "post published", "your post is live", "successfully posted")) {
+                    "Goal evidence verified: published/post confirmation is visible."
+                } else null
+            listOf("send message", "send this message", "send an email", "send email").any { g.contains(it) } ->
+                if (hasAny("message sent", "sent successfully", "email sent", "delivered")) {
+                    "Goal evidence verified: sent/delivered confirmation is visible."
+                } else null
+            listOf("delete", "remove this", "remove the").any { g.contains(it) } ->
+                if (hasAny("deleted successfully", "item deleted", "removed successfully", "moved to trash")) {
+                    "Goal evidence verified: deletion/removal confirmation is visible."
+                } else null
+            "download" in g ->
+                if (containsDownloadCompletion(page)) {
+                    "Goal evidence verified: download completion message is visible."
+                } else null
+            listOf("generate", "create", "render", "make a video", "make an image").any { g.contains(it) } ->
+                if ((snapshot.hasCompletedProjectCard || snapshot.hasActiveVideoStream) &&
+                    !snapshot.isFlowRenderingInProgress) {
+                    "Goal evidence verified: completed media/result is present and rendering is not active."
+                } else if (hasAny("generation complete", "created successfully", "render complete", "completed successfully")) {
+                    "Goal evidence verified: page displays an explicit generation/completion state."
+                } else null
+            listOf("search", "find").any { g.startsWith(it) } ->
+                if (hasAny("search results", "results found", "results for") &&
+                    snapshot.readyState != "loading") {
+                    "Goal evidence verified: results are present on the page."
+                } else null
+            listOf("open ", "navigate", "visit ").any { g.contains(it) } ->
+                if (snapshot.url.isNotBlank() && snapshot.readyState == "complete" &&
+                    snapshot.pageText.length >= 30 && !snapshot.hasVisibleErrorMessage) {
+                    "Goal evidence verified: target page loaded with visible content."
+                } else null
+            else ->
+                if (snapshot.hasVisibleSuccessMessage ||
+                    hasAny("completed successfully", "task completed", "changes saved successfully")) {
+                    "Goal evidence verified by an explicit page success message."
+                } else null
         }
     }
 
