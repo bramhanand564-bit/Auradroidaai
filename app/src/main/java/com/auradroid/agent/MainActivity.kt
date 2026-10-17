@@ -242,6 +242,7 @@ class MainActivity : AppCompatActivity() {
                 "📋 Latest task: ${run.status} • ${run.adapterId} • ${run.goal.take(90)} • ${run.message.take(120)}"
             )
         }
+        VideoQueueManager.appendLog(this, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(this)}")
         refreshQueueCount()
         refreshServiceStatusBadge()
     }
