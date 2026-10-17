@@ -45,6 +45,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         var onLogUpdated: ((String) -> Unit)? = null
+        // Optional observer used by persisted task-state updates.
+        var onTaskStatusUpdated: (() -> Unit)? = null
         var onBrowserUrlChanged: ((String) -> Unit)? = null
     }
 
