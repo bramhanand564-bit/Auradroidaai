@@ -92,6 +92,7 @@ class AiOverlayHud(private val context: Context) {
     private var isDesktopMode = false
     private var isAdded = false
     private var isPodVisible = true
+    private var podHiddenForTextInput = false
     private var isSideBarExpanded = false
     private var currentStage = 1
 
@@ -486,6 +487,20 @@ class AiOverlayHud(private val context: Context) {
             currentStage = 1
         }
     }
+
+    /** Temporarily hide the pod while an editable text field is focused. */
+    fun hidePodForFocusedTextInput(hide: Boolean) {
+        mainHandler.post {
+            if (hide) {
+                if (!podHiddenForTextInput) { podHiddenForTextInput = true; podRootLayout?.visibility = View.GONE }
+            } else if (podHiddenForTextInput) {
+                podHiddenForTextInput = false
+                if (isAdded && isPodVisible) podRootLayout?.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    fun restorePodAfterTextInput() { hidePodForFocusedTextInput(false) }
 
     fun togglePodVisibility(): Boolean {
         isPodVisible = !isPodVisible
