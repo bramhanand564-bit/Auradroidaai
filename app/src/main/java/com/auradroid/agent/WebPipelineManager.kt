@@ -323,6 +323,13 @@ object WebPipelineManager {
                 var pendingAction: String? = null
                 var pendingExpectedOutcome = ""
                 var pendingReason = ""
+                var pendingTargetOriginalElements = ""
+                var pendingTargetIndex = -1
+                var pendingTargetX = -1f
+                var pendingTargetY = -1f
+                var pendingTargetWasRisky = false
+                var pendingObserveCycles = 0
+                var pendingRecoveryRejectedCount = 0
                 val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, "CUSTOM_WEB")
 
                 for (step in 1..36) {
@@ -330,6 +337,67 @@ object WebPipelineManager {
                     hud.updateStatus("Web • Step $step", "1s AI Confirming...", "THINKING")
 
                     val snap = WebActionVerifier.captureSnapshot(webView)
+
+                    // Before asking AI to do anything else, re-check the previous pending step against
+                    // the newest live DOM. This catches delayed success and prevents duplicate submits.
+                    val livePendingBefore = pendingBeforeSnapshot
+                    val livePendingAction = pendingAction
+                    if (livePendingBefore != null && livePendingAction != null) {
+                        val pendingCheck = WebActionVerifier.verifyActionOutcome(
+                            before = livePendingBefore,
+                            after = snap,
+                            actionTaken = livePendingAction,
+                            expectedOutcome = pendingExpectedOutcome,
+                            countFailure = false
+                        )
+                        if (pendingCheck.passed) {
+                            history.add("Pending step verified before next decision: $livePendingAction — $pendingReason")
+                            VideoQueueManager.appendDetailedLog(
+                                context = context,
+                                modelUsed = model,
+                                clickSense = "Fresh DOM Pending Check",
+                                actionDesc = "Recovered/observed pending step",
+                                whyReason = pendingReason,
+                                verifyStatus = "✅ ${pendingCheck.verificationReport}"
+                            )
+                            pendingBeforeSnapshot = null
+                            pendingAction = null
+                            pendingExpectedOutcome = ""
+                            pendingReason = ""
+                            pendingTargetOriginalElements = ""
+                            pendingTargetIndex = -1
+                            pendingTargetX = -1f
+                            pendingTargetY = -1f
+                            pendingTargetWasRisky = false
+                            pendingObserveCycles = 0
+                            pendingRecoveryRejectedCount = 0
+                            lastVerifyReport = "PENDING STEP CONFIRMED from a fresh DOM snapshot. It is now safe to continue."
+                        } else if (pendingTargetWasRisky) {
+                            pendingObserveCycles++
+                            if (pendingObserveCycles <= 4) {
+                                lastVerifyReport = "WAITING FOR RISKY STEP RESULT: '$pendingReason' has no confirmation yet. No second submit/upload/publish/send/delete will be issued; observing again (${pendingObserveCycles}/4)."
+                                hud.updateStatus(
+                                    "Web • Verifying Result",
+                                    "Checking whether the previous action finished. No duplicate action will be sent.",
+                                    "THINKING"
+                                )
+                                delay(1400L)
+                                continue
+                            } else {
+                                hud.updateStatus(
+                                    "Web • Result Unverified",
+                                    "The action may have started, but the page did not prove its result. Stopped safely.",
+                                    "ERROR"
+                                )
+                                VideoQueueManager.appendLog(
+                                    context,
+                                    "⚠️ Web task stopped safely: risky action '$pendingReason' remained unverified after four fresh DOM observations. It was not repeated."
+                                )
+                                break
+                            }
+                        }
+                    }
+
                     // Background Web tasks must not depend on phone/display screenshots.
                     // Use the page's live DOM/accessibility-like semantics, URL, loading state and task result.
                     // Keep screenshot vision reserved for the foreground phone agent.
@@ -355,6 +423,62 @@ object WebPipelineManager {
                         highModelName = VideoQueueManager.getHighModelName(context),
                         useGoogleSearch = VideoQueueManager.isGoogleSearchGroundingEnabled(context) && escalateHigh
                     )
+
+                    // The model is not allowed to start a different task step while a safe step is pending.
+                    // Only the same re-identified target, WAIT, or SCROLL may recover it.
+                    val currentlyPendingAction = pendingAction
+                    if (currentlyPendingAction != null) {
+                        val pendingBase = pendingBeforeSnapshot
+                        val resolvedPendingTarget = if (pendingBase != null && pendingTargetIndex >= 0) {
+                            WebActionVerifier.resolveElementIndexByLabel(
+                                originalElements = pendingTargetOriginalElements,
+                                currentElements = snap.interactiveElementsText,
+                                originalIndex = pendingTargetIndex
+                            )
+                        } else -1
+
+                        val aiTargetLine = snap.interactiveElementsText.lineSequence()
+                            .firstOrNull { it.trimStart().startsWith("[${decision.elementIndex}] ") }.orEmpty()
+                        val aiTargetLooksLikeDownloadControl = aiTargetLine.contains("download", true) ||
+                            aiTargetLine.contains("play", true) || aiTargetLine.contains("video", true) ||
+                            aiTargetLine.contains("save", true)
+                        val allowedRecovery = decision.action == "WAIT" || decision.action == "SCROLL" ||
+                            when (currentlyPendingAction) {
+                                "CLICK_EL" -> decision.action == "CLICK_EL" &&
+                                    resolvedPendingTarget >= 0 && decision.elementIndex == resolvedPendingTarget
+                                "TYPE_EL" -> decision.action == "TYPE_EL" &&
+                                    resolvedPendingTarget >= 0 && decision.elementIndex == resolvedPendingTarget
+                                "CLICK_XY" -> decision.action == "CLICK_XY" &&
+                                    pendingTargetX >= 0f && pendingTargetY >= 0f &&
+                                    kotlin.math.abs(decision.tapX - pendingTargetX) <= 24f &&
+                                    kotlin.math.abs(decision.tapY - pendingTargetY) <= 24f
+                                "LOAD_URL" -> decision.action == "LOAD_URL" &&
+                                    decision.url.isNotBlank() && decision.url == pendingExpectedOutcome
+                                "DOWNLOAD_VIDEO" -> decision.action == "DOWNLOAD_VIDEO" ||
+                                    (decision.action == "CLICK_EL" && aiTargetLooksLikeDownloadControl)
+                                else -> decision.action == currentlyPendingAction
+                            }
+                        if (!allowedRecovery) {
+                            pendingRecoveryRejectedCount++
+                            lastVerifyReport = "BLOCKED NEXT STEP: '${pendingReason}' is still pending. AI proposed '${decision.action}', which is not a valid recovery for that step. Re-observe or recover the same target."
+                            history.add("Step $step blocked: new action ${decision.action} while ${currentlyPendingAction} remained pending.")
+                            VideoQueueManager.appendDetailedLog(
+                                context = context,
+                                modelUsed = model,
+                                clickSense = "Pending-Step Gate",
+                                actionDesc = "Blocked unrelated action: ${decision.action}",
+                                whyReason = pendingReason,
+                                verifyStatus = "⛔ STEP NOT ADVANCED (${pendingRecoveryRejectedCount}/3)"
+                            )
+                            if (pendingRecoveryRejectedCount >= 3) {
+                                hud.updateStatus("Web • Recovery Blocked", "Previous step is unconfirmed; agent repeatedly tried to skip ahead.", "ERROR")
+                                VideoQueueManager.appendLog(context, "⚠️ Web task stopped: AI tried to advance past an unverified step three times.")
+                                break
+                            }
+                            delay(450L)
+                            continue
+                        }
+                    }
 
                     hud.updateStatus("Web • ${decision.action}", decision.reason, "AUTO")
 
