@@ -64,7 +64,7 @@ object PhoneAgentManager {
                     return
                 }
                 delay(1800)
-            } else if (isExplicitNativeAppRequest(userGoal)) {
+            } else if (isExplicitNativeAppRequest(service, userGoal)) {
                 val preferredApp = inferPreferredNativeApp(service, userGoal)
                 if (preferredApp == null) {
                     service.overlayHud?.updateStatus("App not found", "No matching installed app. Won't switch to Chrome by guess.", "ERROR")
@@ -599,7 +599,7 @@ object PhoneAgentManager {
         return try {
             pm.getInstalledApplications(0).mapNotNull { info ->
                 if (info.packageName == service.packageName) return@mapNotNull null
-                val launchIntent = pm.getLaunchIntentForPackage(info.packageName) ?: return@mapNotNull null
+                if (pm.getLaunchIntentForPackage(info.packageName) == null) return@mapNotNull null
                 val label = runCatching { pm.getApplicationLabel(info).toString().trim() }
                     .getOrDefault(info.packageName)
                 if (label.isBlank()) return@mapNotNull null
@@ -614,18 +614,21 @@ object PhoneAgentManager {
     private fun resolveInstalledApp(service: AutoTouchService, target: String): LaunchableApp? {
         val cleanTarget = target.trim()
         if (cleanTarget.isBlank() || cleanTarget.contains("://") ||
-            Regex("""\\bwww\\.""", RegexOption.IGNORE_CASE).containsMatchIn(cleanTarget)) return null
+            Regex("""\bwww\.""", RegexOption.IGNORE_CASE).containsMatchIn(cleanTarget)) return null
 
         val apps = installedLaunchableApps(service)
         apps.firstOrNull { it.packageName.equals(cleanTarget, true) }?.let { return it }
 
         val wanted = normalizeAppText(cleanTarget)
         if (wanted.isBlank()) return null
-        apps.firstOrNull { it.normalizedLabel == wanted }?.let { return it }
+        val isTwitterAlias = wanted in setOf("twitter", "x", "x app", "twitter app", "floks twitter", "flocks twitter", "flox twitter", "flocs twitter")
+        if (!isTwitterAlias) {
+            apps.firstOrNull { it.normalizedLabel == wanted }?.let { return it }
+        }
 
         // Twitter/X aliases: the explicitly preferred Flox/Floks/Flocs client wins
         // over a browser or a generic similarly named app when the request is ambiguous.
-        if (wanted in setOf("twitter", "x", "x app", "twitter app", "floks twitter", "flocks twitter", "flox twitter", "flocs twitter")) {
+        if (isTwitterAlias) {
             val ranked = apps.mapNotNull { app ->
                 val label = app.normalizedLabel
                 val packageId = app.packageName.lowercase()
@@ -667,7 +670,7 @@ object PhoneAgentManager {
         ).any { g.contains(it) }
     }
 
-    private fun isExplicitNativeAppRequest(goal: String): Boolean {
+    private fun isExplicitNativeAppRequest(service: AutoTouchService, goal: String): Boolean {
         if (hasExplicitWebDestination(goal)) return false
         val g = goal.lowercase()
         val hasLaunchVerb = listOf(
@@ -675,31 +678,56 @@ object PhoneAgentManager {
             "app kholo", "app khol", "kholo", "khol do", "chalao", "open app"
         ).any { g.contains(it) }
         if (!hasLaunchVerb) return false
-        // A domain alone is not enough to force a website: when browser/site intent was
-        // not stated, resolve a matching native social app instead of blindly entering Chrome.
-        return Regex("""\\btwitter\\b|twitter\\.com|x\\.com|\\bx\\s+app\\b|\\bwhatsapp\\b|\\binstagram\\b|\\byoutube\\b|\\btelegram\\b|\\bfacebook\\b""")
-            .containsMatchIn(g) || installedLaunchableAppsForTextOnlyHint(g)
-    }
 
-    private fun installedLaunchableAppsForTextOnlyHint(goalLower: String): Boolean {
-        // Recognize the generic "... app kholo" phrasing; candidate matching happens separately.
-        return goalLower.contains(" app") || goalLower.contains("application")
+        val knownAppMention = Regex("""\btwitter\b|twitter\.com|x\.com|\bx\s+app\b|\bwhatsapp\b|\binstagram\b|\byoutube\b|\btelegram\b|\bfacebook\b|\bflox\b|\bfloks\b|\bflocks\b|\bflocs\b""")
+            .containsMatchIn(g)
+        if (knownAppMention || g.contains(" app") || g.contains("application")) return true
+
+        // Generic app names are resolved from the phone's actual installed-app catalog.
+        val normalizedGoal = normalizeAppText(goal)
+        return installedLaunchableApps(service).any {
+            it.normalizedLabel.length >= 3 && normalizedGoal.contains(it.normalizedLabel)
+        }
     }
 
     private fun inferPreferredNativeApp(service: AutoTouchService, goal: String): LaunchableApp? {
-        val g = normalizeAppText(goal)
+        val normalizedGoal = normalizeAppText(goal)
         val apps = installedLaunchableApps(service)
         if (apps.isEmpty()) return null
-
-        // Honor an exact installed app label mentioned in the request before using aliases.
-        val explicitLabel = apps
-            .filter { it.normalizedLabel.length >= 3 && g.contains(it.normalizedLabel) }
-            .maxByOrNull { it.normalizedLabel.length }
-        if (explicitLabel != null) return explicitLabel
-
         val words = goal.lowercase()
-        val mentionsTwitter = Regex("""\\btwitter\\b|twitter\\.com|x\\.com|\\bx\\s+app\\b|\\bopen x\\b""")
+        val mentionsTwitter = Regex("""\btwitter\b|twitter\.com|x\.com|\bx\s+app\b|\bopen x\b""")
             .containsMatchIn(words)
+        val explicitlyNamesFloxClient = Regex("""\bflox\b|\bfloks\b|\bflocks\b|\bflocs\b""")
+            .containsMatchIn(words)
+
+        // In an ambiguous Twitter/X request, prefer the user's stated Floks/Flox-style
+        // client over Twitter in Chrome or the generic X label. Exact custom-client names
+        // in the request still win when explicitly named.
+        if (mentionsTwitter && !explicitlyNamesFloxClient) {
+            val preferred = apps.mapNotNull { app ->
+                val label = app.normalizedLabel
+                val packageId = app.packageName.lowercase()
+                val customClient = listOf("flox", "floks", "flocks", "flocs").any { label.contains(it) || packageId.contains(it) }
+                val twitterLabel = label.contains("twitter") || packageId.contains("twitter")
+                val officialX = label == "x" || label.startsWith("x ") || packageId.contains("twitter")
+                val score = when {
+                    customClient && twitterLabel -> 1000
+                    customClient -> 800
+                    twitterLabel -> 600
+                    officialX -> 450
+                    else -> 0
+                }
+                if (score > 0) app to score else null
+            }.maxByOrNull { it.second }?.first
+            if (preferred != null) return preferred
+        }
+
+        // Honor an exact installed app label mentioned in the request before aliases.
+        apps
+            .filter { it.normalizedLabel.length >= 3 && normalizedGoal.contains(it.normalizedLabel) }
+            .maxByOrNull { it.normalizedLabel.length }
+            ?.let { return it }
+
         if (mentionsTwitter) {
             return apps.mapNotNull { app ->
                 val label = app.normalizedLabel
@@ -718,9 +746,8 @@ object PhoneAgentManager {
             }.maxByOrNull { it.second }?.first
         }
 
-        // Generic installed app name: match the longest visible app label appearing in the goal.
         return apps
-            .filter { it.normalizedLabel.length >= 3 && g.contains(it.normalizedLabel) }
+            .filter { it.normalizedLabel.length >= 3 && normalizedGoal.contains(it.normalizedLabel) }
             .maxByOrNull { it.normalizedLabel.length }
     }
 
@@ -757,7 +784,7 @@ object PhoneAgentManager {
             "WHATSAPP" -> pm.getLaunchIntentForPackage("com.whatsapp")
                 ?: pm.getLaunchIntentForPackage("com.whatsapp.w4b")
             else -> {
-                if (cleanTarget.contains("://") || Regex("""\\bwww\\.""", RegexOption.IGNORE_CASE).containsMatchIn(cleanTarget)) {
+                if (cleanTarget.contains("://") || Regex("""\bwww\.""", RegexOption.IGNORE_CASE).containsMatchIn(cleanTarget)) {
                     null
                 } else {
                     resolveInstalledApp(service, cleanTarget)?.let { pm.getLaunchIntentForPackage(it.packageName) }
