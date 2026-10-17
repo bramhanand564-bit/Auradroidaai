@@ -555,6 +555,10 @@ class AiOverlayHud(private val context: Context) {
                     setSideBarExpanded(true)
                     compactRow?.visibility = View.VISIBLE
                     expandedContainer?.visibility = View.VISIBLE
+                    expandedContainer?.layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.MATCH_PARENT
+                    ).apply { topMargin = dpToPx(4) }
                     podRootLayout?.alpha = 1.0f
                     lp.width = dpToPx(300)
                     lp.height = dpToPx(470)
@@ -580,6 +584,10 @@ class AiOverlayHud(private val context: Context) {
                     setSideBarExpanded(true)
                     compactRow?.visibility = View.VISIBLE
                     expandedContainer?.visibility = View.VISIBLE
+                    expandedContainer?.layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.MATCH_PARENT
+                    ).apply { topMargin = dpToPx(4) }
                     podRootLayout?.alpha = 1.0f
                     lp.width = WindowManager.LayoutParams.MATCH_PARENT
                     lp.height = WindowManager.LayoutParams.MATCH_PARENT

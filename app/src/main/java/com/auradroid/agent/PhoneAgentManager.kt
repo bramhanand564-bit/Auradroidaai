@@ -677,22 +677,34 @@ object PhoneAgentManager {
             service.overlayHud?.updateStatus("Agent Error", e.message ?: "Failed", "ERROR")
             VideoQueueManager.appendLog(service, "❌ Agent Error: ${e.message}")
         } finally {
-            if (!taskCompleted && taskRunId != null) {
-                val status = terminalTaskStatus ?: TaskStatus.PAUSED
-                val message = terminalTaskMessage.ifBlank {
-                    "Execution ended without independent completion proof; inspect the final screen before retrying."
+            try {
+                if (!taskCompleted && taskRunId != null) {
+                    val status = terminalTaskStatus ?: TaskStatus.PAUSED
+                    val message = terminalTaskMessage.ifBlank {
+                        "Execution ended without independent completion proof; inspect the final screen before retrying."
+                    }
+                    TaskExecutionStore.update(service, taskRunId, status, message = message)
+                    if (status != TaskStatus.COMPLETED) {
+                        VideoQueueManager.appendLog(service, "📋 Task state saved: $status • $message")
+                    }
+                    VideoQueueManager.appendLog(service, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(service)}")
                 }
-                TaskExecutionStore.update(service, taskRunId, status, message = message)
-                if (status != TaskStatus.COMPLETED) {
-                    VideoQueueManager.appendLog(service, "📋 Task state saved: $status • $message")
+            } finally {
+                try {
+                    service.overlayHud?.setCursorOverlayVisible(false)
+                } finally {
+                    try {
+                        service.overlayHud?.restorePodAfterTextInput()
+                    } finally {
+                        try {
+                            TaskRunController.finish(taskRunId)
+                            VideoQueueManager.appendLog(service, "⏹ Phone task controller released; latest task state is saved.")
+                        } finally {
+                            AutoTouchService.isJobRunning = false
+                        }
+                    }
                 }
-                VideoQueueManager.appendLog(service, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(service)}")
             }
-            service.overlayHud?.setCursorOverlayVisible(false)
-            service.overlayHud?.restorePodAfterTextInput()
-            TaskRunController.finish(taskRunId)
-            VideoQueueManager.appendLog(service, "⏹ Phone task controller released; latest task state is saved.")
-            AutoTouchService.isJobRunning = false
         }
     }
 
@@ -830,12 +842,21 @@ object PhoneAgentManager {
                         (it.isEditable || it.supportsSetText)
                 } ?: return "TYPE_NOT_VERIFIED: the exact selected target is not an editable field; no fallback coordinate was used"
 
-                return typeTextIntoTarget(
-                    service = service,
-                    originalTarget = target,
-                    expectedText = decision.textToType,
-                    pinnedNativePackage = pinnedNativePackage
-                )
+                return try {
+                    typeTextIntoTarget(
+                        service = service,
+                        originalTarget = target,
+                        expectedText = decision.textToType,
+                        pinnedNativePackage = pinnedNativePackage
+                    )
+                } finally {
+                    // Never leave the cursor or pod hidden after a text-entry attempt.
+                    try {
+                        service.overlayHud?.setCursorOverlayVisible(false)
+                    } finally {
+                        service.overlayHud?.restorePodAfterTextInput()
+                    }
+                }
             }
             "SCROLL" -> {
                 service.performScrollDownGesture()

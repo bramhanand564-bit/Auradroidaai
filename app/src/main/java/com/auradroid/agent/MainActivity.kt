@@ -1140,12 +1140,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun scheduleDailyPipelineAlarm(hour: Int, minute: Int) {
         try {
-            val receiverClass = Class.forName("com.auradroid.agent.DailyUploadReceiver")
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, receiverClass)
+            val intent = Intent(this, TaskSchedulerReceiver::class.java)
             val pendingIntent = PendingIntent.getBroadcast(
                 this,
-                2001,
+                1001,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
