@@ -17,6 +17,16 @@ class AutomationReliabilityTest {
     }
 
     @Test
+    fun explicitPhoneModeRemainsPhoneUiForUploadGoals() {
+        val route = AppAutomationRouter.chooseRoute(
+            goal = "Open Instagram and upload a reel",
+            suggestedMode = "PHONE",
+            forcePhoneUi = true
+        )
+        assertEquals(AutomationMode.PHONE_UI, route.mode)
+    }
+
+    @Test
     fun explicitOpenAppUsesPhoneUi() {
         val route = AppAutomationRouter.chooseRoute("Open WhatsApp", suggestedMode = "WEB")
         assertEquals(AutomationMode.PHONE_UI, route.mode)

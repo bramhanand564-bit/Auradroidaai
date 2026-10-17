@@ -1107,35 +1107,19 @@ class MainActivity : AppCompatActivity() {
         goal: String,
         folderPath: String
     ) {
-        val service = AutoTouchService.instance ?: return
-        val lower = goal.lowercase()
-        if (lower.contains("youtube") && (lower.contains("upload") || lower.contains("short"))) {
-            service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
+        val service = AutoTouchService.instance
+        if (service == null) {
+            Toast.makeText(this, "Enable Accessibility Touch first, then retry.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (apiKey.isBlank() || model.isBlank() || goal.isBlank()) {
+            Toast.makeText(this, "API key, model, and task goal are required.", Toast.LENGTH_LONG).show()
             return
         }
 
-        try {
-            val method = service.javaClass.methods.firstOrNull { m ->
-                m.name in listOf(
-                    "startAutonomousPhoneJob",
-                    "startPhoneAgentJob",
-                    "startGeneralAgentJob",
-                    "startAutonomousTask"
-                )
-            }
-            if (method != null) {
-                when (method.parameterTypes.size) {
-                    4 -> method.invoke(service, this, apiKey, model, goal)
-                    3 -> method.invoke(service, apiKey, model, goal)
-                    else -> service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
-                }
-                Toast.makeText(this, "📱 Nax Bot Live Phone Vision Agent started!", Toast.LENGTH_SHORT).show()
-            } else {
-                service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
-            }
-        } catch (_: Exception) {
-            service.startYouTubeUploadJob(this, apiKey, model, folderPath, goal)
-        }
+        // Phone Screen mode must stay on the real-device agent; never fall back to Web/Flow.
+        service.startUniversalAiTask(apiKey = apiKey, model = model, userGoal = goal)
+        Toast.makeText(this, "📱 Nax Bot Live Phone Vision Agent started!", Toast.LENGTH_SHORT).show()
     }
 
     private fun scheduleDailyPipelineAlarm(hour: Int, minute: Int) {

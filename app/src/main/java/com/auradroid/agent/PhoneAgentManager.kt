@@ -136,6 +136,7 @@ object PhoneAgentManager {
             var consecutiveAiFailures = 0
             var consecutiveNoProgressWaits = 0
             var consecutiveFreshTargetRejects = 0
+            var loginGateWaitSteps = 0
             var pendingActionFingerprint: String? = null
             var pendingActionBeforeSignature = 0
             var pendingLearnedRuleToVerify = ""
@@ -192,6 +193,48 @@ object PhoneAgentManager {
                     }
                 }
                 val nodes = captureScreenNodes(service)
+
+                // Authentication is user-controlled. Wait for manual login rather than guessing.
+                val loginGateText = nodes.joinToString(" ") {
+                    it.text + " " + it.contentDesc + " " + it.hintText
+                }.lowercase()
+                val strongLoginGate = listOf(
+                    "sign in to continue", "sign in to youtube", "choose an account",
+                    "use your google account", "verify it's you", "verify it’s you",
+                    "enter your password", "login required", "session expired"
+                ).any { loginGateText.contains(it) }
+                val genericLoginWithCredentialField =
+                    (loginGateText.contains("sign in") || loginGateText.contains("log in") ||
+                        loginGateText.contains("login")) &&
+                    nodes.any {
+                        it.isEditable && (
+                            it.text.contains("email", true) || it.hintText.contains("email", true) ||
+                            it.text.contains("password", true) || it.hintText.contains("password", true)
+                        )
+                    }
+                if (strongLoginGate || genericLoginWithCredentialField) {
+                    loginGateWaitSteps++
+                    service.overlayHud?.setCursorOverlayVisible(false)
+                    service.overlayHud?.updateStatus(
+                        "Login required",
+                        "Please sign in manually on the phone. Nax Bot is waiting and will not tap account or password controls.",
+                        "WAITING"
+                    )
+                    VideoQueueManager.appendLog(
+                        service,
+                        "🔐 Login gate detected; waiting for manual sign-in. No credential or account-selection taps were attempted."
+                    )
+                    if (loginGateWaitSteps >= 20) {
+                        terminalTaskStatus = TaskStatus.PAUSED
+                        terminalTaskMessage = "Paused at login gate. Sign in manually, then resume the task."
+                        VideoQueueManager.appendLog(service, "⏸️ Login wait limit reached; task paused safely for manual sign-in.")
+                        break
+                    }
+                    delay(1500)
+                    continue
+                } else {
+                    loginGateWaitSteps = 0
+                }
 
                 // Build an internal semantic shortlist for AI selection. These targets are never drawn on the phone screen.
                 val clickableTargets = nodes
@@ -814,7 +857,7 @@ object PhoneAgentManager {
                     hypot(
                         (nearestNode.centerX - rawX).toDouble(),
                         (nearestNode.centerY - rawY).toDouble()
-                    ) <= 145.0
+                    ) <= (80f * minOf(realW / 540f, realH / 1200f)).toDouble()
                 ) {
                     val label = nearestNode.text.ifBlank { nearestNode.contentDesc }
                         .ifBlank { nearestNode.hintText }.take(30).ifBlank { "Tap" }
