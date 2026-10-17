@@ -527,7 +527,7 @@ class MainActivity : AppCompatActivity() {
                 lockedPlanGoal = if (
                     isPhoneControlIntent(userMsg) && !isPhoneControlIntent(resp.planGoal)
                 ) {
-                    "${'${'}resp.planGoal}\n[REAL PHONE CONTROL REQUIRED: operate the real phone screen using Android AccessibilityService; do not control the in-app browser or WebView.]"
+                    "${resp.planGoal}\n[REAL PHONE CONTROL REQUIRED: operate the real phone screen using Android AccessibilityService; do not control the in-app browser or WebView.]"
                 } else {
                     resp.planGoal
                 }
