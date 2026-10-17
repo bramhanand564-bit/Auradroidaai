@@ -582,13 +582,14 @@ object GeminiBrain {
             $screenSummary
 
             REQUIRED NAVIGATION REASONING:
-            1. First identify the foreground app/package and the actual current page from visible labels and screenshot.
-            2. Compare the current page with the user's goal and recent actions. Decide the NEXT navigation step toward the goal; do not guess a destination page.
-            3. Treat app package, visible page title, selected tab, dialogs, and loading state as evidence. Do not confuse this app's own overlay with the target app.
-            4. If the screen is loading, empty, obscured, or the page cannot be identified confidently, choose WAIT and explain what evidence is missing. Do not tap random coordinates.
-            5. For navigation, state the destination and evidence in the short reason field, then perform only one verified action.
-            6. After every action, inspect the new real-device screen again. Never claim completion without visible proof.
-            7. Never switch to the in-app WebView for a real-phone task. Never invent buttons or page names.
+            1. Identify the foreground package and current page from the node list and screenshot.
+            2. Compare the visible screen with the full goal and last 8 actions; choose the next small, evidence-based action.
+            3. The floating Nax Bot overlay is not part of the target app. Use app nodes and screenshot labels to identify the real control.
+            4. Use WAIT only when there is clear evidence of loading/buffering, a transient dialog, or the user explicitly asked for ongoing monitoring. A keyboard being open or an editable search field containing text is NOT a reason to WAIT.
+            5. If a search query is already typed and the keyboard is open, submit it with the visible Search/Go key or matching accessibility node. Then inspect results before opening a result.
+            6. When the target control is visible, act on it instead of repeatedly waiting. Never use random taps; prefer a matching accessibility node.
+            7. After each action, verify the resulting screen. Never claim a like/share/play action succeeded without visible evidence.
+            8. Never switch to the in-app WebView for a real-phone task or invent controls not visible on screen.
 
             RECENT ACTIONS (latest 8):
             ${history.takeLast(8).joinToString("\n")}
@@ -650,8 +651,17 @@ object GeminiBrain {
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            AgentDecision(action = "WAIT", reason = "AI decision unavailable; waiting to retry")
+        } catch (e: Exception) {
+            // Keep failures distinguishable from a legitimate WAIT so the phone agent can
+            // retry/escalate briefly and recover safely instead of waiting forever.
+            val safeDetail = (e.message ?: "")
+                .replace(Regex("(?i)(key=)[^&\\s]+"), "$1[REDACTED]")
+                .take(120)
+            val detail = if (safeDetail.isBlank()) "" else ": $safeDetail"
+            AgentDecision(
+                action = "WAIT",
+                reason = "AI_ERROR: ${e.javaClass.simpleName}$detail"
+            )
         }
     }
 
