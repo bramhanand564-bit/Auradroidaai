@@ -573,7 +573,9 @@ object GeminiBrain {
         val prompt = """
             You are Nax Bot, an Android PHONE UI navigation agent. You control the REAL foreground Android app through AccessibilityService, not an embedded browser.
             USER'S COMPLETE TASK (never lose or replace this goal): $goal
-            SCREEN SIZE: $screenWidth x $screenHeight real device pixels
+            REAL DEVICE SIZE: $screenWidth x $screenHeight pixels.
+            IMPORTANT: The attached screenshot is resized to exactly 540x1200 for vision.
+            For CLICK_XY, return x/y in that screenshot's 540x1200 image coordinate space (x=0..540, y=0..1200), NOT real-device pixels. The app converts those image coordinates to real device coordinates. Prefer CLICK_NODE whenever a matching visible accessibility node exists.
             CONTINUOUS MONITOR MODE: $isContinuousMonitorMode
 
             CURRENT REAL DEVICE SCREEN AND APP IDENTITY:
@@ -601,8 +603,9 @@ object GeminiBrain {
             $screenChangedStatus
 
             Choose exactly one next action. Use CLICK_NODE when the intended node index is known;
-            use CLICK_XY only when a coordinate tap is necessary. Coordinates must be real pixels
-            within the screen bounds. Use OPEN_APP for an app package or supported setting name.
+            use CLICK_XY only when a coordinate tap is necessary. For CLICK_XY, use screenshot image coordinates
+            in the 540x1200 image space. Do not guess coordinates when the target is not clearly visible.
+            Use OPEN_APP for an app package or supported setting name.
             Use TYPE only when text should be entered. Use WAIT while monitoring for a reply or
             while an app is loading. Use DONE only when the user's goal is actually complete.
             Never claim a message was sent or an upload completed without visible evidence.
