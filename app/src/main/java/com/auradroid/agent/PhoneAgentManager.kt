@@ -300,12 +300,8 @@ object PhoneAgentManager {
                 val statusBarLimitY = realH * 0.052f
                 val visionWidth = 540f
                 val visionHeight = 1200f
-                if (rawX in 0f..visionWidth && rawY in 0f..visionHeight &&
-                    (realW > visionWidth * 1.15f || realH > visionHeight * 1.15f)
-                ) {
-                    rawX = rawX / visionWidth * realW
-                    rawY = rawY / visionHeight * realH
-                }
+                rawX = rawX / visionWidth * realW
+                rawY = rawY / visionHeight * realH
                 rawX = rawX.coerceIn(5f, realW - 5f)
                 rawY = rawY.coerceIn(statusBarLimitY + 5f, realH - 5f)
 
