@@ -489,6 +489,8 @@ object WebPipelineManager {
                                 hud = hud,
                                 cssX = decision.tapX,
                                 cssY = decision.tapY,
+                                viewportCssWidth = snap.viewportCssWidth,
+                                viewportCssHeight = snap.viewportCssHeight,
                                 label = decision.reason
                             )
                         }
