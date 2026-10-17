@@ -103,8 +103,14 @@ object PhoneAgentManager {
                     continue
                 }
 
-                val activePackage = nodes.firstOrNull()?.packageName.orEmpty()
-                val activeWindowType = nodes.firstOrNull()?.windowType?.toString().orEmpty()
+                // Android exposes the IME as a separate accessibility window. Prefer
+                // the actual app window so an open keyboard is not misidentified as the app.
+                val foregroundAppNode = nodes.firstOrNull {
+                    it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION &&
+                        it.packageName != service.packageName
+                } ?: nodes.firstOrNull { it.packageName != service.packageName }
+                val activePackage = foregroundAppNode?.packageName.orEmpty()
+                val activeWindowType = foregroundAppNode?.windowType?.toString().orEmpty()
                 val screenDump = buildString {
                     appendLine("REAL ANDROID SCREEN CONTEXT:")
                     appendLine("Foreground app package: ${activePackage.ifBlank { "UNKNOWN" }}")
