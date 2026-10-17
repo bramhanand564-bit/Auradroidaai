@@ -761,12 +761,21 @@ object PhoneAgentManager {
     }
 
     private fun hasExplicitWebDestination(goal: String): Boolean {
-        val g = goal.lowercase()
-        return listOf(
-            "website", "web site", "webpage", "web page", "browser", "chrome",
-            "in the browser", "in chrome", "use chrome", "open the site", "visit the site",
-            "open url", "http://", "https://", "www."
-        ).any { g.contains(it) }
+        val original = goal.lowercase()
+        // Don't interpret a negative instruction ("don't use Chrome/browser") as a
+        // request to use that browser. Remove those phrases before testing intent.
+        val withoutNegatedWeb = original.replace(
+            Regex("""\b(?:don't|do not|not|never|avoid|instead of|rather than|without)\b[^.!?]{0,45}\b(?:chrome|browser|website|web site|webpage|web page|site|url)\b"""),
+            " "
+        )
+        val directUrl = Regex("""https?://|\bwww\.""").containsMatchIn(withoutNegatedWeb)
+        val positiveBrowser = Regex(
+            """\b(?:in|inside|through|using|via|with)\s+(?:the\s+)?(?:google\s+)?chrome\b|\b(?:in|inside|through|using|via|with)\s+(?:the\s+)?browser\b"""
+        ).containsMatchIn(withoutNegatedWeb)
+        val explicitSite = Regex(
+            """\b(?:website|web site|webpage|web page)\b|\b(?:open|visit|navigate to|load)\s+(?:the\s+)?site\b|\bopen\s+(?:the\s+)?url\b"""
+        ).containsMatchIn(withoutNegatedWeb)
+        return directUrl || positiveBrowser || explicitSite
     }
 
     private fun isExplicitNativeAppRequest(service: AutoTouchService, goal: String): Boolean {
