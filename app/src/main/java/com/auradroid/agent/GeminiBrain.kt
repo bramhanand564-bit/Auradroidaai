@@ -655,7 +655,7 @@ object GeminiBrain {
         highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): AgentDecision {
-        val foregroundPackage = Regex("""Foreground app package:\\s*(\\S+)""")
+        val foregroundPackage = Regex("""Foreground app package:\s*(\S+)""")
             .find(screenSummary)?.groupValues?.getOrNull(1)
         val adapterGuidance = AppAutomationRouter.adapterGuidance(goal, foregroundPackage)
         val prompt = """
