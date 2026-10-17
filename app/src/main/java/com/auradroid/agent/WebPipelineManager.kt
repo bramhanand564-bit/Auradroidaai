@@ -495,10 +495,70 @@ object WebPipelineManager {
                             )
                         }
                         "TYPE_EL" -> {
-                            typeIntoDomElement(webView, decision.elementIndex, decision.textToType)
+                            val typeLevels = listOf(1, 2, 3)
+                            for ((attemptNo, strategy) in typeLevels.withIndex()) {
+                                val attemptBefore = if (attemptNo == 0) snap else WebActionVerifier.captureSnapshot(webView)
+                                val resolvedIndex = if (attemptNo == 0) decision.elementIndex else
+                                    WebActionVerifier.resolveElementIndexByLabel(
+                                        originalElements = snap.interactiveElementsText,
+                                        currentElements = attemptBefore.interactiveElementsText,
+                                        originalIndex = decision.elementIndex
+                                    )
+                                if (resolvedIndex < 0) {
+                                    lastVerifyReport = "Typing recovery stopped: editable field could not be safely re-identified."
+                                    break
+                                }
+                                val typed = typeIntoDomElement(webView, resolvedIndex, decision.textToType, strategy)
+                                if (!typed) {
+                                    lastVerifyReport = "Type strategy $strategy did not confirm the field value."
+                                    if (attemptNo < typeLevels.lastIndex) delay(180)
+                                    continue
+                                }
+                                val (attemptAfter, attemptVerify) = WebActionVerifier.confirmStepInOneSecond(
+                                    webView = webView,
+                                    before = attemptBefore,
+                                    actionTaken = "TYPE_EL",
+                                    expectedOutcome = decision.textToType,
+                                    waitMs = maxOf(1050L, VideoQueueManager.getStepDelayMs(context))
+                                )
+                                inlineAfterSnap = attemptAfter
+                                inlineVerifyRes = attemptVerify
+                                senseUsed = "Type Strategy $strategy • ${if (attemptVerify.passed) "confirmed" else "unconfirmed"}"
+                                if (attemptVerify.passed) break
+                                if (attemptNo < typeLevels.lastIndex) delay(180)
+                            }
                         }
                         "SCROLL" -> {
-                            webView.evaluateJavascript("window.scrollBy(0, 420);", null)
+                            val delta = if (decision.reason.contains("up", ignoreCase = true)) -420 else 420
+                            val scrollJs = """
+                                (function() {
+                                    var beforeY = window.scrollY || 0;
+                                    window.scrollBy(0, $delta);
+                                    var moved = (window.scrollY || 0) !== beforeY;
+                                    var best = null;
+                                    if (!moved) {
+                                        var nodes = Array.from(document.querySelectorAll('*'));
+                                        var bestArea = 0;
+                                        for (var i = 0; i < nodes.length; i++) {
+                                            var el = nodes[i];
+                                            var cs = getComputedStyle(el);
+                                            if (!/(auto|scroll)/.test(cs.overflowY) || el.scrollHeight <= el.clientHeight + 4) continue;
+                                            var r = el.getBoundingClientRect();
+                                            if (r.width < 30 || r.height < 30 || r.bottom < 0 || r.top > innerHeight) continue;
+                                            var area = r.width * r.height;
+                                            if (area > bestArea) { best = el; bestArea = area; }
+                                        }
+                                        if (best) best.scrollTop += $delta;
+                                    }
+                                    return JSON.stringify({
+                                        windowBefore: beforeY,
+                                        windowAfter: window.scrollY || 0,
+                                        nestedScrollAttempted: !!best,
+                                        delta: $delta
+                                    });
+                                })();
+                            """.trimIndent()
+                            webView.evaluateJavascript(scrollJs, null)
                         }
                         "LOAD_URL" -> {
                             if (decision.url.isNotBlank()) webView.loadUrl(decision.url)
@@ -920,19 +980,89 @@ object WebPipelineManager {
         }
     }
 
-    private fun typeIntoDomElement(webView: WebView, elementIndex: Int, text: String) {
+    /**
+     * Three idempotent ways to put an exact value into a DOM field.
+     * The callback confirms field content; the caller then performs an independent fresh-snapshot check.
+     */
+    private suspend fun typeIntoDomElement(
+        webView: WebView,
+        elementIndex: Int,
+        text: String,
+        strategy: Int
+    ): Boolean = suspendCancellableCoroutine { cont ->
         val escaped = JSONObject.quote(text)
         val js = """
             (function() {
-                var list = window.__naxElements ? window.__naxElements : [];
+                var list = window.__naxElements || [];
                 var el = list[$elementIndex];
-                if (!el) return;
+                if (!el) return JSON.stringify({ ok: false, error: 'STALE_TARGET' });
+                var tag = (el.tagName || '').toLowerCase();
+                var editable = tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+                if (!editable || el.disabled || el.getAttribute('aria-disabled') === 'true') {
+                    return JSON.stringify({ ok: false, error: 'NOT_EDITABLE_OR_DISABLED' });
+                }
+
+                var textToSet = $escaped;
                 el.focus();
-                el.value = $escaped;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+                try {
+                    if (el.isContentEditable) {
+                        if ($strategy === 1) {
+                            el.textContent = textToSet;
+                        } else if ($strategy === 2) {
+                            document.execCommand('selectAll', false, null);
+                            document.execCommand('insertText', false, textToSet);
+                            if (String(el.innerText || el.textContent || '') !== textToSet) {
+                                el.textContent = textToSet;
+                            }
+                        } else {
+                            el.textContent = textToSet;
+                        }
+                    } else if ($strategy === 1) {
+                        var proto = tag === 'textarea' ? HTMLTextAreaElement.prototype :
+                            (tag === 'select' ? HTMLSelectElement.prototype : HTMLInputElement.prototype);
+                        var descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+                        if (descriptor && descriptor.set) descriptor.set.call(el, textToSet);
+                        else el.value = textToSet;
+                    } else if ($strategy === 2) {
+                        el.value = textToSet;
+                    } else {
+                        if (typeof el.setRangeText === 'function' && tag !== 'select') {
+                            el.setRangeText(textToSet, 0, String(el.value || '').length, 'end');
+                        } else {
+                            el.value = textToSet;
+                        }
+                    }
+                    try {
+                        el.dispatchEvent(new InputEvent('input', {
+                            bubbles: true, cancelable: false,
+                            inputType: 'insertText', data: textToSet
+                        }));
+                    } catch (e) {
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Unidentified' }));
+                } catch (e) {
+                    return JSON.stringify({ ok: false, error: 'SET_FAILED' });
+                }
+
+                var actual = ('value' in el) ? String(el.value || '') :
+                    String(el.innerText || el.textContent || '');
+                var ok = actual === textToSet || actual.trim() === textToSet.trim();
+                return JSON.stringify({ ok: ok, length: actual.length, strategy: $strategy });
             })();
         """.trimIndent()
-        mainHandler.post { webView.evaluateJavascript(js, null) }
+
+        mainHandler.post {
+            webView.evaluateJavascript(js) { raw ->
+                try {
+                    val clean = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"") ?: "{}"
+                    val obj = JSONObject(clean)
+                    if (cont.isActive) cont.resume(obj.optBoolean("ok", false))
+                } catch (_: Exception) {
+                    if (cont.isActive) cont.resume(false)
+                }
+            }
+        }
     }
 }
