@@ -94,8 +94,17 @@ object PhoneAgentManager {
                     continue
                 }
 
-                val screenDump = nodes.joinToString("\n") {
-                    "[${it.index}] text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
+                val activePackage = nodes.firstOrNull()?.packageName.orEmpty()
+                val activeWindowType = nodes.firstOrNull()?.windowType?.toString().orEmpty()
+                val screenDump = buildString {
+                    appendLine("REAL ANDROID SCREEN CONTEXT:")
+                    appendLine("Foreground app package: ${activePackage.ifBlank { "UNKNOWN" }}")
+                    appendLine("Accessibility window type: ${activeWindowType.ifBlank { "UNKNOWN" }}")
+                    appendLine("Visible node count: ${nodes.size}")
+                    appendLine("VISIBLE NODES (index, app package, text, description, hint, view id, edit/click, screen coordinates):")
+                    nodes.forEach {
+                        appendLine("[${it.index}] pkg='${it.packageName}' text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})")
+                    }
                 }
 
                 val currentScreenshotB64 = service.captureScreenshotBase64()
