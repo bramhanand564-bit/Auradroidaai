@@ -40,13 +40,17 @@ object PhoneAgentManager {
         val googleSearchEnabled = VideoQueueManager.isGoogleSearchGroundingEnabled(service)
 
         val goalLower = userGoal.lowercase()
+        // Do not treat every task containing the word "wait" or "reply" as an
+        // unbounded monitoring job. Long-running mode must be explicitly requested.
         val isContinuousMonitor = goalLower.contains("monitor") ||
-                goalLower.contains("wait") ||
+                goalLower.contains("keep checking") ||
+                goalLower.contains("continuously") ||
                 goalLower.contains("karte raho") ||
                 goalLower.contains("karte rahana") ||
                 goalLower.contains("lagatar") ||
-                goalLower.contains("baat chet") ||
-                goalLower.contains("reply")
+                goalLower.contains("wait for a reply") ||
+                goalLower.contains("incoming reply") ||
+                goalLower.contains("new message notification")
 
         val maxSteps = if (isContinuousMonitor || unstoppable) 5000 else 40
 
@@ -66,6 +70,8 @@ object PhoneAgentManager {
             var previousPhoneScreenshotB64: String? = null
             var previousScreenSignature = 0
             var consecutiveVerificationFails = 0
+            var consecutiveAiFailures = 0
+            var consecutiveNoProgressWaits = 0
 
             for (step in 1..maxSteps) {
                 val nodes = captureScreenNodes(service)
@@ -108,12 +114,13 @@ object PhoneAgentManager {
                 }
 
                 val currentScreenshotB64 = service.captureScreenshotBase64()
-                val currentSig = screenDump.take(800).hashCode()
+                val currentSig = screenDump.hashCode()
 
                 val screenChangedStatus = if (step == 1) {
                     "Initial step."
                 } else if (currentSig != previousScreenSignature) {
                     consecutiveVerificationFails = 0
+                    consecutiveNoProgressWaits = 0
                     "SCREEN_CHANGED: YES (The UI updated after the last action)."
                 } else {
                     consecutiveVerificationFails++
@@ -121,7 +128,8 @@ object PhoneAgentManager {
                 }
                 previousScreenSignature = currentSig
 
-                val useHighModelNow = autoHighModelEnabled && consecutiveVerificationFails >= 2
+                val useHighModelNow = autoHighModelEnabled &&
+                        (consecutiveVerificationFails >= 2 || consecutiveAiFailures >= 1)
                 val domainKey = if (goalLower.contains("whatsapp")) "WHATSAPP" else "ANDROID_UI"
                 val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(service, domainKey)
 
@@ -148,6 +156,51 @@ object PhoneAgentManager {
                 )
 
                 previousPhoneScreenshotB64 = currentScreenshotB64
+
+                if (decision.reason.startsWith("AI_ERROR:", ignoreCase = true)) {
+                    consecutiveAiFailures++
+                    VideoQueueManager.appendLog(
+                        service,
+                        "⚠️ AI decision failed ($consecutiveAiFailures/3): ${decision.reason.take(170)}"
+                    )
+                    service.overlayHud?.updateStatus(
+                        "AI retry $consecutiveAiFailures/3",
+                        "Refreshing phone context and retrying${if (autoHighModelEnabled) " with recovery model" else ""}…",
+                        "VERIFYING"
+                    )
+
+                    // After two model failures, still make a narrow, evidence-based recovery
+                    // attempt if a search query is already entered on the real phone.
+                    if (consecutiveAiFailures >= 2) {
+                        val recovered = recoverSearchSubmission(service, nodes, userGoal)
+                        if (recovered != null) {
+                            history.add("Step $step: AI fallback - $recovered")
+                            VideoQueueManager.appendLog(service, "🛠️ Safe UI fallback: $recovered")
+                            consecutiveAiFailures = 0
+                            delay(2200)
+                            continue
+                        }
+                    }
+
+                    if (consecutiveAiFailures >= 3) {
+                        service.overlayHud?.updateStatus(
+                            "AI temporarily unavailable",
+                            "Stopped safely after 3 failed decisions. Check API key, network, and model settings, then retry.",
+                            "ERROR"
+                        )
+                        VideoQueueManager.appendLog(
+                            service,
+                            "⛔ Stopped phone task after 3 AI errors; no blind taps were issued."
+                        )
+                        break
+                    }
+
+                    history.add("Step $step: AI_ERROR retry ${decision.reason.take(100)}")
+                    delay(1200)
+                    continue
+                } else {
+                    consecutiveAiFailures = 0
+                }
 
                 if (decision.learnedRule.isNotBlank()) {
                     VideoQueueManager.recordLearnedLesson(service, decision.learnedRule, domainKey)
@@ -179,7 +232,45 @@ object PhoneAgentManager {
 
                 if (decision.action.equals("WAIT", true)) {
                     service.overlayHud?.setCursorOverlayVisible(false)
-                    delay(4500)
+                    val waitReason = decision.reason.lowercase()
+                    val evidenceOfTransientState = listOf(
+                        "loading", "buffering", "processing", "connecting",
+                        "upload in progress", "rendering", "monitoring chat",
+                        "waiting for new", "please wait"
+                    ).any { waitReason.contains(it) }
+
+                    if (!isContinuousMonitor &&
+                        screenChangedStatus.contains("SCREEN_CHANGED: NO") &&
+                        !evidenceOfTransientState
+                    ) {
+                        consecutiveNoProgressWaits++
+                        if (consecutiveNoProgressWaits >= 2) {
+                            val recovered = recoverSearchSubmission(service, nodes, userGoal)
+                            if (recovered != null) {
+                                history.add("Step $step: WAIT-loop recovery - $recovered")
+                                VideoQueueManager.appendLog(service, "🛠️ Recovered from repeated WAIT: $recovered")
+                                consecutiveNoProgressWaits = 0
+                                delay(2200)
+                                continue
+                            }
+                        }
+                        if (consecutiveNoProgressWaits >= 3) {
+                            service.overlayHud?.updateStatus(
+                                "Task paused safely",
+                                "The screen did not change after repeated WAIT decisions. No blind taps were made; review the phone screen and retry.",
+                                "ERROR"
+                            )
+                            VideoQueueManager.appendLog(
+                                service,
+                                "⛔ Paused after 3 no-progress WAIT decisions to prevent a stuck loop."
+                            )
+                            break
+                        }
+                    } else {
+                        consecutiveNoProgressWaits = 0
+                    }
+
+                    delay(if (evidenceOfTransientState) 2500 else 1200)
                     history.add("Step $step: WAIT -${decision.reason}")
                     continue
                 }
@@ -371,6 +462,59 @@ object PhoneAgentManager {
             }
         }
         return "Waited"
+    }
+
+    /**
+     * Safe recovery for a clearly typed search query when the AI service is unavailable
+     * or has repeatedly requested WAIT. It never invents a query or opens random results.
+     */
+    private suspend fun recoverSearchSubmission(
+        service: AutoTouchService,
+        nodes: List<UiNodeSnapshot>,
+        userGoal: String
+    ): String? {
+        val goal = userGoal.lowercase()
+        val isSearchTask = listOf("search", "find", "look for", "bhojpuri", "query")
+            .any { goal.contains(it) }
+        if (!isSearchTask) return null
+
+        val typedSearch = nodes
+            .filter { it.isEditable && it.text.isNotBlank() }
+            .maxByOrNull { node ->
+                (if (node.isFocused) 4 else 0) +
+                (if (node.hintText.contains("search", true)) 3 else 0) +
+                (if (node.viewId.contains("search", true)) 3 else 0) +
+                (if (node.text.isNotBlank()) 1 else 0)
+            }
+
+        if (typedSearch != null) {
+            val looksLikeSearchField = typedSearch.isFocused ||
+                typedSearch.hintText.contains("search", true) ||
+                typedSearch.viewId.contains("search", true) ||
+                typedSearch.contentDesc.contains("search", true)
+            if (looksLikeSearchField &&
+                typedSearch.node.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
+            ) {
+                return "Submitted existing search query via keyboard action"
+            }
+        }
+
+        val searchButton = nodes.firstOrNull { node ->
+            node.isClickable && (
+                node.text.equals("Search", true) ||
+                node.contentDesc.equals("Search", true) ||
+                node.text.equals("Go", true) ||
+                node.contentDesc.equals("Go", true) ||
+                node.viewId.contains("search_submit", true) ||
+                node.viewId.contains("search_go", true)
+            )
+        }
+        if (searchButton != null) {
+            animateAndPhysicalTapNode(service, searchButton, "Tap: Search")
+            return "Tapped visible Search/Go control"
+        }
+
+        return null
     }
 
     fun openSystemSettingOrApp(service: AutoTouchService, target: String) {
