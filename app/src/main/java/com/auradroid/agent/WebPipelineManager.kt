@@ -850,6 +850,7 @@ object WebPipelineManager {
 
         var promptAlreadySubmitted = false
         var promptSubmissionAttempted = false
+        var promptSubmitBeforeSnapshot: DomSnapshot? = null
         var primarySubmitDispatched = false
         var promptFallbackAttempted = false
         var promptSubmitWaitCycles = 0
@@ -876,7 +877,7 @@ object WebPipelineManager {
 
             // After one submit attempt, observe the background DOM instead of typing/submitting again.
             if (promptSubmissionAttempted && !promptAlreadySubmitted) {
-                if (WebActionVerifier.isFlowPromptAccepted(beforeSnap)) {
+                if (WebActionVerifier.isFlowPromptAccepted(beforeSnap, promptSubmitBeforeSnapshot)) {
                     promptAlreadySubmitted = true
                     promptSubmitWaitCycles = 0
                     VideoQueueManager.appendDetailedLog(
@@ -1017,6 +1018,7 @@ object WebPipelineManager {
                 if (submitStatus == "SUBMITTED" || submitStatus == "TYPED_ONLY") {
                     // Never use the physical fallback after a DOM submit was already dispatched.
                     promptSubmissionAttempted = true
+                    promptSubmitBeforeSnapshot = beforeSnap
                     primarySubmitDispatched = submitStatus == "SUBMITTED"
                     val (afterSubmitSnap, confirmRes) = WebActionVerifier.confirmStepInOneSecond(
                         webView = webView,
@@ -1025,7 +1027,7 @@ object WebPipelineManager {
                         expectedOutcome = "A real rendering/progress/result signal appears",
                         waitMs = 1800L
                     )
-                    if (WebActionVerifier.isFlowPromptAccepted(afterSubmitSnap)) {
+                    if (WebActionVerifier.isFlowPromptAccepted(afterSubmitSnap, beforeSnap)) {
                         promptAlreadySubmitted = true
                         VideoQueueManager.appendDetailedLog(
                             context = context,
