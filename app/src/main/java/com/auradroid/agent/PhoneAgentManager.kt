@@ -543,12 +543,13 @@ object PhoneAgentManager {
                     "CLICK_NODE" -> executionNodes.firstOrNull { it.index == decision.nodeIndex }?.let { node ->
                         "CLICK_NODE|${node.packageName}|${node.className}|${node.viewId}|${node.text}|${node.contentDesc}|${node.hintText}|${(node.centerX / 24f).toInt()}|${(node.centerY / 24f).toInt()}"
                     } ?: "CLICK_NODE|index=${decision.nodeIndex}"
-                    "CLICK_XY" -> "CLICK_XY|${(decision.x / 12f).toInt()}|${(decision.y / 12f).toInt()}|${decision.reason.take(36).lowercase()}"
+                    "CLICK_XY" -> "CLICK_XY|${(decision.x / 12f).toInt()}|${(decision.y / 12f).toInt()}"
                     "TYPE" -> {
                         val node = executionNodes.firstOrNull { it.index == decision.nodeIndex }
                         "TYPE|${node?.packageName}|${node?.className}|${node?.viewId}|${(node?.centerX ?: -1f).toInt() / 24}|${(node?.centerY ?: -1f).toInt() / 24}|${decision.textToType.hashCode()}"
                     }
-                    "SCROLL", "BACK", "OPEN_APP" -> "${decision.action.uppercase()}|${decision.appPackageOrSetting}|${decision.reason.take(36).lowercase()}"
+                    "SCROLL", "BACK" -> decision.action.uppercase()
+                    "OPEN_APP" -> "OPEN_APP|${decision.appPackageOrSetting}"
                     else -> null
                 }
                 if (actionFingerprint != null) {
@@ -600,7 +601,7 @@ object PhoneAgentManager {
                 if (decision.action.equals("CLICK_NODE", true)) {
                     val targetNode = nodes.firstOrNull { it.index == decision.nodeIndex }
                     if (targetNode == null || !nodeAllowedInPinnedTask(targetNode, pinnedNativePackage)) {
-                        return "TYPE_NOT_VERIFIED: selected node disappeared or crossed the pinned-app boundary"
+                        return "ACTION_NOT_VERIFIED: selected node disappeared or crossed the pinned-app boundary"
                     }
                     val label = targetNode.text.ifBlank { targetNode.contentDesc }
                         .ifBlank { targetNode.hintText }.take(40).ifBlank { "Unlabelled control" }
@@ -773,7 +774,9 @@ object PhoneAgentManager {
         val nearest = structuralMatches.firstOrNull() ?: return null
         val next = structuralMatches.getOrNull(1)
         val withinFreshnessRadius = nearest.second <= 150.0
-        val unambiguous = next == null || next.second - nearest.second >= 50.0
+        // Near-identical geometry indicates duplicate wrappers for the same control, not a far-away guess.
+        val sameFootprint = nearest.second <= 24.0
+        val unambiguous = next == null || next.second - nearest.second >= 50.0 || sameFootprint
         return if (withinFreshnessRadius && unambiguous) nearest.first else null
     }
 
@@ -815,7 +818,7 @@ object PhoneAgentManager {
                         hypot(
                             (node.centerX - original.centerX).toDouble(),
                             (node.centerY - original.centerY).toDouble()
-                        ) <= 180.0)
+                        ) <= 600.0)
                 )
             if (!sameTarget) return@any false
             val value = listOf(node.text, node.contentDesc).joinToString(" ")
