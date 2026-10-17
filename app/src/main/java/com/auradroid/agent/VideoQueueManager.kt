@@ -17,13 +17,21 @@ import java.util.Date
 import java.util.Locale
 
 private class AuraBrainDatabase(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "auradroid_brain.db", null, 4) {
+    SQLiteOpenHelper(context.applicationContext, "auradroid_brain.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createAllTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 5) {
+            // Remove the legacy unsafe lesson that could send a message without explicit intent.
+            db.delete(
+                "episodic_memory",
+                "rule_learned = ?",
+                arrayOf("Never auto-send because text is present. Click Send only when the user's complete task explicitly requests sending a reply and the current Send control has been verified.")
+            )
+        }
         createAllTables(db)
     }
 
