@@ -57,15 +57,18 @@ object PhoneAgentManager {
         try {
             val history = mutableListOf<String>()
             var pinnedNativePackage: String? = null
+            val nativeAppIntent = isExplicitNativeAppRequest(service, userGoal)
 
-            if (!initialSettingAction.isNullOrBlank()) {
+            if (!initialSettingAction.isNullOrBlank() && !nativeAppIntent) {
                 if (!openSystemSettingOrApp(service, initialSettingAction)) {
                     service.overlayHud?.updateStatus("Target not opened", "Could not resolve: $initialSettingAction", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ Target resolver refused '$initialSettingAction'; no unrelated app was opened.")
                     return
                 }
                 delay(1800)
-            } else if (isExplicitNativeAppRequest(service, userGoal)) {
+            }
+
+            if (nativeAppIntent) {
                 val preferredApp = inferPreferredNativeApp(service, userGoal)
                 if (preferredApp == null) {
                     service.overlayHud?.updateStatus("App not found", "No matching installed app. Won't switch to Chrome by guess.", "ERROR")
@@ -110,6 +113,43 @@ object PhoneAgentManager {
             var consecutiveNoProgressWaits = 0
 
             for (step in 1..maxSteps) {
+                val pinnedAtStepStart = pinnedNativePackage
+                if (pinnedAtStepStart != null) {
+                    var actualPackage = foregroundAppPackage(service)
+                    if (actualPackage.isNotBlank() &&
+                        actualPackage != pinnedAtStepStart &&
+                        !isTransientSystemWindowPackage(actualPackage)
+                    ) {
+                        VideoQueueManager.appendLog(
+                            service,
+                            "🛡️ Foreground drift: expected " + pinnedAtStepStart +
+                                ", observed " + actualPackage + ". Restoring app before reading targets."
+                        )
+                        val restoreRequested = openSystemSettingOrApp(service, pinnedAtStepStart)
+                        if (restoreRequested) {
+                            for (attempt in 0 until 6) {
+                                delay(350)
+                                actualPackage = foregroundAppPackage(service)
+                                if (actualPackage == pinnedAtStepStart) break
+                            }
+                        }
+                        if (actualPackage != pinnedAtStepStart) {
+                            service.overlayHud?.updateStatus(
+                                "Wrong app blocked",
+                                "Expected " + pinnedAtStepStart + "; foreground is " +
+                                    actualPackage.ifBlank { "unknown" },
+                                "ERROR"
+                            )
+                            VideoQueueManager.appendLog(
+                                service,
+                                "⛔ Stopped before tapping: pinned app could not be restored and verified."
+                            )
+                            break
+                        }
+                        delay(250)
+                        continue
+                    }
+                }
                 val nodes = captureScreenNodes(service)
 
                 // Build an internal semantic shortlist for AI selection. These targets are never drawn on the phone screen.
@@ -134,16 +174,18 @@ object PhoneAgentManager {
                 // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
                 // If reply text is sitting inside the bottom message input box AND the green Send button is visible, tap Send immediately!
                 val unsentInputNode = nodes.firstOrNull {
-                    it.isEditable && it.text.isNotBlank() &&
+                    nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                    it.isEditable && it.text.isNotBlank()
                     !it.text.equals("Message", true) &&
                     !it.text.equals("Type a message", true) &&
                     !it.text.equals("Search...", true)
                 }
                 val sendBtnNode = nodes.firstOrNull {
-                    it.contentDesc.equals("Send", true) ||
-                    it.contentDesc.equals("भेजें", true) ||
-                    it.viewId.equals("send", true) ||
-                    it.viewId.contains("send_btn", true)
+                    nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                        (it.contentDesc.equals("Send", true) ||
+                         it.contentDesc.equals("भेजें", true) ||
+                         it.viewId.equals("send", true) ||
+                         it.viewId.contains("send_btn", true))
                 }
                 if (unsentInputNode != null && sendBtnNode != null) {
                     service.overlayHud?.setCursorOverlayVisible(true)
@@ -372,6 +414,16 @@ object PhoneAgentManager {
                         continue
                     }
 
+                    if (!nodeAllowedInPinnedTask(originalTarget, pinnedNativePackage)) {
+                        val blocked = "Pinned-app guard blocked target '" +
+                            originalTarget.text.ifBlank { originalTarget.contentDesc }.ifBlank { originalTarget.viewId } +
+                            "' from package " + originalTarget.packageName
+                        VideoQueueManager.appendLog(service, "🛡️ " + blocked)
+                        history.add("Step " + step + ": " + blocked)
+                        delay(350)
+                        continue
+                    }
+
                     // The model response can arrive seconds after the original screen snapshot.
                     // Re-scan and bind by package + stable label/view-id, never by stale index alone.
                     val latestNodes = captureScreenNodes(service)
@@ -398,7 +450,8 @@ object PhoneAgentManager {
                     nodes = executionNodes,
                     realW = realW,
                     realH = realH,
-                    repeatCount = repeatTapCount
+                    repeatCount = repeatTapCount,
+                    pinnedNativePackage = pinnedNativePackage
                 ) { tapX, tapY ->
                     if (hypot(tapX - lastTapX, tapY - lastTapY) < 25f) {
                         repeatTapCount++
@@ -440,6 +493,7 @@ object PhoneAgentManager {
         realW: Float,
         realH: Float,
         repeatCount: Int,
+        pinnedNativePackage: String? = null,
         onTapRecorded: (Float, Float) -> Unit
     ): String {
         val reasonLower = decision.reason.lowercase()
@@ -459,9 +513,10 @@ object PhoneAgentManager {
                 // 1. Semantic Snap for WhatsApp/Chat Send button
                 if (reasonLower.contains("send") || reasonLower.contains("reply")) {
                     val sendNode = nodes.firstOrNull {
-                        it.contentDesc.equals("Send", true) ||
-                        it.contentDesc.equals("भेजें", true) ||
-                        it.viewId.equals("send", true)
+                        nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                            (it.contentDesc.equals("Send", true) ||
+                             it.contentDesc.equals("भेजें", true) ||
+                             it.viewId.equals("send", true))
                     }
                     if (sendNode != null) {
                         onTapRecorded(sendNode.centerX, sendNode.centerY)
@@ -479,12 +534,14 @@ object PhoneAgentManager {
 
                 if (wantsThreeDotMenu) {
                     val threeDotNode = nodes.firstOrNull {
-                        it.contentDesc.contains("More options", true) ||
-                        it.contentDesc.contains("अधिक विकल्प", true) ||
-                        it.viewId.contains("menuitem_overflow", true) ||
-                        it.viewId.contains("action_more", true)
+                        nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                            (it.contentDesc.contains("More options", true) ||
+                             it.contentDesc.contains("अधिक विकल्प", true) ||
+                             it.viewId.contains("menuitem_overflow", true) ||
+                             it.viewId.contains("action_more", true))
                     } ?: nodes.filter {
-                        it.centerX > realW * 0.78f && it.centerY in (realH * 0.05f)..(realH * 0.13f)
+                        nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                            it.centerX > realW * 0.78f && it.centerY in (realH * 0.05f)..(realH * 0.13f)
                     }.maxByOrNull { it.centerX }
 
                     if (threeDotNode != null) {
@@ -518,7 +575,8 @@ object PhoneAgentManager {
                 rawY = rawY.coerceIn(statusBarLimitY + 5f, realH - 5f)
 
                 val nearestNode = nodes.filter {
-                    it.centerY >= statusBarLimitY && (it.isClickable || it.text.isNotEmpty() || it.contentDesc.isNotEmpty())
+                    nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                        it.centerY >= statusBarLimitY && (it.isClickable || it.text.isNotEmpty() || it.contentDesc.isNotEmpty())
                 }.minByOrNull {
                     hypot(
                         (it.centerX - rawX).toDouble(),
@@ -562,9 +620,10 @@ object PhoneAgentManager {
                 // Immediately check if a Send button (like in WhatsApp) is now visible, and tap it automatically!
                 val freshNodes = captureScreenNodes(service)
                 val sendBtn = freshNodes.firstOrNull {
-                    it.contentDesc.equals("Send", true) ||
-                    it.contentDesc.equals("भेजें", true) ||
-                    it.viewId.equals("send", true)
+                    nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
+                        (it.contentDesc.equals("Send", true) ||
+                         it.contentDesc.equals("भेजें", true) ||
+                         it.viewId.equals("send", true))
                 }
                 if (sendBtn != null) {
                     animateAndPhysicalTapNode(service, sendBtn, "Tap: Send")
@@ -857,6 +916,21 @@ object PhoneAgentManager {
         return apps
             .filter { it.normalizedLabel.length >= 3 && normalizedGoal.contains(it.normalizedLabel) }
             .maxByOrNull { it.normalizedLabel.length }
+    }
+
+    private fun isTransientSystemWindowPackage(packageName: String): Boolean {
+        val pkg = packageName.lowercase()
+        return listOf("permissioncontroller", "packageinstaller", "intentresolver", "resolver", "systemui")
+            .any { pkg.contains(it) }
+    }
+
+    private fun nodeAllowedInPinnedTask(node: UiNodeSnapshot, pinnedPackage: String?): Boolean {
+        if (pinnedPackage == null || node.packageName == pinnedPackage) return true
+        val pkg = node.packageName.lowercase()
+        if (node.windowType == AccessibilityWindowInfo.TYPE_INPUT_METHOD ||
+            pkg.contains("inputmethod") || pkg.contains("keyboard")
+        ) return true
+        return isTransientSystemWindowPackage(pkg)
     }
 
     private fun foregroundAppPackage(service: AutoTouchService): String {
