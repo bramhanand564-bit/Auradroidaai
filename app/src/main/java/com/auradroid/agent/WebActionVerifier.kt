@@ -674,6 +674,10 @@ object WebActionVerifier {
         val basicStateChanged = urlChanged || elementStateChanged || formStateChanged ||
             activeControlChanged || activeValueChanged || streamAppeared || renderStarted ||
             renderProgressChanged || errorAppeared || successAppeared || pageTextChanged
+        // Merely focusing a button is not a successful click; require an actual semantic/page/control effect.
+        val clickEffectChanged = urlChanged || elementStateChanged || formStateChanged ||
+            activeValueChanged || streamAppeared || renderStarted || renderProgressChanged ||
+            errorAppeared || successAppeared || pageTextChanged
 
         val success = when (action) {
             "LOAD_URL" -> urlMatchesRequested || (urlChanged && after.readyState != "loading")
@@ -694,7 +698,7 @@ object WebActionVerifier {
             "CLICK_EL", "CLICK_XY", "CLICK_NEW_PROJECT", "SUBMIT_FLOW_PROMPT" -> {
                 // A route, dialog, result, control/form state or meaningful text change counts.
                 // Merely dispatching a click never counts as success.
-                basicStateChanged && !errorAppeared
+                clickEffectChanged && !errorAppeared
             }
             else -> basicStateChanged && !errorAppeared
         }
