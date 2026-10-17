@@ -253,46 +253,110 @@ object WebActionVerifier {
     ): String = suspendCancellableCoroutine { cont ->
         val js = """
             (function() {
-                var vw = window.innerWidth ? window.innerWidth : 540;
-                var vh = window.innerHeight ? window.innerHeight : 960;
-                var desiredDur = ${targetDurationSec} + 's';
-                
-                var pills = Array.from(document.querySelectorAll('button, [role="button"], div, span'));
-                for (var i = 0; i < pills.length; i++) {
-                    var el = pills[i];
-                    var t = (el.innerText ? el.innerText : (el.getAttribute('aria-label') ? el.getAttribute('aria-label') : '')).trim();
-                    var hasBadMode = (t.indexOf('Nano Banana') !== -1) || (t.indexOf('Image') !== -1) || (t.indexOf('x2') !== -1) || (t.indexOf('x4') !== -1);
-                    var needsDurUpdate = (t.indexOf('Video') !== -1) && (t.indexOf(desiredDur) === -1);
-                    if (t.length > 0 && t.length < 48 && (hasBadMode || needsDurUpdate)) {
-                        var menuButtons = Array.from(document.querySelectorAll('button, [role="option"], [role="menuitem"], [role="tab"], span'));
-                        var switched = [];
-                        for (var j = 0; j < menuButtons.length; j++) {
-                            var mb = menuButtons[j];
-                            var mt = (mb.innerText ? mb.innerText : (mb.getAttribute('aria-label') ? mb.getAttribute('aria-label') : '')).trim();
-                            if (mt === 'Video' || mt === '9:16' || mt === 'Portrait (9:16)' || mt === desiredDur || mt === '8s' || mt === 'x1' || mt === '1') {
-                                mb.click();
-                                switched.push(mt);
-                            }
-                        }
-                        if (switched.length > 0) {
-                            return JSON.stringify({ status: 'SWITCHED_OPTIONS', detail: switched.join(', '), vw: vw, vh: vh });
-                        }
-                        
-                        var r = el.getBoundingClientRect();
-                        if (r.width > 15 && r.height > 12 && r.top > 120) {
-                            el.click();
-                            return JSON.stringify({
-                                status: 'OPENED_MODE_PILL',
-                                detail: t,
-                                x: Math.round(r.left + r.width / 2),
-                                y: Math.round(r.top + r.height / 2),
-                                vw: vw,
-                                vh: vh
-                            });
-                        }
-                    }
+                var vw = window.innerWidth || 540;
+                var vh = window.innerHeight || 960;
+                var desiredDur = '${targetDurationSec}s';
+
+                function visible(el) {
+                    var r = el.getBoundingClientRect();
+                    var cs = getComputedStyle(el);
+                    return r.width > 12 && r.height > 10 && r.bottom > 0 && r.top < vh &&
+                        r.right > 0 && r.left < vw && cs.display !== 'none' &&
+                        cs.visibility !== 'hidden' && parseFloat(cs.opacity || '1') > 0.08;
                 }
-                return JSON.stringify({ status: 'OK_VIDEO_MODE', detail: 'Video • ' + desiredDur + ' • x1 ready', vw: vw, vh: vh });
+                function label(el) {
+                    return String(el.getAttribute('aria-label') || el.innerText || el.textContent || el.title || '')
+                        .replace(/\\s+/g, ' ').trim().slice(0, 100);
+                }
+                function selected(el) {
+                    var c = String(el.className && typeof el.className === 'string' ? el.className : '').toLowerCase();
+                    var state = String(el.getAttribute('data-state') || '').toLowerCase();
+                    return el.getAttribute('aria-selected') === 'true' ||
+                        el.getAttribute('aria-pressed') === 'true' ||
+                        el.getAttribute('aria-checked') === 'true' ||
+                        state === 'on' || state === 'selected' ||
+                        /(^|[ -])(active|selected|checked)([ -]|$)/.test(c);
+                }
+                var controls = Array.from(document.querySelectorAll(
+                    'button, [role="button"], [role="option"], [role="menuitem"], [role="tab"], [role="radio"], [role="combobox"]'
+                )).filter(visible);
+                var popupRoots = Array.from(document.querySelectorAll('[role="menu"], [role="listbox"], [role="dialog"]')).filter(visible);
+                var menuOpen = popupRoots.length > 0 ||
+                    controls.some(function(el) { return /^(option|menuitem)$/.test(el.getAttribute('role') || ''); });
+                var selectedText = controls.filter(selected).map(label).join(' ').toLowerCase();
+                var outside = controls.filter(function(el) {
+                    return !el.closest('[role="menu"], [role="listbox"], [role="dialog"]');
+                });
+                var modePill = outside.find(function(el) {
+                    var t = label(el).toLowerCase();
+                    return t.length < 80 && (t.indexOf('video') !== -1 || t.indexOf('nano banana') !== -1 || t.indexOf('image') !== -1);
+                });
+                var pillText = modePill ? label(modePill).toLowerCase() : '';
+                var stateText = (selectedText + ' ' + pillText).toLowerCase();
+
+                var videoOk = stateText.indexOf('video') !== -1 &&
+                    stateText.indexOf('nano banana') === -1 &&
+                    stateText.indexOf('image') === -1;
+                var ratioOk = stateText.indexOf('9:16') !== -1 || stateText.indexOf('portrait') !== -1;
+                var durationOk = stateText.indexOf(desiredDur.toLowerCase()) !== -1;
+                var speedOk = stateText.indexOf('x1') !== -1 || stateText.indexOf('1x') !== -1 ||
+                    /(^|[ ,•])1([ ,•]|$)/.test(stateText);
+                if (videoOk && ratioOk && durationOk && speedOk) {
+                    return JSON.stringify({ status: 'OK_VIDEO_MODE', detail: 'Selected Video, portrait 9:16, ' + desiredDur + ', x1', vw: vw, vh: vh });
+                }
+
+                var missing = !videoOk ? 'video' : (!ratioOk ? 'ratio' : (!durationOk ? 'duration' : 'speed'));
+                var exactMatch = function(t, key) {
+                    t = t.toLowerCase().replace(/\\s+/g, ' ').trim();
+                    if (key === 'video') return t === 'video' || t === 'video mode';
+                    if (key === 'ratio') return t === '9:16' || t === 'portrait (9:16)' || t === 'portrait 9:16';
+                    if (key === 'duration') return t === desiredDur.toLowerCase();
+                    return t === 'x1' || t === '1x' || t === '1';
+                };
+
+                if (menuOpen) {
+                    var options = controls.filter(function(el) {
+                        var role = el.getAttribute('role') || '';
+                        return /^(option|menuitem|tab|radio)$/.test(role) ||
+                            !!el.closest('[role="menu"], [role="listbox"], [role="dialog"]');
+                    });
+                    var option = options.find(function(el) {
+                        return exactMatch(label(el), missing) && !selected(el) &&
+                            !el.disabled && el.getAttribute('aria-disabled') !== 'true';
+                    });
+                    if (option) {
+                        option.click();
+                        return JSON.stringify({ status: 'SELECTED_OPTION', detail: 'Selected one option: ' + label(option), vw: vw, vh: vh });
+                    }
+
+                    // If this menu does not contain the missing setting, move to that setting's pill with one click.
+                    var settingPill = outside.find(function(el) {
+                        var t = label(el).toLowerCase();
+                        if (missing === 'ratio') return t.indexOf('9:16') !== -1 || t.indexOf('16:9') !== -1 || t.indexOf('portrait') !== -1 || t.indexOf('landscape') !== -1 || t.indexOf('aspect') !== -1;
+                        if (missing === 'duration') return /(^|[^0-9])(8s|10s|5s|6s)([^0-9]|$)/.test(t);
+                        if (missing === 'speed') return t.indexOf('x1') !== -1 || t.indexOf('x2') !== -1 || t.indexOf('x4') !== -1 || /(^| )1( |$)/.test(t);
+                        return t.indexOf('video') !== -1 || t.indexOf('image') !== -1 || t.indexOf('nano banana') !== -1;
+                    });
+                    if (settingPill) {
+                        settingPill.click();
+                        return JSON.stringify({ status: 'OPENED_MODE_PILL', detail: 'Opened setting: ' + label(settingPill), vw: vw, vh: vh });
+                    }
+                    return JSON.stringify({ status: 'MODE_UNCERTAIN', detail: 'Menu is open but the missing setting could not be identified safely.', vw: vw, vh: vh });
+                }
+
+                // No popup is open. Click exactly one pill to expose the next needed setting.
+                var pill = outside.find(function(el) {
+                    var t = label(el).toLowerCase();
+                    if (missing === 'ratio') return t.indexOf('9:16') !== -1 || t.indexOf('16:9') !== -1 || t.indexOf('portrait') !== -1 || t.indexOf('landscape') !== -1 || t.indexOf('aspect') !== -1;
+                    if (missing === 'duration') return /(^|[^0-9])(8s|10s|5s|6s)([^0-9]|$)/.test(t);
+                    if (missing === 'speed') return t.indexOf('x1') !== -1 || t.indexOf('x2') !== -1 || t.indexOf('x4') !== -1 || /(^| )1( |$)/.test(t);
+                    return t.indexOf('video') !== -1 || t.indexOf('image') !== -1 || t.indexOf('nano banana') !== -1;
+                });
+                if (pill) {
+                    pill.click();
+                    return JSON.stringify({ status: 'OPENED_MODE_PILL', detail: 'Opened setting: ' + label(pill), vw: vw, vh: vh });
+                }
+                return JSON.stringify({ status: 'MODE_UNCERTAIN', detail: 'No visible pill for the missing setting (' + missing + ').', vw: vw, vh: vh });
             })();
         """.trimIndent()
 
@@ -305,7 +369,7 @@ object WebActionVerifier {
                     if (cont.isActive) cont.resume(clean)
                 }
             } catch (_: Exception) {
-                if (cont.isActive) cont.resume("{}")
+                if (cont.isActive) cont.resume("{\"status\":\"MODE_UNCERTAIN\"}")
             }
         }
     }
