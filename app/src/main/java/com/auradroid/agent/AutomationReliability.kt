@@ -151,16 +151,25 @@ object AppAutomationRouter {
 
     fun allProfiles(): List<AppAutomationProfile> = profiles.toList()
 
+    private fun containsAlias(value: String, alias: String): Boolean {
+        val clean = alias.trim().lowercase()
+        if (clean.isBlank()) return false
+        // Domains and path fragments are intentional literal matches; app names are whole phrases.
+        if (clean.contains('.') || clean.contains('/')) return value.contains(clean)
+        val escaped = Regex.escape(clean)
+        return Regex("""(?<![A-Za-z0-9])$escaped(?![A-Za-z0-9])""").containsMatchIn(value)
+    }
+
     fun profileForGoal(goal: String): AppAutomationProfile? {
         val value = goal.lowercase()
         // Upload/publish tasks target Studio, not the consumer YouTube app.
-        if (value.contains("youtube") &&
-            listOf("upload", "publish", "post", "short", "studio", "creator").any { value.contains(it) }) {
+        if (containsAlias(value, "youtube") &&
+            listOf("upload", "publish", "post", "short", "studio", "creator").any { containsAlias(value, it) }) {
             return profiles.firstOrNull { it.id == "YOUTUBE_STUDIO" }
         }
         // More specific profiles must win over their parent product.
         return profiles.firstOrNull { profile ->
-            profile.aliases.sortedByDescending { it.length }.any { alias -> value.contains(alias) }
+            profile.aliases.sortedByDescending { it.length }.any { alias -> containsAlias(value, alias) }
         }
     }
 
@@ -214,12 +223,12 @@ object AppAutomationRouter {
         val value = goal.lowercase()
         val profile = profileForGoal(goal)
         val urlInGoal = urlRegex.find(goal)?.value.orEmpty()
-        val explicitPhone = forcePhoneUi || isExplicitPhoneRequest(goal) ||
-            (profile != null && isAppLaunchIntent(value) && !isWebRequest(value) && !isWebsiteWorkflow(value))
-
-        val youtubeUpload = value.contains("youtube") &&
-            listOf("upload", "publish", "post", "short").any { value.contains(it) }
+        val youtubeUpload = containsAlias(value, "youtube") &&
+            listOf("upload", "publish", "post", "short").any { containsAlias(value, it) }
         val flowTask = value.contains("google flow") || value.contains("flow.google") || value.contains("labs.google/fx")
+        val explicitPhone = forcePhoneUi || isExplicitPhoneRequest(goal) ||
+            (!youtubeUpload && !flowTask && profile != null &&
+                isAppLaunchIntent(value) && !isWebRequest(value) && !isWebsiteWorkflow(value))
         val routeToWeb = !explicitPhone && (
             youtubeUpload || flowTask || isWebRequest(value) ||
                 urlInGoal.isNotBlank() ||
@@ -263,10 +272,32 @@ object AppAutomationRouter {
         }
 
         normalizeHttpUrl(suggestedUrl)?.let { normalized ->
-            val host = runCatching { URI(normalized).host?.lowercase().orEmpty() }.getOrDefault("")
+            val host = runCatching { URI(normalized).host?.trim('[', ']')?.lowercase().orEmpty() }.getOrDefault("")
             val isFlowDestination = host == "labs.google" || host.endsWith(".labs.google") ||
                 host == "flow.google" || host.endsWith(".flow.google") ||
                 host == "labs.google.com" || host.endsWith(".labs.google.com")
+            val isPrivateIpv4 = run {
+                val parts = host.split(".")
+                if (parts.size != 4) false else {
+                    val octets = parts.map { it.toIntOrNull() }
+                    if (octets.any { it == null || it !in 0..255 }) false else {
+                        val a = octets[0]!!
+                        val b = octets[1]!!
+                        a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) ||
+                            (a == 172 && b in 16..31) || (a == 192 && b == 168) || a >= 224
+                    }
+                }
+            }
+            val isPrivateIpv6 = host.contains(':') && (
+                host == "::" || host == "::1" ||
+                    host.startsWith("fe80:", true) ||
+                    host.startsWith("fc", true) ||
+                    host.startsWith("fd", true) ||
+                    host.startsWith("ff", true)
+                )
+            // This WebView router intentionally refuses local/private-network URLs.
+            if (host == "localhost" || host.endsWith(".local") || host.endsWith(".internal") ||
+                isPrivateIpv4 || isPrivateIpv6) return null
             // A saved Flow URL is only valid for an explicitly Flow-related task.
             if (!isFlowDestination) return normalized
         }
