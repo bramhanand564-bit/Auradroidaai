@@ -455,7 +455,7 @@ object WebActionVerifier {
                 return JSON.stringify({
                     url: location.href,
                     title: document.title ? document.title : '',
-                    elementsText: lines.join('\\n'),
+                    elementsText: lines.join('\n'),
                     count: idx,
                     hasStream: hasStream,
                     hasCard: hasCard,
@@ -479,10 +479,10 @@ object WebActionVerifier {
             try {
                 webView.evaluateJavascript(js) { raw ->
                     try {
-                        val clean = raw?.trim()?.removeSurrounding("\"")
-                            ?.replace("\\\"", "\"")
-                            ?.replace("\\n", "\n")
-                            ?.replace("\\\\", "\\") ?: "{}"
+                        val clean = raw?.let { encoded ->
+                            runCatching { org.json.JSONArray("[$encoded]").getString(0) }
+                                .getOrElse { encoded.trim().removeSurrounding("\"") }
+                        } ?: "{}"
                         val obj = JSONObject(clean)
                         val snap = DomSnapshot(
                             url = obj.optString("url", webView.url ?: ""),
