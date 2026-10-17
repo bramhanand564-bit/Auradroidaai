@@ -940,8 +940,9 @@ object WebActionVerifier {
                         var label = ((btn.innerText || '') + ' ' + (btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '')).toLowerCase();
                         if (label.indexOf('download') !== -1 || label.indexOf('save video') !== -1 || label.indexOf('export') !== -1) {
                             var br = btn.getBoundingClientRect();
-                            if (br.width > 12 && br.height > 12) {
-                                btn.click();
+                            if (br.width > 12 && br.height > 12 &&
+                                !btn.disabled && btn.getAttribute('aria-disabled') !== 'true' &&
+                                br.bottom > 0 && br.top < vh && br.right > 0 && br.left < vw) {
                                 return JSON.stringify({
                                     status: 'TAP_TARGET',
                                     targetName: 'Download Button',
@@ -977,7 +978,6 @@ object WebActionVerifier {
 
                     if (bestEl) {
                         var tr = bestEl.getBoundingClientRect();
-                        bestEl.click();
                         return JSON.stringify({
                             status: 'TAP_TARGET',
                             targetName: 'Video Card / Play',
@@ -988,14 +988,8 @@ object WebActionVerifier {
                         });
                     }
 
-                    return JSON.stringify({
-                        status: 'TAP_TARGET',
-                        targetName: 'Primary Card Slot',
-                        x: Math.round(vw * 0.28),
-                        y: Math.round(vh * 0.36),
-                        vw: vw,
-                        vh: vh
-                    });
+                    // Never guess a blind coordinate when the live DOM has no trustworthy target.
+                    return JSON.stringify({ status: 'NO_TARGET', detail: 'No visible video/play/download target was found', vw: vw, vh: vh });
                 })();
             """.trimIndent()
 
@@ -1027,19 +1021,28 @@ object WebActionVerifier {
                 }
                 "TAP_TARGET" -> {
                     val targetName = obj.optString("targetName", "Video Card")
-                    val cssX = obj.optDouble("x", 148.0).toFloat()
-                    val cssY = obj.optDouble("y", 350.0).toFloat()
+                    val cssX = obj.optDouble("x", -1.0).toFloat()
+                    val cssY = obj.optDouble("y", -1.0).toFloat()
                     val vw = obj.optDouble("vw", 540.0).toFloat()
                     val vh = obj.optDouble("vh", 960.0).toFloat()
+                    if (cssX < 0f || cssY < 0f) return false to "Rejected target with missing coordinates."
 
-                    // Sense 3 & Sense 4: Rotate between Play Icon @(92,286), Card Center, and Upper-Right Download area
-                    val (tapX, tapY, senseTag) = when (attemptIndex % 3) {
-                        1 -> Triple(92f, 286f, "Sense-3: Play Icon Tap")
-                        2 -> Triple(cssX + 18f, cssY + 22f, "Sense-4: Offset Card Tap")
-                        else -> Triple(cssX, cssY, "Sense-2: 3x Card Tap")
+                    // One strategy per call: exact center, then a bounded lower-right offset, then upper-left offset.
+                    val (tapX, tapY, senseTag) = when ((attemptIndex - 1).mod(3)) {
+                        0 -> Triple(cssX, cssY, "Sense-2: Exact DOM Target")
+                        1 -> Triple(
+                            (cssX + 12f).coerceIn(6f, (vw - 6f).coerceAtLeast(10f)),
+                            (cssY + 10f).coerceIn(6f, (vh - 6f).coerceAtLeast(10f)),
+                            "Sense-3: Bounded Offset"
+                        )
+                        else -> Triple(
+                            (cssX - 12f).coerceIn(6f, (vw - 6f).coerceAtLeast(10f)),
+                            (cssY - 10f).coerceIn(6f, (vh - 6f).coerceAtLeast(10f)),
+                            "Sense-4: Alternate Offset"
+                        )
                     }
 
-                    dispatchRealWebTouch(
+                    val touchOk = dispatchRealWebTouch(
                         webView = webView,
                         hud = hud,
                         cssX = tapX,
@@ -1049,17 +1052,19 @@ object WebActionVerifier {
                         holdDurationMs = 125L,
                         label = targetName
                     )
+                    if (!touchOk) return false to "[$senseTag] WebView touch dispatch failed; no success claimed."
                     delay(1150)
 
                     val newlySniffed = AiOverlayHud.lastSniffedMp4Url
                     if (!newlySniffed.isNullOrBlank()) {
                         AiOverlayHud.lastSniffedMp4Url = null
                         val ok = hud?.enqueueDirectVideoDownload(newlySniffed) ?: false
-                        if (ok) return true to "[$senseTag] Tapped$targetName & captured MP4 stream!"
+                        if (ok) return true to "[$senseTag] Captured MP4 stream after targeting $targetName."
                     }
-                    false to "[$senseTag] Tapped$targetName @(${tapX.toInt()},${tapY.toInt()}); 1s AI confirming player..."
+                    false to "[$senseTag] Targeted $targetName; stream capture is not yet confirmed."
                 }
-                else -> false to "Scanning for completed video card..."
+                "NO_TARGET" -> false to obj.optString("detail", "No safe target found; no click sent.")
+                else -> false to "No safe video/play/download target was found."
             }
         } catch (e: Exception) {
             false to "Card open check error: ${e.message}"
