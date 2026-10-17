@@ -349,6 +349,14 @@ object WebActionVerifier {
 
                 var invalidMode = bodyText.indexOf('Nano Banana') !== -1 || bodyText.indexOf('x2') !== -1 || bodyText.indexOf('x4') !== -1;
 
+                // Fingerprint meaningful page state, not just text length/count.
+                // This detects same-length label changes, selected states, URL and progress changes.
+                var fpSource = location.href + '|' + (document.title || '') + '|' + bodyText + '|' + lines.join('|');
+                var fpHash = 0;
+                for (var h = 0; h < fpSource.length; h++) {
+                    fpHash = ((fpHash << 5) - fpHash + fpSource.charCodeAt(h)) | 0;
+                }
+
                 return JSON.stringify({
                     url: location.href,
                     title: document.title ? document.title : '',
@@ -359,7 +367,7 @@ object WebActionVerifier {
                     isRendering: isRendering,
                     pctLabel: pctLabel,
                     invalidMode: invalidMode,
-                    textHash: bodyText.length + '_' + idx + '_' + (hasStream ? 1 : 0) + '_' + pctLabel
+                    textHash: String(fpHash)
                 });
             })();
         """.trimIndent()
