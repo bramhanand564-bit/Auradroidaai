@@ -313,6 +313,7 @@ object WebPipelineManager {
         val resolvedStartUrl = route.startUrl
         val webAdapterId = route.profile?.id ?: "CUSTOM_WEB"
         val taskRunId = TaskExecutionStore.start(context, goal, AutomationMode.BACKGROUND_WEB, webAdapterId)
+        TaskRunController.begin(taskRunId)
         VideoQueueManager.appendLog(
             context,
             "🧭 Web route: ${route.mode} • adapter=$webAdapterId • url=$resolvedStartUrl • ${route.reason}"
@@ -363,6 +364,11 @@ object WebPipelineManager {
 
                 for (step in 1..36) {
                     if (!isWebTaskRunning) break
+                    if (!TaskRunController.awaitIfRunning(context, taskRunId, step)) {
+                        terminalTaskStatus = TaskStatus.CANCELLED
+                        terminalTaskMessage = "Web task stopped while paused/cancelled; no completion was claimed."
+                        break
+                    }
                     TaskExecutionStore.update(
                         context, taskRunId, TaskStatus.VERIFYING, step,
                         "Inspecting the current DOM and verifying the previous action before advancing."
@@ -891,6 +897,7 @@ object WebPipelineManager {
                         VideoQueueManager.appendLog(context, "📋 Web task state saved: $status • $message")
                     }
                 }
+                TaskRunController.finish(taskRunId)
                 isWebTaskRunning = false
             }
         }
