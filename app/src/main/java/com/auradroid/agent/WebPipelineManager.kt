@@ -1053,9 +1053,97 @@ object WebPipelineManager {
                     val clean = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"") ?: "{}"
                     val obj = JSONObject(clean)
                     val status = obj.optString("status", "NO_BOX")
-                    // One activation only. The DOM submit above is the primary strategy;
-                    // a physical touch is reserved for the separately gated recovery path.
-                    if (cont.isActive) cont.resume(status == "SUBMITTED")
+                    // SUBMITTED means one DOM activation occurred; TYPED_ONLY means the value is set
+                    // and the separately gated physical-touch fallback may attempt the button later.
+                    if (cont.isActive) cont.resume(status == "SUBMITTED" || status == "TYPED_ONLY")
+                } catch (_: Exception) {
+                    if (cont.isActive) cont.resume(false)
+                }
+            }
+        }
+    }
+
+    /**
+     * One carefully gated physical-touch fallback for Google Flow submission.
+     * It will only tap if the exact prompt is still in the composer, the submit control is visible/enabled,
+     * and the page has no visible generation/loading evidence. It never types or DOM-clicks again.
+     */
+    private suspend fun retryFlowPromptSubmitByTouch(
+        webView: WebView,
+        hud: AiOverlayHud,
+        promptText: String
+    ): Boolean = suspendCancellableCoroutine { cont ->
+        val escaped = JSONObject.quote(promptText)
+        val js = """
+            (function() {
+                var vw = window.innerWidth || 540;
+                var vh = window.innerHeight || 960;
+                var body = (document.body && document.body.innerText) ? document.body.innerText : '';
+                if (/\\b(generating|rendering|queued for generation|generation started|video is being created)\\b/i.test(body)) {
+                    return JSON.stringify({ status: 'BUSY' });
+                }
+                var fields = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], input[type="text"]'));
+                var target = null;
+                for (var i = 0; i < fields.length; i++) {
+                    var el = fields[i];
+                    var r = el.getBoundingClientRect();
+                    var label = ((el.placeholder || '') + ' ' + (el.getAttribute('aria-label') || '') +
+                        ' ' + (el.getAttribute('name') || '')).toLowerCase();
+                    if (r.width < 100 || r.height < 24 || r.bottom < 0 || r.top > vh) continue;
+                    if (label.indexOf('search') !== -1) continue;
+                    if (label.indexOf('what do you want to create') !== -1 || label.indexOf('prompt') !== -1 || el.isContentEditable) {
+                        target = el;
+                        break;
+                    }
+                }
+                if (!target) return JSON.stringify({ status: 'NO_COMPOSER' });
+                var actual = ('value' in target) ? String(target.value || '') : String(target.innerText || target.textContent || '');
+                if (actual.trim() !== $escaped.trim()) return JSON.stringify({ status: 'PROMPT_MISMATCH' });
+
+                var buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+                for (var j = 0; j < buttons.length; j++) {
+                    var b = buttons[j];
+                    var br = b.getBoundingClientRect();
+                    var text = ((b.innerText || '') + ' ' + (b.getAttribute('aria-label') || '') + ' ' + (b.title || '')).toLowerCase();
+                    if (br.width < 12 || br.height < 12 || br.bottom < 0 || br.top > vh) continue;
+                    if (br.top < vh * 0.55) continue;
+                    if (b.disabled || b.getAttribute('aria-disabled') === 'true') continue;
+                    if (text.indexOf('arrow_forward') === -1 && text.indexOf('generate') === -1 &&
+                        text.indexOf('create') === -1 && text.indexOf('submit') === -1) continue;
+                    return JSON.stringify({
+                        status: 'READY_FOR_TOUCH',
+                        x: Math.round(br.left + br.width / 2),
+                        y: Math.round(br.top + br.height / 2),
+                        vw: vw,
+                        vh: vh
+                    });
+                }
+                return JSON.stringify({ status: 'NO_ENABLED_SUBMIT' });
+            })();
+        """.trimIndent()
+
+        mainHandler.post {
+            webView.evaluateJavascript(js) { raw ->
+                try {
+                    val clean = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"") ?: "{}"
+                    val obj = JSONObject(clean)
+                    if (obj.optString("status") != "READY_FOR_TOUCH") {
+                        if (cont.isActive) cont.resume(false)
+                    } else {
+                        scope.launch {
+                            val touched = WebActionVerifier.dispatchRealWebTouch(
+                                webView = webView,
+                                hud = hud,
+                                cssX = obj.optDouble("x", 495.0).toFloat(),
+                                cssY = obj.optDouble("y", 890.0).toFloat(),
+                                viewportCssWidth = obj.optDouble("vw", 540.0).toFloat(),
+                                viewportCssHeight = obj.optDouble("vh", 960.0).toFloat(),
+                                holdDurationMs = 150L,
+                                label = "Generate • one fallback"
+                            )
+                            if (cont.isActive) cont.resume(touched)
+                        }
+                    }
                 } catch (_: Exception) {
                     if (cont.isActive) cont.resume(false)
                 }
