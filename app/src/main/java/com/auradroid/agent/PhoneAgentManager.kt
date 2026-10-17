@@ -82,10 +82,10 @@ object PhoneAgentManager {
 
                 val expectedPackage = preferredApp.packageName
                 var actualPackage = ""
-                repeat(6) {
+                for (attempt in 0 until 6) {
                     delay(350)
                     actualPackage = foregroundAppPackage(service)
-                    if (actualPackage == expectedPackage) return@repeat
+                    if (actualPackage == expectedPackage) break
                 }
                 if (actualPackage != expectedPackage) {
                     service.overlayHud?.updateStatus("Wrong app blocked", "Expected ${preferredApp.label}; foreground is ${actualPackage.ifBlank { "unknown" }}", "ERROR")
@@ -659,11 +659,11 @@ object PhoneAgentManager {
                 val twitterLabel = label.contains("twitter") || packageId.contains("twitter")
                 val xLabel = label == "x" || label.startsWith("x ") || packageId.contains("twitter")
                 val score = when {
-                    label == wanted -> 1000
+                    customClient && twitterLabel -> 1200
                     wanted.contains("floks") || wanted.contains("flocks") || wanted.contains("flox") || wanted.contains("flocs") ->
-                        (if (customClient) 500 else 0) + (if (twitterLabel) 100 else 0)
-                    customClient && twitterLabel -> 700
-                    customClient -> 600
+                        (if (customClient) 900 else 0) + (if (twitterLabel) 100 else 0)
+                    label == wanted -> 1000
+                    customClient -> 800
                     twitterLabel -> 400
                     xLabel -> 250
                     else -> 0
