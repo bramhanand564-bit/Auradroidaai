@@ -289,6 +289,18 @@
                                 android:textStyle="bold" />
 
                             <Button
+                                android:id="@+id/btnPauseAgent"
+                                android:layout_width="wrap_content"
+                                android:layout_height="52dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#D97706"
+                                android:text="Ⅱ PAUSE"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <Button
                                 android:id="@+id/btnStopAgent"
                                 android:layout_width="wrap_content"
                                 android:layout_height="52dp"
@@ -296,7 +308,7 @@
                                 android:text="■ STOP"
                                 android:textAllCaps="false"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp"
+                                android:textSize="12sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
                     </LinearLayout>
