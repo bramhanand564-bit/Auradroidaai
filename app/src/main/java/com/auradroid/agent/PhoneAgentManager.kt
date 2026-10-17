@@ -174,12 +174,11 @@ object PhoneAgentManager {
 
                     // After two model failures, still make a narrow, evidence-based recovery
                     // attempt if a search query is already entered on the real phone.
-                    if (consecutiveAiFailures >= 2) {
+                    if (consecutiveAiFailures == 2) {
                         val recovered = recoverSearchSubmission(service, nodes, userGoal)
                         if (recovered != null) {
                             history.add("Step $step: AI fallback - $recovered")
                             VideoQueueManager.appendLog(service, "🛠️ Safe UI fallback: $recovered")
-                            consecutiveAiFailures = 0
                             delay(2200)
                             continue
                         }
