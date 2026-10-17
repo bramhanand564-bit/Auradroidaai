@@ -512,6 +512,7 @@ object PhoneAgentManager {
                     realW = realW,
                     realH = realH,
                     repeatCount = repeatTapCount,
+                    userGoal = userGoal,
                     pinnedNativePackage = pinnedNativePackage
                 ) { tapX, tapY ->
                     if (hypot(tapX - lastTapX, tapY - lastTapY) < 25f) {
@@ -526,6 +527,12 @@ object PhoneAgentManager {
                 }
 
                 history.add("Step $step:${decision.action} ($executedSummary) -${decision.reason}")
+                if (executedSummary.startsWith("ACTION_BLOCKED_UNAUTHORIZED:")) {
+                    service.overlayHud?.setCursorOverlayVisible(false)
+                    service.overlayHud?.updateStatus("Action blocked", "This button would create a side effect not clearly requested. Confirm the intended action, then retry.", "ERROR")
+                    VideoQueueManager.appendLog(service, "🛡️ ${executedSummary.removePrefix("ACTION_BLOCKED_UNAUTHORIZED:").trim()}; no tap was performed.")
+                    break
+                }
                 if (executedSummary.startsWith("ACTION_NOT_VERIFIED:")) {
                     service.overlayHud?.setCursorOverlayVisible(false)
                     service.overlayHud?.updateStatus("Action unverified", "The target changed during the action. The task was paused instead of tapping again.", "ERROR")
@@ -580,6 +587,7 @@ object PhoneAgentManager {
         realW: Float,
         realH: Float,
         repeatCount: Int,
+        userGoal: String,
         pinnedNativePackage: String? = null,
         onTapRecorded: (Float, Float) -> Unit
     ): String {
@@ -605,6 +613,10 @@ object PhoneAgentManager {
                     }
                     val label = targetNode.text.ifBlank { targetNode.contentDesc }
                         .ifBlank { targetNode.hintText }.take(40).ifBlank { "Unlabelled control" }
+                    val sideEffect = sensitiveControlAction(targetNode)
+                    if (sideEffect != null && !goalExplicitlyRequestsSideEffect(userGoal, sideEffect)) {
+                        return "ACTION_BLOCKED_UNAUTHORIZED: '$sideEffect' control is not explicitly requested by the user's original task"
+                    }
                     onTapRecorded(targetNode.centerX, targetNode.centerY)
                     val tapped = animateAndPhysicalTapNode(service, targetNode, "Tap: ${label.take(15)}")
                     return if (tapped) {
@@ -671,10 +683,16 @@ object PhoneAgentManager {
                         (nearestNode.centerY - rawY).toDouble()
                     ) <= 145.0
                 ) {
-                    val label = nearestNode.text.ifEmpty { nearestNode.contentDesc }.take(14).ifEmpty { "Tap" }
+                    val label = nearestNode.text.ifBlank { nearestNode.contentDesc }
+                        .ifBlank { nearestNode.hintText }.take(30).ifBlank { "Tap" }
+                    val sideEffect = sensitiveControlAction(nearestNode)
+                    if (sideEffect != null && !goalExplicitlyRequestsSideEffect(userGoal, sideEffect)) {
+                        return "ACTION_BLOCKED_UNAUTHORIZED: '$sideEffect' control is not explicitly requested by the user's original task"
+                    }
                     onTapRecorded(nearestNode.centerX, nearestNode.centerY)
-                    animateAndPhysicalTapNode(service, nearestNode, "Tap: $label")
-                    return "Magnet-Tapped '$label'"
+                    val tapped = animateAndPhysicalTapNode(service, nearestNode, "Tap: ${label.take(14)}")
+                    return if (tapped) "Magnet-Tapped '$label'"
+                    else "ACTION_NOT_VERIFIED: visual target changed before the tap; no action was performed"
                 }
 
                 onTapRecorded(rawX, rawY)
@@ -778,6 +796,44 @@ object PhoneAgentManager {
         val sameFootprint = nearest.second <= 24.0
         val unambiguous = next == null || next.second - nearest.second >= 50.0 || sameFootprint
         return if (withinFreshnessRadius && unambiguous) nearest.first else null
+    }
+
+    private fun sensitiveControlAction(node: UiNodeSnapshot): String? {
+        val label = listOf(node.text, node.contentDesc, node.hintText, node.viewId)
+            .joinToString(" ")
+            .lowercase()
+        return when {
+            Regex("""\\b(send|send message|reply|reply now|भेजें)\\b""").containsMatchIn(label) -> "send"
+            Regex("""\\b(publish|publish now|post now)\\b""").containsMatchIn(label) -> "publish"
+            Regex("""\\b(delete|remove|erase|trash)\\b""").containsMatchIn(label) -> "delete"
+            Regex("""\\b(buy now|purchase|checkout|pay now|place order)\\b""").containsMatchIn(label) -> "purchase"
+            Regex("""\\b(unfollow|follow)\\b""").containsMatchIn(label) -> "follow"
+            Regex("""\\b(submit|submit now)\\b""").containsMatchIn(label) -> "submit"
+            Regex("""\\b(upload|upload video|upload file)\\b""").containsMatchIn(label) -> "upload"
+            Regex("""\\b(share now|share)\\b""").containsMatchIn(label) -> "share"
+            else -> null
+        }
+    }
+
+    private fun goalExplicitlyRequestsSideEffect(goal: String, action: String): Boolean {
+        val text = goal.lowercase()
+        val pattern = when (action) {
+            "send" -> """send|sending|reply|replying|bhej|bhejna|message"""
+            "publish" -> """publish|publishing|post|posting"""
+            "delete" -> """delete|deleting|remove|removing|erase"""
+            "purchase" -> """buy|purchase|pay|checkout|order"""
+            "follow" -> """follow|unfollow"""
+            "submit" -> """submit|apply|send form"""
+            "upload" -> """upload|uploading"""
+            "share" -> """share|sharing|send|post"""
+            else -> return false
+        }
+        val matches = Regex("""\\b(?:$pattern)\\b""").findAll(text)
+        val negation = Regex("""\\b(?:don't|do not|never|avoid|without|not|mat)\\s+(?:[a-z]+\\s+){0,3}$""")
+        return matches.any { match ->
+            val prefix = text.substring(0, match.range.first).takeLast(45)
+            !negation.containsMatchIn(prefix)
+        }
     }
 
     private fun stableScreenSignature(nodes: List<UiNodeSnapshot>): Int {
