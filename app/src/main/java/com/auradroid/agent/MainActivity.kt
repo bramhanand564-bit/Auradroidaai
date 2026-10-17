@@ -79,6 +79,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rbModeBackgroundWeb: RadioButton
     private lateinit var rbModePhoneScreen: RadioButton
     private lateinit var btnExecutePlan: Button
+    private lateinit var btnPauseAgent: Button
     private lateinit var btnStopAgent: Button
 
     // Tab 2: In-App Browser
@@ -219,6 +220,8 @@ class MainActivity : AppCompatActivity() {
         onLogUpdated = { updatedLogs ->
             runOnUiThread {
                 tvConsoleLog.text = updatedLogs
+                btnPauseAgent.text = if (TaskRunController.isPaused()) "▶ RESUME" else "Ⅱ PAUSE"
+                btnPauseAgent.isEnabled = TaskRunController.hasActiveTask()
             }
         }
 
@@ -284,6 +287,7 @@ class MainActivity : AppCompatActivity() {
         rbModeBackgroundWeb = findViewById(R.id.rbModeBackgroundWeb)
         rbModePhoneScreen = findViewById(R.id.rbModePhoneScreen)
         btnExecutePlan = findViewById(R.id.btnExecutePlan)
+        btnPauseAgent = findViewById(R.id.btnPauseAgent)
         btnStopAgent = findViewById(R.id.btnStopAgent)
 
         btnBrowserBack = findViewById(R.id.btnBrowserBack)
@@ -600,9 +604,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        btnPauseAgent.setOnClickListener {
+            if (!TaskRunController.hasActiveTask()) {
+                Toast.makeText(this, "Abhi koi running task nahi hai.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val changed = if (TaskRunController.isPaused()) {
+                TaskRunController.requestResume()
+            } else {
+                TaskRunController.requestPause()
+            }
+            if (!changed) {
+                Toast.makeText(this, "Task control available nahi hai. Screen/log check karein.", Toast.LENGTH_SHORT).show()
+            } else {
+                btnPauseAgent.text = if (TaskRunController.isPaused()) "▶ RESUME" else "Ⅱ PAUSE"
+                VideoQueueManager.appendLog(
+                    this,
+                    if (TaskRunController.isPaused()) "⏸️ Pause requested; current action will finish safely before pausing."
+                    else "▶️ Resume requested; agent will refresh the screen before the next action."
+                )
+            }
+        }
+
         btnStopAgent.setOnClickListener {
+            TaskRunController.requestCancel()
             AutoTouchService.instance?.stopCurrentJob()
             WebPipelineManager.stopEverything(this)
+            btnPauseAgent.text = "Ⅱ PAUSE"
             Toast.makeText(this, "🛑 Stopped all active tasks.", Toast.LENGTH_SHORT).show()
         }
     }
