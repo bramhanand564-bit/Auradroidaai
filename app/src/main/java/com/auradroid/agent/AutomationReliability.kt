@@ -167,10 +167,31 @@ object AppAutomationRouter {
             listOf("upload", "publish", "post", "short", "studio", "creator").any { containsAlias(value, it) }) {
             return profiles.firstOrNull { it.id == "YOUTUBE_STUDIO" }
         }
-        // More specific profiles must win over their parent product.
-        return profiles.firstOrNull { profile ->
-            profile.aliases.sortedByDescending { it.length }.any { alias -> containsAlias(value, alias) }
+
+        val matches = profiles.flatMap { profile ->
+            profile.aliases.filter { alias -> containsAlias(value, alias) }
+                .map { alias -> profile to alias }
         }
+        if (matches.isEmpty()) return null
+
+        // When Chrome/browser is just the transport ("open Gmail in Chrome"), route to
+        // the requested service, not to the browser home page.
+        val explicitlyTargetsBrowser = listOf("open chrome", "launch chrome", "start chrome", "google chrome app")
+            .any { value.contains(it) } &&
+            !webSignals.any { value.contains(it) } &&
+            !urlRegex.containsMatchIn(value)
+        if (!explicitlyTargetsBrowser) {
+            val targetMatches = matches.filterNot { (profile, _) -> profile.id == "CHROME" }
+            if (targetMatches.isNotEmpty() && (isWebRequest(value) || value.contains("website"))) {
+                return targetMatches.maxByOrNull { it.second.length }?.first
+            }
+        }
+
+        // Choose the most specific alias across every adapter, not the first profile in a list.
+        return matches.maxWithOrNull(
+            compareBy<Pair<AppAutomationProfile, String>> { it.second.length }
+                .thenBy { if (it.first.id == "CHROME") 0 else 1 }
+        )?.first
     }
 
     fun profileForPackage(packageName: String?): AppAutomationProfile? {
@@ -284,7 +305,24 @@ object AppAutomationRouter {
             )
 
         val mode = if (routeToWeb) AutomationMode.BACKGROUND_WEB else AutomationMode.PHONE_UI
-        val startUrl = resolveStartUrl(goal, suggestedUrl, pinnedFlowUrl)
+        val resolvedUrl = resolveStartUrl(goal, suggestedUrl, pinnedFlowUrl)
+        val startUrl = if (
+            routeToWeb && urlInGoal.isBlank() && profile != null && !youtubeUpload && !flowTask
+        ) {
+            val normalizedSuggestion = normalizeHttpUrl(suggestedUrl)
+            val suggestionProfile = profileForUrl(normalizedSuggestion)
+            val searchIntent = listOf(
+                "search online", "search the web", "google search", "search for",
+                "look up", "find information about", "research"
+            ).any { value.contains(it) }
+            when {
+                normalizedSuggestion != null && suggestionProfile?.id == profile.id -> normalizedSuggestion
+                searchIntent && normalizedSuggestion != null -> normalizedSuggestion
+                else -> profile.webHome
+            }
+        } else {
+            resolvedUrl
+        }
         val reason = when {
             forcePhoneUi || isExplicitPhoneRequest(goal) -> "Explicit real-phone request takes priority."
             youtubeUpload -> "YouTube publishing/upload tasks use the controlled web workflow by default."
