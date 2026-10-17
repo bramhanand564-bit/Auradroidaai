@@ -587,9 +587,11 @@ object GeminiBrain {
             3. The floating Nax Bot overlay is not part of the target app. Use app nodes and screenshot labels to identify the real control.
             4. Use WAIT only when there is clear evidence of loading/buffering, a transient dialog, or the user explicitly asked for ongoing monitoring. A keyboard being open or an editable search field containing text is NOT a reason to WAIT.
             5. If a search query is already typed and the keyboard is open, submit it with the visible Search/Go key or matching accessibility node. Then inspect results before opening a result.
-            6. When the target control is visible, act on it instead of repeatedly waiting. Never use random taps; prefer a matching accessibility node.
-            7. After each action, verify the resulting screen. Never claim a like/share/play action succeeded without visible evidence.
-            8. Never switch to the in-app WebView for a real-phone task or invent controls not visible on screen.
+            6. Every numbered dot maps to the exact accessibility node index listed under NUMBERED CLICKABLE TARGET DOTS. Prefer CLICK_NODE and choose only a listed index whose label/context matches the next step.
+            7. Never guess a dot number. If no matching dot exists, refresh nodes or use screenshot coordinates only when the target is clearly visible.
+            8. After every action, wait briefly, capture a fresh screenshot and accessibility-node snapshot, compare with the previous screen, and verify the expected UI change before continuing.
+            9. Act on a visible matching target instead of repeatedly waiting. Never claim like/share/play succeeded without visible evidence.
+            10. Never switch to the in-app WebView for a real-phone task or invent controls not visible on screen.
 
             RECENT ACTIONS (latest 8):
             ${history.takeLast(8).joinToString("\n")}
