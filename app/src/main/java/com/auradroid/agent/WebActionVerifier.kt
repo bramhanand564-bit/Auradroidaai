@@ -739,7 +739,7 @@ object WebActionVerifier {
     private fun semanticElementState(raw: String): String {
         return raw.lineSequence()
             .map { line ->
-                line.replace(Regex(""" @\\(-?\\d+,-?\\d+\\) size=\\d+x\\d+ top=-?\\d+"""), "")
+                line.replace(Regex(""" @\(-?\d+,-?\d+\) size=\d+x\d+ top=-?\d+"""), "")
             }
             .joinToString("\n")
     }
