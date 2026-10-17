@@ -600,8 +600,8 @@ object GeminiBrain {
             val modelVerified = obj.optBoolean("verified", false)
             val evidence = obj.optString("evidence", "").trim()
             val reason = obj.optString("reason", "Completion evidence was not provided.").trim()
-            val screen = screenSummary.lowercase().replace(Regex("""\\s+"""), " ").trim()
-            val normalizedEvidence = evidence.lowercase().replace(Regex("""\\s+"""), " ").trim()
+            val screen = screenSummary.lowercase().replace(Regex("""\s+"""), " ").trim()
+            val normalizedEvidence = evidence.lowercase().replace(Regex("""\s+"""), " ").trim()
             val evidenceAppearsOnScreen = normalizedEvidence.length >= 8 &&
                 screen.contains(normalizedEvidence)
             val goalText = goal.lowercase()
