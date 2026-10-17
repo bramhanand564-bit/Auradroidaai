@@ -483,12 +483,20 @@ class AiOverlayHud(private val context: Context) {
 
     fun setCursorOverlayVisible(visible: Boolean) {
         mainHandler.post {
-            pointerCanvasView?.visibility = if (visible) View.VISIBLE else View.GONE
+            val hasTargets = pointerCanvasView?.hasTargetDots() == true
+            pointerCanvasView?.visibility = if (visible || hasTargets) View.VISIBLE else View.GONE
         }
     }
 
     fun setClickableTargetDots(dots: List<NaxTargetDot>) {
-        mainHandler.post { pointerCanvasView?.setTargetDots(dots) }
+        mainHandler.post {
+            pointerCanvasView?.setTargetDots(dots)
+            if (dots.isEmpty() && !AutoTouchService.isJobRunning) {
+                pointerCanvasView?.visibility = View.GONE
+            } else if (dots.isNotEmpty() && AutoTouchService.isJobRunning) {
+                pointerCanvasView?.visibility = View.VISIBLE
+            }
+        }
     }
 
     fun hidePodForFocusedTextInput(hidden: Boolean) {
@@ -992,14 +1000,6 @@ class NaxBotAvatarView(context: Context) : View(context) {
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
 
-        // Persistent numbered markers map to the same accessibility node indices used by CLICK_NODE.
-        targetDots.forEach { target ->
-            val radius = 18f
-            canvas.drawCircle(target.x, target.y, radius, targetDotFill)
-            canvas.drawCircle(target.x, target.y, radius, targetDotStroke)
-            canvas.drawText(target.index.toString(), target.x, target.y + targetDotText.textSize * 0.34f, targetDotText)
-        }
-
         val cx = w / 2f
         val cy = h / 2f + sin(animPhase.toDouble()).toFloat() * 1.6f
         val headRx = w * 0.44f
@@ -1238,6 +1238,8 @@ class NaxHandCursorCanvas(context: Context) : View(context) {
         invalidate()
     }
 
+    fun hasTargetDots(): Boolean = targetDots.isNotEmpty()
+
     fun triggerTapAnimation(x: Float, y: Float, label: String) {
         val local = screenToCanvas(x, y)
         tapX = local.first
@@ -1281,8 +1283,16 @@ class NaxHandCursorCanvas(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (rippleProgress <= 0f || rippleProgress >= 1f) return
 
+        // Persistent numbered markers map to the same accessibility node indices used by CLICK_NODE.
+        targetDots.forEach { target ->
+            val radius = 18f
+            canvas.drawCircle(target.x, target.y, radius, targetDotFill)
+            canvas.drawCircle(target.x, target.y, radius, targetDotStroke)
+            canvas.drawText(target.index.toString(), target.x, target.y + targetDotText.textSize * 0.34f, targetDotText)
+        }
+
+        if (rippleProgress <= 0f || rippleProgress >= 1f) return
         val alpha = ((1f - rippleProgress) * 255).toInt().coerceIn(0, 255)
         ripplePaint.alpha = alpha
         dotPaint.alpha = alpha
