@@ -491,31 +491,31 @@ object PhoneAgentManager {
                 (if (node.text.isNotBlank()) 1 else 0)
             }
 
-        if (typedSearch != null) {
-            val looksLikeSearchField = typedSearch.isFocused ||
-                typedSearch.hintText.contains("search", true) ||
-                typedSearch.viewId.contains("search", true) ||
-                typedSearch.contentDesc.contains("search", true)
-            if (looksLikeSearchField &&
-                typedSearch.node.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
-            ) {
-                return "Submitted existing search query via keyboard action"
-            }
-        }
+        val looksLikeSearchField = typedSearch != null && (
+            typedSearch.isFocused ||
+            typedSearch.hintText.contains("search", true) ||
+            typedSearch.viewId.contains("search", true) ||
+            typedSearch.contentDesc.contains("search", true)
+        )
 
+        // Use the keyboard's visible labeled action node instead of a non-portable IME
+        // action constant. Different Android keyboards expose Search, Go, or Enter.
         val searchButton = nodes.firstOrNull { node ->
             node.isClickable && (
                 node.text.equals("Search", true) ||
                 node.contentDesc.equals("Search", true) ||
                 node.text.equals("Go", true) ||
                 node.contentDesc.equals("Go", true) ||
+                node.text.equals("Enter", true) ||
+                node.contentDesc.equals("Enter", true) ||
                 node.viewId.contains("search_submit", true) ||
-                node.viewId.contains("search_go", true)
+                node.viewId.contains("search_go", true) ||
+                node.viewId.contains("ime_action", true)
             )
         }
-        if (searchButton != null) {
+        if (searchButton != null && (looksLikeSearchField || searchButton.viewId.contains("search", true))) {
             animateAndPhysicalTapNode(service, searchButton, "Tap: Search")
-            return "Tapped visible Search/Go control"
+            return "Tapped visible Search/Go/Enter keyboard action"
         }
 
         return null
