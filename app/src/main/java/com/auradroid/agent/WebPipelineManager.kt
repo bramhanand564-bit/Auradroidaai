@@ -1079,7 +1079,7 @@ object WebPipelineManager {
                 var vw = window.innerWidth || 540;
                 var vh = window.innerHeight || 960;
                 var body = (document.body && document.body.innerText) ? document.body.innerText : '';
-                if (/\\b(generating|rendering|queued for generation|generation started|video is being created)\\b/i.test(body)) {
+                if (/\b(generating|rendering|queued for generation|generation started|video is being created)\b/i.test(body)) {
                     return JSON.stringify({ status: 'BUSY' });
                 }
                 var fields = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], input[type="text"]'));
