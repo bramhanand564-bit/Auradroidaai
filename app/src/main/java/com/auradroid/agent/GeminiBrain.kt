@@ -605,21 +605,21 @@ object GeminiBrain {
             val evidenceAppearsOnScreen = normalizedEvidence.length >= 8 &&
                 screen.contains(normalizedEvidence)
             val goalText = goal.lowercase()
-            val asksUpload = Regex("""\\b(upload|uploading)\\b""").containsMatchIn(goalText)
+            val asksUpload = Regex("""\b(upload|uploading)\b""").containsMatchIn(goalText)
             val asksPublish = goalText.contains("publish") || Regex(
-                """\\b(post (this|it|the|to|on)|share (this|it|the)|make public)\\b"""
+                """\b(post (this|it|the|to|on)|share (this|it|the)|make public)\b"""
             ).containsMatchIn(goalText)
-            val asksSend = Regex("""\\b(send|sending)\\b""").containsMatchIn(goalText)
-            val asksDelete = Regex("""\\b(delete|deleting|remove|removing|erase|erasing)\\b""").containsMatchIn(goalText)
+            val asksSend = Regex("""\b(send|sending)\b""").containsMatchIn(goalText)
+            val asksDelete = Regex("""\b(delete|deleting|remove|removing|erase|erasing)\b""").containsMatchIn(goalText)
             val asksTransaction = Regex(
-                """\\b(pay|payment|purchase|buy this|place an order|order this|book this|reserve|subscribe|renew subscription)\\b"""
+                """\b(pay|payment|purchase|buy this|place an order|order this|book this|reserve|subscribe|renew subscription)\b"""
             ).containsMatchIn(goalText)
-            val asksFollow = Regex("""\\b(unfollow|follow)\\s+(@[a-z0-9_.-]+|this account|the account|this user|the user)\\b""")
-                .containsMatchIn(goalText) && !Regex("""\\bfollow (the )?(steps|instructions|guide|process)\\b""").containsMatchIn(goalText)
-            val asksLike = Regex("""\\b(like|unlike) (this|the) (post|video|photo|comment|reel)\\b""")
+            val asksFollow = Regex("""\b(unfollow|follow)\s+(@[a-z0-9_.-]+|this account|the account|this user|the user)\b""")
+                .containsMatchIn(goalText) && !Regex("""\bfollow (the )?(steps|instructions|guide|process)\b""").containsMatchIn(goalText)
+            val asksLike = Regex("""\b(like|unlike) (this|the) (post|video|photo|comment|reel)\b""")
                 .containsMatchIn(goalText)
-            val asksSubmit = Regex("""\\b(submit|submit this|submit the|apply for)\\b""").containsMatchIn(goalText)
-            val asksSave = Regex("""\\b(save changes|save this file|save the file|save draft|save this|save the changes)\\b""")
+            val asksSubmit = Regex("""\b(submit|submit this|submit the|apply for)\b""").containsMatchIn(goalText)
+            val asksSave = Regex("""\b(save changes|save this file|save the file|save draft|save this|save the changes)\b""")
                 .containsMatchIn(goalText)
             val requiredOutcomeProofs = buildList {
                 if (asksUpload) add(listOf("upload complete", "uploaded successfully", "video uploaded", "video published", "upload successful", "saved as draft"))
