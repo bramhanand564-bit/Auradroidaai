@@ -55,15 +55,49 @@ object PhoneAgentManager {
         val maxSteps = if (isContinuousMonitor || unstoppable) 5000 else 40
 
         try {
+            val history = mutableListOf<String>()
+
             if (!initialSettingAction.isNullOrBlank()) {
-                openSystemSettingOrApp(service, initialSettingAction)
-                delay(2500)
+                if (!openSystemSettingOrApp(service, initialSettingAction)) {
+                    service.overlayHud?.updateStatus("Target not opened", "Could not resolve: $initialSettingAction", "ERROR")
+                    VideoQueueManager.appendLog(service, "⛔ Target resolver refused '$initialSettingAction'; no unrelated app was opened.")
+                    return
+                }
+                delay(1800)
+            } else if (isExplicitNativeAppRequest(userGoal)) {
+                val preferredApp = inferPreferredNativeApp(service, userGoal)
+                if (preferredApp == null) {
+                    service.overlayHud?.updateStatus("App not found", "No matching installed app. Won't switch to Chrome by guess.", "ERROR")
+                    VideoQueueManager.appendLog(service, "⛔ Native-app intent detected for '$userGoal', but no matching launchable app was found. No browser/Settings fallback was used.")
+                    return
+                }
+
+                val launched = openSystemSettingOrApp(service, preferredApp.packageName)
+                if (!launched) {
+                    service.overlayHud?.updateStatus("Launch failed", "Could not open ${preferredApp.label}", "ERROR")
+                    VideoQueueManager.appendLog(service, "⛔ App launch failed for '${preferredApp.label}' (${preferredApp.packageName}). Task stopped rather than acting in the wrong app.")
+                    return
+                }
+
+                val expectedPackage = preferredApp.packageName
+                var actualPackage = ""
+                repeat(6) {
+                    delay(350)
+                    actualPackage = foregroundAppPackage(service)
+                    if (actualPackage == expectedPackage) return@repeat
+                }
+                if (actualPackage != expectedPackage) {
+                    service.overlayHud?.updateStatus("Wrong app blocked", "Expected ${preferredApp.label}; foreground is ${actualPackage.ifBlank { "unknown" }}", "ERROR")
+                    VideoQueueManager.appendLog(service, "⛔ App-routing verification failed. Expected '${preferredApp.label}' ($expectedPackage), observed '${actualPackage.ifBlank { "unknown" }}'. No further taps were issued.")
+                    return
+                }
+                val routeNote = "Native-app router opened and verified '${preferredApp.label}' ($expectedPackage); task goal preserved."
+                history.add(routeNote)
+                VideoQueueManager.appendLog(service, "✅ $routeNote")
             }
 
             service.overlayHud?.updateStatus("Universal Agent", "Goal: ${userGoal.take(26)}...", "THINKING")
             VideoQueueManager.appendLog(service, "🤖 Starting Universal Phone Agent: $userGoal")
-
-            val history = mutableListOf<String>()
             var lastTapX = -1f
             var lastTapY = -1f
             var repeatTapCount = 0
@@ -360,8 +394,12 @@ object PhoneAgentManager {
         when (decision.action.uppercase()) {
             "OPEN_APP" -> {
                 if (decision.appPackageOrSetting.isNotBlank()) {
-                    openSystemSettingOrApp(service, decision.appPackageOrSetting)
-                    return "Opened ${decision.appPackageOrSetting}"
+                    val launched = openSystemSettingOrApp(service, decision.appPackageOrSetting)
+                    return if (launched) {
+                        "Launch requested for '${decision.appPackageOrSetting}'; foreground package will be checked on the next step"
+                    } else {
+                        "Launch refused for '${decision.appPackageOrSetting}': no matching installed app/setting; no random fallback opened"
+                    }
                 }
             }
             "CLICK_NODE", "CLICK_XY" -> {
@@ -547,7 +585,164 @@ object PhoneAgentManager {
         return null
     }
 
-    fun openSystemSettingOrApp(service: AutoTouchService, target: String) {
+    private data class LaunchableApp(
+        val packageName: String,
+        val label: String,
+        val normalizedLabel: String
+    )
+
+    private fun normalizeAppText(value: String): String =
+        value.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim().replace(Regex("\\s+"), " ")
+
+    private fun installedLaunchableApps(service: AutoTouchService): List<LaunchableApp> {
+        val pm = service.packageManager
+        return try {
+            pm.getInstalledApplications(0).mapNotNull { info ->
+                if (info.packageName == service.packageName) return@mapNotNull null
+                val launchIntent = pm.getLaunchIntentForPackage(info.packageName) ?: return@mapNotNull null
+                val label = runCatching { pm.getApplicationLabel(info).toString().trim() }
+                    .getOrDefault(info.packageName)
+                if (label.isBlank()) return@mapNotNull null
+                LaunchableApp(info.packageName, label, normalizeAppText(label))
+            }.distinctBy { it.packageName }
+        } catch (e: Exception) {
+            VideoQueueManager.appendLog(service, "⚠️ Installed-app inventory unavailable: ${e.javaClass.simpleName}")
+            emptyList()
+        }
+    }
+
+    private fun resolveInstalledApp(service: AutoTouchService, target: String): LaunchableApp? {
+        val cleanTarget = target.trim()
+        if (cleanTarget.isBlank() || cleanTarget.contains("://") ||
+            Regex("""\\bwww\\.""", RegexOption.IGNORE_CASE).containsMatchIn(cleanTarget)) return null
+
+        val apps = installedLaunchableApps(service)
+        apps.firstOrNull { it.packageName.equals(cleanTarget, true) }?.let { return it }
+
+        val wanted = normalizeAppText(cleanTarget)
+        if (wanted.isBlank()) return null
+        apps.firstOrNull { it.normalizedLabel == wanted }?.let { return it }
+
+        // Twitter/X aliases: the explicitly preferred Flox/Floks/Flocs client wins
+        // over a browser or a generic similarly named app when the request is ambiguous.
+        if (wanted in setOf("twitter", "x", "x app", "twitter app", "floks twitter", "flocks twitter", "flox twitter", "flocs twitter")) {
+            val ranked = apps.mapNotNull { app ->
+                val label = app.normalizedLabel
+                val packageId = app.packageName.lowercase()
+                val customClient = listOf("flox", "floks", "flocks", "flocs", "flox").any { label.contains(it) || packageId.contains(it) }
+                val twitterLabel = label.contains("twitter") || packageId.contains("twitter")
+                val xLabel = label == "x" || label.startsWith("x ") || packageId.contains("twitter")
+                val score = when {
+                    label == wanted -> 1000
+                    wanted.contains("floks") || wanted.contains("flocks") || wanted.contains("flox") || wanted.contains("flocs") ->
+                        (if (customClient) 500 else 0) + (if (twitterLabel) 100 else 0)
+                    customClient && twitterLabel -> 700
+                    customClient -> 600
+                    twitterLabel -> 400
+                    xLabel -> 250
+                    else -> 0
+                }
+                if (score > 0) app to score else null
+            }.sortedByDescending { it.second }
+            ranked.firstOrNull()?.first?.let { return it }
+        }
+
+        // Resolve natural-language app labels from model output; never interpret a URL as a package.
+        return apps
+            .filter { app ->
+                app.normalizedLabel.length >= 3 &&
+                    (app.normalizedLabel.contains(wanted) || wanted.contains(app.normalizedLabel))
+            }
+            .maxByOrNull { app ->
+                (if (app.normalizedLabel.contains(wanted)) 100 else 0) + app.normalizedLabel.length
+            }
+    }
+
+    private fun hasExplicitWebDestination(goal: String): Boolean {
+        val g = goal.lowercase()
+        return listOf(
+            "website", "web site", "webpage", "web page", "browser", "chrome",
+            "in the browser", "in chrome", "use chrome", "open the site", "visit the site",
+            "open url", "http://", "https://", "www."
+        ).any { g.contains(it) }
+    }
+
+    private fun isExplicitNativeAppRequest(goal: String): Boolean {
+        if (hasExplicitWebDestination(goal)) return false
+        val g = goal.lowercase()
+        val hasLaunchVerb = listOf(
+            "open", "launch", "start", "switch to", "use the app", "use app",
+            "app kholo", "app khol", "kholo", "khol do", "chalao", "open app"
+        ).any { g.contains(it) }
+        if (!hasLaunchVerb) return false
+        // A domain alone is not enough to force a website: when browser/site intent was
+        // not stated, resolve a matching native social app instead of blindly entering Chrome.
+        return Regex("""\\btwitter\\b|twitter\\.com|x\\.com|\\bx\\s+app\\b|\\bwhatsapp\\b|\\binstagram\\b|\\byoutube\\b|\\btelegram\\b|\\bfacebook\\b""")
+            .containsMatchIn(g) || installedLaunchableAppsForTextOnlyHint(g)
+    }
+
+    private fun installedLaunchableAppsForTextOnlyHint(goalLower: String): Boolean {
+        // Recognize the generic "... app kholo" phrasing; candidate matching happens separately.
+        return goalLower.contains(" app") || goalLower.contains("application")
+    }
+
+    private fun inferPreferredNativeApp(service: AutoTouchService, goal: String): LaunchableApp? {
+        val g = normalizeAppText(goal)
+        val apps = installedLaunchableApps(service)
+        if (apps.isEmpty()) return null
+
+        // Honor an exact installed app label mentioned in the request before using aliases.
+        val explicitLabel = apps
+            .filter { it.normalizedLabel.length >= 3 && g.contains(it.normalizedLabel) }
+            .maxByOrNull { it.normalizedLabel.length }
+        if (explicitLabel != null) return explicitLabel
+
+        val words = goal.lowercase()
+        val mentionsTwitter = Regex("""\\btwitter\\b|twitter\\.com|x\\.com|\\bx\\s+app\\b|\\bopen x\\b""")
+            .containsMatchIn(words)
+        if (mentionsTwitter) {
+            return apps.mapNotNull { app ->
+                val label = app.normalizedLabel
+                val packageId = app.packageName.lowercase()
+                val customClient = listOf("flox", "floks", "flocks", "flocs").any { label.contains(it) || packageId.contains(it) }
+                val twitterLabel = label.contains("twitter") || packageId.contains("twitter")
+                val officialX = label == "x" || label.startsWith("x ") || packageId.contains("twitter")
+                val score = when {
+                    customClient && twitterLabel -> 1000
+                    customClient -> 800
+                    twitterLabel -> 600
+                    officialX -> 450
+                    else -> 0
+                }
+                if (score > 0) app to score else null
+            }.maxByOrNull { it.second }?.first
+        }
+
+        // Generic installed app name: match the longest visible app label appearing in the goal.
+        return apps
+            .filter { it.normalizedLabel.length >= 3 && g.contains(it.normalizedLabel) }
+            .maxByOrNull { it.normalizedLabel.length }
+    }
+
+    private fun foregroundAppPackage(service: AutoTouchService): String {
+        return try {
+            val candidates = service.windows.mapNotNull { window ->
+                val root = window.root ?: return@mapNotNull null
+                val pkg = root.packageName?.toString().orEmpty()
+                if (pkg.isBlank() || pkg == service.packageName || pkg.contains("systemui", true)) {
+                    null
+                } else {
+                    window.type to pkg
+                }
+            }
+            candidates.firstOrNull { it.first == AccessibilityWindowInfo.TYPE_APPLICATION }?.second
+                ?: candidates.firstOrNull()?.second.orEmpty()
+        } catch (_: Exception) {
+            service.rootInActiveWindow?.packageName?.toString().orEmpty()
+        }
+    }
+
+    fun openSystemSettingOrApp(service: AutoTouchService, target: String): Boolean {
         val cleanTarget = target.trim()
         val pm = service.packageManager
         val actionIntent = when (cleanTarget.uppercase()) {
@@ -561,15 +756,27 @@ object PhoneAgentManager {
             "APPS" -> Intent(Settings.ACTION_APPLICATION_SETTINGS)
             "WHATSAPP" -> pm.getLaunchIntentForPackage("com.whatsapp")
                 ?: pm.getLaunchIntentForPackage("com.whatsapp.w4b")
-            else -> pm.getLaunchIntentForPackage(cleanTarget)
-        } ?: Intent(Settings.ACTION_SETTINGS)
+            else -> {
+                if (cleanTarget.contains("://") || Regex("""\\bwww\\.""", RegexOption.IGNORE_CASE).containsMatchIn(cleanTarget)) {
+                    null
+                } else {
+                    resolveInstalledApp(service, cleanTarget)?.let { pm.getLaunchIntentForPackage(it.packageName) }
+                }
+            }
+        }
 
-        try {
+        if (actionIntent == null) {
+            VideoQueueManager.appendLog(service, "⛔ No installed-app or supported-setting match for '$cleanTarget'; refusing unrelated Settings/Chrome fallback.")
+            return false
+        }
+
+        return try {
             actionIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             service.startActivity(actionIntent)
-        } catch (_: Exception) {
-            val fallback = Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            service.startActivity(fallback)
+            true
+        } catch (e: Exception) {
+            VideoQueueManager.appendLog(service, "⛔ Could not launch '$cleanTarget': ${e.javaClass.simpleName}. No unrelated fallback opened.")
+            false
         }
     }
 
