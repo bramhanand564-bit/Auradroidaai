@@ -655,6 +655,9 @@ object GeminiBrain {
         highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): AgentDecision {
+        val foregroundPackage = Regex("""Foreground app package:\\s*(\\S+)""")
+            .find(screenSummary)?.groupValues?.getOrNull(1)
+        val adapterGuidance = AppAutomationRouter.adapterGuidance(goal, foregroundPackage)
         val prompt = """
             You are Nax Bot, an Android PHONE UI navigation agent. You control the REAL foreground Android app through AccessibilityService, not an embedded browser.
             USER'S COMPLETE TASK (never lose or replace this goal): $goal
@@ -665,6 +668,9 @@ object GeminiBrain {
 
             CURRENT REAL DEVICE SCREEN AND APP IDENTITY:
             $screenSummary
+
+            APP-SPECIFIC ADAPTER RULES:
+            $adapterGuidance
 
             REQUIRED NAVIGATION REASONING:
             1. Identify the foreground package and current page from the node list and screenshot.
@@ -780,10 +786,14 @@ object GeminiBrain {
         highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): WebAgentDecision {
+        val adapterGuidance = AppAutomationRouter.adapterGuidance(goal)
         val prompt = """
             You are Nax Bot's 1-Second AI Step-Confirmed Web Agent.
             OVERALL GOAL: $goal
             CURRENT URL: $pageUrl
+
+            APP-SPECIFIC ADAPTER RULES:
+            $adapterGuidance
             
             TRAINED SKILL BLUEPRINT (GUIDE ONLY - VERIFY EVERY 1s):
             ${trainedBlueprint.ifBlank { "Standard navigation" }}
