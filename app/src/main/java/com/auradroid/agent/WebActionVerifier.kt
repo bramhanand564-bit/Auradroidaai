@@ -266,7 +266,7 @@ object WebActionVerifier {
                 }
                 function label(el) {
                     return String(el.getAttribute('aria-label') || el.innerText || el.textContent || el.title || '')
-                        .replace(/\\s+/g, ' ').trim().slice(0, 100);
+                        .replace(/\s+/g, ' ').trim().slice(0, 100);
                 }
                 function selected(el) {
                     var c = String(el.className && typeof el.className === 'string' ? el.className : '').toLowerCase();
@@ -307,7 +307,7 @@ object WebActionVerifier {
 
                 var missing = !videoOk ? 'video' : (!ratioOk ? 'ratio' : (!durationOk ? 'duration' : 'speed'));
                 var exactMatch = function(t, key) {
-                    t = t.toLowerCase().replace(/\\s+/g, ' ').trim();
+                    t = t.toLowerCase().replace(/\s+/g, ' ').trim();
                     if (key === 'video') return t === 'video' || t === 'video mode';
                     if (key === 'ratio') return t === '9:16' || t === 'portrait (9:16)' || t === 'portrait 9:16';
                     if (key === 'duration') return t === desiredDur.toLowerCase();
@@ -861,7 +861,7 @@ object WebActionVerifier {
             snapshot.renderingProgressLabel == "100%" ||
             snapshot.hasActiveVideoStream) return true
         val statusText = snapshot.pageText.lowercase()
-        return Regex("""\\b(generating (your )?video|rendering (your )?video|generation started|video generation started|request queued|queued for generation|your video is ready)\\b""")
+        return Regex("""\b(generating (your )?video|rendering (your )?video|generation started|video generation started|request queued|queued for generation|your video is ready)\b""")
             .containsMatchIn(statusText)
     }
 
