@@ -282,7 +282,9 @@ object WebPipelineManager {
         skipFlowRouting: Boolean = false
     ) {
         val lowerGoal = goal.lowercase()
-        if (!skipFlowRouting && (lowerGoal.contains("flow") || startUrl.contains("labs.google/fx", true) || startUrl.contains("flow.google", true))) {
+        val explicitlyRequestsFlow = Regex("""\b(flow|google flow)\b""", RegexOption.IGNORE_CASE).containsMatchIn(goal) ||
+            lowerGoal.contains("labs.google/fx") || lowerGoal.contains("flow.google")
+        if (!skipFlowRouting && explicitlyRequestsFlow) {
             startFlowToYouTubePipeline(
                 context = context,
                 apiKey = apiKey,
@@ -296,19 +298,45 @@ object WebPipelineManager {
 
         stopCurrentJob()
         val hud = AutoTouchService.instance?.overlayHud
-        val webView = hud?.getOrCreateSharedWebView() ?: return
+        val webView = hud?.getOrCreateSharedWebView()
+        if (hud == null || webView == null) {
+            VideoQueueManager.appendLog(context, "⛔ Web task not started: Accessibility service/WebView is unavailable. Enable Auto-Touch and retry.")
+            return
+        }
+
+        val route = AppAutomationRouter.chooseRoute(
+            goal = goal,
+            suggestedMode = "WEB",
+            suggestedUrl = startUrl,
+            pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(context)
+        )
+        val resolvedStartUrl = route.startUrl
+        val webAdapterId = route.profile?.id ?: "CUSTOM_WEB"
+        val taskRunId = TaskExecutionStore.start(context, goal, AutomationMode.BACKGROUND_WEB, webAdapterId)
+        VideoQueueManager.appendLog(
+            context,
+            "🧭 Web route: ${route.mode} • adapter=$webAdapterId • url=$resolvedStartUrl • ${route.reason}"
+        )
 
         isWebTaskRunning = true
         currentWebJob = scope.launch {
+            var taskCompleted = false
+            var terminalTaskStatus: TaskStatus? = null
+            var terminalTaskMessage = ""
             try {
                 val firstRunLearn = VideoQueueManager.isFirstRunLiveLearnEnabled(context)
-                val verified = VideoQueueManager.isSkillLiveVerified(context, "CUSTOM_WEB")
+                val verified = VideoQueueManager.isSkillLiveVerified(context, webAdapterId)
                 if (firstRunLearn && !verified) {
                     hud.openForFirstRunLiveCalibration()
                 }
 
-                if (startUrl.isNotBlank() && webView.url != startUrl) {
-                    webView.loadUrl(startUrl)
+                if (resolvedStartUrl.isBlank() || AppAutomationRouter.normalizeHttpUrl(resolvedStartUrl) == null) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "No safe HTTPS destination could be resolved for this web task."
+                    throw IllegalArgumentException(terminalTaskMessage)
+                }
+                if (webView.url != resolvedStartUrl) {
+                    webView.loadUrl(resolvedStartUrl)
                     delay(3000)
                 }
 
@@ -331,11 +359,15 @@ object WebPipelineManager {
                 var pendingObserveCycles = 0
                 var pendingRecoveryRejectedCount = 0
                 var pendingRecoveryCycles = 0
-                val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, "CUSTOM_WEB")
+                val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, webAdapterId)
 
                 for (step in 1..36) {
                     if (!isWebTaskRunning) break
-                    hud.updateStatus("Web • Step $step", "1s AI Confirming...", "THINKING")
+                    TaskExecutionStore.update(
+                        context, taskRunId, TaskStatus.VERIFYING, step,
+                        "Inspecting the current DOM and verifying the previous action before advancing."
+                    )
+                    hud.updateStatus("Web • Step $step", "Verifying current page state...", "THINKING")
 
                     val snap = WebActionVerifier.captureSnapshot(webView)
 
@@ -416,7 +448,7 @@ object WebPipelineManager {
                         pageTextAndElements = snap.interactiveElementsText,
                         history = history,
                         memoryVault = VideoQueueManager.getMemoryVault(context),
-                        learnedLessons = VideoQueueManager.getLearnedLessonsSummary(context, "GOOGLE_FLOW"),
+                        learnedLessons = VideoQueueManager.getLearnedLessonsSummary(context, webAdapterId),
                         trainedBlueprint = trainedBlueprint,
                         screenChangedStatus = lastVerifyReport,
                         screenshotBase64 = curShotB64,
@@ -535,7 +567,12 @@ object WebPipelineManager {
                             }
                             val doneEvidence = WebActionVerifier.verifyGoalCompletion(goal, snap)
                             if (doneEvidence != null) {
-                                VideoQueueManager.markSkillLiveVerified(context, "CUSTOM_WEB", true)
+                                VideoQueueManager.markSkillLiveVerified(context, webAdapterId, true)
+                                TaskExecutionStore.update(
+                                    context, taskRunId, TaskStatus.COMPLETED, step,
+                                    "Verified completion: $doneEvidence"
+                                )
+                                taskCompleted = true
                                 VideoQueueManager.appendDetailedLog(
                                     context = context,
                                     modelUsed = activeModelLabel,
@@ -560,10 +597,16 @@ object WebPipelineManager {
                                 verifyStatus = "⚠️ NO COMPLETION EVIDENCE"
                             )
                             if (unverifiedDoneCount >= 3) {
+                                terminalTaskStatus = TaskStatus.PAUSED
+                                terminalTaskMessage = "Stopped safely: the web page did not provide completion evidence after three checks."
                                 hud.updateStatus("Web • Not Verified", "AI reported DONE repeatedly, but the page gave no proof.", "ERROR")
                                 VideoQueueManager.appendLog(context, "⚠️ Web task stopped: DONE was rejected 3 times because completion evidence was absent.")
                                 break
                             }
+                            TaskExecutionStore.update(
+                                context, taskRunId, TaskStatus.RUNNING, step,
+                                "Completion not verified; re-checking live page instead of reporting success."
+                            )
                             delay(700)
                             continue
                         }
@@ -823,13 +866,31 @@ object WebPipelineManager {
                     )
 
                     history.add("Step $step: ${decision.action} -> ${if (verifyRes.passed) "CONFIRMED" else "FAILED"}")
+                    TaskExecutionStore.update(
+                        context, taskRunId, TaskStatus.RUNNING, step,
+                        if (verifyRes.passed) "Action verified; proceeding to the next step." else "Action is uncertain; the next step must re-check live page state."
+                    )
                     prevSnap = afterSnap
                     prevShotB64 = curShotB64
                 }
             } catch (_: CancellationException) {
+                terminalTaskStatus = TaskStatus.CANCELLED
+                terminalTaskMessage = "Web task cancelled; completion was not claimed."
             } catch (e: Exception) {
+                terminalTaskStatus = TaskStatus.FAILED
+                terminalTaskMessage = e.message ?: "Web agent failed before completion was verified."
                 VideoQueueManager.appendLog(context, "⚠️ Web Agent Error: ${e.message}")
             } finally {
+                if (!taskCompleted) {
+                    val status = terminalTaskStatus ?: TaskStatus.PAUSED
+                    val message = terminalTaskMessage.ifBlank {
+                        "Web execution ended without verified completion; inspect the final page before retrying."
+                    }
+                    TaskExecutionStore.update(context, taskRunId, status, message = message)
+                    if (status != TaskStatus.COMPLETED) {
+                        VideoQueueManager.appendLog(context, "📋 Web task state saved: $status • $message")
+                    }
+                }
                 isWebTaskRunning = false
             }
         }
