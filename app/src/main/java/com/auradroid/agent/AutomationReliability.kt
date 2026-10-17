@@ -276,32 +276,42 @@ object AppAutomationRouter {
             val isFlowDestination = host == "labs.google" || host.endsWith(".labs.google") ||
                 host == "flow.google" || host.endsWith(".flow.google") ||
                 host == "labs.google.com" || host.endsWith(".labs.google.com")
-            val isPrivateIpv4 = run {
-                val parts = host.split(".")
-                if (parts.size != 4) false else {
-                    val octets = parts.map { it.toIntOrNull() }
-                    if (octets.any { it == null || it !in 0..255 }) false else {
-                        val a = octets[0]!!
-                        val b = octets[1]!!
-                        a == 0 || a == 10 || a == 127 || (a == 169 && b == 254) ||
-                            (a == 172 && b in 16..31) || (a == 192 && b == 168) || a >= 224
-                    }
-                }
-            }
-            val isPrivateIpv6 = host.contains(':') && (
-                host == "::" || host == "::1" ||
-                    host.startsWith("fe80:", true) ||
-                    host.startsWith("fc", true) ||
-                    host.startsWith("fd", true) ||
-                    host.startsWith("ff", true)
-                )
-            // This WebView router intentionally refuses local/private-network URLs.
-            val isBlockedHost = host == "localhost" || host.endsWith(".local") ||
-                host.endsWith(".internal") || isPrivateIpv4 || isPrivateIpv6
             // A saved Flow URL is only valid for an explicitly Flow-related task.
-            if (!isBlockedHost && !isFlowDestination) return normalized
+            if (!isUnsafeHost(host) && !isFlowDestination) return normalized
         }
         return "https://www.google.com/"
+    }
+
+    private fun isUnsafeHost(rawHost: String): Boolean {
+        val host = rawHost.trim('[', ']').lowercase()
+        if (host.isBlank() || host == "localhost" || host.endsWith(".localhost") ||
+            host.endsWith(".local") || host.endsWith(".internal")) return true
+        // A single-label hostname is commonly a device/local-network name, not a public host.
+        if (!host.contains('.') && !host.contains(':')) return true
+
+        val parts = host.split(".")
+        val isIpv4 = parts.size == 4 && parts.all { part ->
+            val number = part.toIntOrNull()
+            number != null && number in 0..255
+        }
+        if (isIpv4) {
+            val a = parts[0].toInt()
+            val b = parts[1].toInt()
+            if (a == 0 || a == 10 || a == 127 ||
+                (a == 169 && b == 254) ||
+                (a == 172 && b in 16..31) ||
+                (a == 192 && b == 168) ||
+                a >= 224) return true
+        }
+
+        if (host.contains(':')) {
+            if (host == "::" || host == "::1" || host.startsWith("::ffff:") ||
+                host.startsWith("fc", true) || host.startsWith("fd", true) ||
+                host.startsWith("ff", true) || Regex("""(?i)^fe[89ab].*""").matches(host)) {
+                return true
+            }
+        }
+        return false
     }
 
     fun normalizeHttpUrl(rawUrl: String): String? {
@@ -322,13 +332,7 @@ object AppAutomationRouter {
             val uri = URI(candidate)
             val scheme = uri.scheme?.lowercase()
             val host = uri.host
-            if (scheme != "https" || host.isNullOrBlank() ||
-                host.equals("localhost", true) ||
-                host == "127.0.0.1" ||
-                host.startsWith("10.") ||
-                host.startsWith("192.168.") ||
-                host.startsWith("169.254.") ||
-                host.endsWith(".local", true)) {
+            if (scheme != "https" || host.isNullOrBlank() || isUnsafeHost(host)) {
                 null
             } else candidate
         } catch (_: Exception) {
