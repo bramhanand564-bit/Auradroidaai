@@ -803,14 +803,14 @@ object PhoneAgentManager {
             .joinToString(" ")
             .lowercase()
         return when {
-            Regex("""\\b(send|send message|reply|reply now|भेजें)\\b""").containsMatchIn(label) -> "send"
-            Regex("""\\b(publish|publish now|post now)\\b""").containsMatchIn(label) -> "publish"
-            Regex("""\\b(delete|remove|erase|trash)\\b""").containsMatchIn(label) -> "delete"
-            Regex("""\\b(buy now|purchase|checkout|pay now|place order)\\b""").containsMatchIn(label) -> "purchase"
-            Regex("""\\b(unfollow|follow)\\b""").containsMatchIn(label) -> "follow"
-            Regex("""\\b(submit|submit now)\\b""").containsMatchIn(label) -> "submit"
-            Regex("""\\b(upload|upload video|upload file)\\b""").containsMatchIn(label) -> "upload"
-            Regex("""\\b(share now|share)\\b""").containsMatchIn(label) -> "share"
+            Regex("""\b(send|send message|reply|reply now|भेजें)\b""").containsMatchIn(label) -> "send"
+            Regex("""\b(publish|publish now|post now)\b""").containsMatchIn(label) -> "publish"
+            Regex("""\b(delete|remove|erase|trash)\b""").containsMatchIn(label) -> "delete"
+            Regex("""\b(buy now|purchase|checkout|pay now|place order)\b""").containsMatchIn(label) -> "purchase"
+            Regex("""\b(unfollow|follow)\b""").containsMatchIn(label) -> "follow"
+            Regex("""\b(submit|submit now)\b""").containsMatchIn(label) -> "submit"
+            Regex("""\b(upload|upload video|upload file)\b""").containsMatchIn(label) -> "upload"
+            Regex("""\b(share now|share)\b""").containsMatchIn(label) -> "share"
             else -> null
         }
     }
@@ -828,8 +828,8 @@ object PhoneAgentManager {
             "share" -> """share|sharing|send|post"""
             else -> return false
         }
-        val matches = Regex("""\\b(?:$pattern)\\b""").findAll(text)
-        val negation = Regex("""\\b(?:don't|do not|never|avoid|without|not|mat)\\s+(?:[a-z]+\\s+){0,3}$""")
+        val matches = Regex("""\b(?:$pattern)\b""").findAll(text)
+        val negation = Regex("""\b(?:don't|do not|never|avoid|without|not|mat)\s+(?:[a-z]+\s+){0,3}$""")
         return matches.any { match ->
             val prefix = text.substring(0, match.range.first).takeLast(45)
             !negation.containsMatchIn(prefix)
