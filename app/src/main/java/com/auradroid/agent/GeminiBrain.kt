@@ -592,6 +592,11 @@ object GeminiBrain {
             8. After every action, wait briefly, capture a fresh screenshot and accessibility-node snapshot, compare with the previous screen, and verify the expected UI change before continuing.
             9. Act on a visible matching target instead of repeatedly waiting. Never claim like/share/play succeeded without visible evidence.
             10. Never switch to the in-app WebView for a real-phone task or invent controls not visible on screen.
+            11. APP VS WEBSITE ROUTING IS STRICT:
+                - When the user asks to open/launch an app (especially Twitter/X or "Floks/Flox/Flocs Twitter") and does NOT explicitly ask for Chrome, a browser, a website/site, or a URL, use the native installed app. Do NOT type twitter.com into Chrome, tap a Chrome suggestion, or treat a domain-looking name as a command to launch Chrome.
+                - If the task history says the native-app router opened and verified a target package, keep working in that app. Do not switch to Chrome or another similarly named app unless the user explicitly requested a browser/site.
+                - For OPEN_APP, appPackageOrSetting must be an installed app label/package or supported setting name, NEVER a web URL. If the requested native app cannot be found, report the blocker rather than silently navigating elsewhere.
+                - Choose actions from the current foreground app's package/window and live node labels. A click dispatch is not proof the intended app opened.
 
             RECENT ACTIONS (latest 8):
             ${history.takeLast(8).joinToString("\n")}
