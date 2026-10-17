@@ -100,6 +100,13 @@ class AutomationReliabilityTest {
     }
 
     @Test
+    fun urlAwareProfilesIdentifyPopularWebDestinations() {
+        assertEquals("YOUTUBE_STUDIO", AppAutomationRouter.profileForUrl("https://studio.youtube.com/channel/abc")?.id)
+        assertEquals("GMAIL", AppAutomationRouter.memoryDomainForWebGoal("Click the next button", "https://mail.google.com/mail/u/0/"))
+        assertEquals("WHATSAPP", AppAutomationRouter.profileForUrl("https://web.whatsapp.com/")?.id)
+    }
+
+    @Test
     fun popularAppProfilesAreRegistered() {
         val ids = AppAutomationRouter.allProfiles().map { it.id }
         assertTrue(ids.containsAll(listOf("CHROME", "YOUTUBE", "YOUTUBE_STUDIO", "WHATSAPP", "INSTAGRAM", "GMAIL", "GOOGLE_DRIVE")))
