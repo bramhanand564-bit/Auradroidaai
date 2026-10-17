@@ -76,7 +76,7 @@ object PhoneAgentManager {
             for (step in 1..maxSteps) {
                 val nodes = captureScreenNodes(service)
 
-                // Number visible clickable controls; each dot uses the exact node index expected by CLICK_NODE.
+                // Build an internal semantic shortlist for AI selection. These targets are never drawn on the phone screen.
                 val clickableTargets = nodes
                     .filter { it.isClickable }
                     .sortedWith(compareByDescending<UiNodeSnapshot> {
@@ -92,13 +92,6 @@ object PhoneAgentManager {
                         kept
                     }
                     .take(48)
-                service.overlayHud?.setClickableTargetDots(
-                    clickableTargets.map { node ->
-                        NaxTargetDot(node.index, node.centerX, node.centerY,
-                            node.text.ifBlank { node.contentDesc }.ifBlank { node.viewId }.take(28))
-                    }
-                )
-
                 // Keep the compact status pod off search boxes and keyboard suggestions while a real text field is focused.
                 service.overlayHud?.hidePodForFocusedTextInput(nodes.any { it.isEditable && it.isFocused })
 
@@ -139,9 +132,9 @@ object PhoneAgentManager {
                     appendLine("Foreground app package: ${activePackage.ifBlank { "UNKNOWN" }}")
                     appendLine("Accessibility window type: ${activeWindowType.ifBlank { "UNKNOWN" }}")
                     appendLine("Visible node count: ${nodes.size}")
-                    appendLine("NUMBERED CLICKABLE TARGET DOTS (visible dot number equals exact node index; choose only a matching listed index):")
+                    appendLine("CLICKABLE ACCESSIBILITY TARGET CANDIDATES (internal node indexes only; NO on-screen markers are drawn):")
                     clickableTargets.forEach { n ->
-                        appendLine("DOT #${n.index} label='${n.text.ifBlank { n.contentDesc }.ifBlank { n.viewId }.ifBlank { n.className }.take(70)}' window=${n.windowType} xy=(${n.centerX.toInt()},${n.centerY.toInt()})")
+                        appendLine("TARGET index=${n.index} label='${n.text.ifBlank { n.contentDesc }.ifBlank { n.viewId }.ifBlank { n.className }.take(70)}' window=${n.windowType} xy=(${n.centerX.toInt()},${n.centerY.toInt()})")
                     }
                     appendLine("VISIBLE NODES (index, app package, text, description, hint, view id, edit/click, screen coordinates):")
                     nodes.forEach {
@@ -149,7 +142,7 @@ object PhoneAgentManager {
                     }
                 }
 
-                // Compare both accessibility state and the freshly captured screenshot.
+                // Compare accessibility state and the freshly captured phone screenshot.
                 // This catches visual changes even when the accessibility node text is unchanged.
                 val currentScreenshotB64 = service.captureScreenshotBase64()
                 val currentSig = 31 * screenDump.hashCode() + currentScreenshotB64.hashCode()
