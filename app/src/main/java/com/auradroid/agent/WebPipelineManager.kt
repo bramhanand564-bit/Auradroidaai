@@ -318,6 +318,11 @@ object WebPipelineManager {
                 var currentSense = 1
                 var lastVerifyReport = "Initial state ready."
                 var unverifiedDoneCount = 0
+                // A failed step remains pending until a later live snapshot proves that the original outcome occurred.
+                var pendingBeforeSnapshot: DomSnapshot? = null
+                var pendingAction: String? = null
+                var pendingExpectedOutcome = ""
+                var pendingReason = ""
                 val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, "CUSTOM_WEB")
 
                 for (step in 1..36) {
@@ -358,6 +363,43 @@ object WebPipelineManager {
                     var inlineVerifyRes: StepVerificationResult? = null
                     when (decision.action) {
                         "DONE" -> {
+                            // Do not let the model jump past a step whose result is still unconfirmed.
+                            val pendingBefore = pendingBeforeSnapshot
+                            val pendingName = pendingAction
+                            if (pendingBefore != null && pendingName != null) {
+                                val pendingCheck = WebActionVerifier.verifyActionOutcome(
+                                    before = pendingBefore,
+                                    after = snap,
+                                    actionTaken = pendingName,
+                                    expectedOutcome = pendingExpectedOutcome,
+                                    countFailure = false
+                                )
+                                if (!pendingCheck.passed) {
+                                    unverifiedDoneCount++
+                                    lastVerifyReport = "DONE REJECTED: prior step '$pendingReason' is still unconfirmed in the live DOM. Recover that same step; do not advance."
+                                    history.add("Step $step: DONE rejected because pending '$pendingName' was not verified.")
+                                    VideoQueueManager.appendDetailedLog(
+                                        context = context,
+                                        modelUsed = activeModelLabel,
+                                        clickSense = "Pending Step Gate",
+                                        actionDesc = "Rejected DONE while step pending",
+                                        whyReason = pendingReason,
+                                        verifyStatus = "⚠️ PENDING STEP NOT CONFIRMED"
+                                    )
+                                    if (unverifiedDoneCount >= 3) {
+                                        hud.updateStatus("Web • Not Verified", "Previous step has no proof of completion. Stopped safely.", "ERROR")
+                                        VideoQueueManager.appendLog(context, "⚠️ Web task stopped: the previous step remained unverified after repeated DONE decisions.")
+                                        break
+                                    }
+                                    continue
+                                } else {
+                                    history.add("Pending step verified from fresh DOM evidence: $pendingName — $pendingReason")
+                                    pendingBeforeSnapshot = null
+                                    pendingAction = null
+                                    pendingExpectedOutcome = ""
+                                    pendingReason = ""
+                                }
+                            }
                             val doneEvidence = WebActionVerifier.verifyGoalCompletion(goal, snap)
                             if (doneEvidence != null) {
                                 VideoQueueManager.markSkillLiveVerified(context, "CUSTOM_WEB", true)
@@ -494,6 +536,49 @@ object WebPipelineManager {
                     currentSense = verifyRes.recommendedSense
                     lastVerifyReport = verifyRes.verificationReport
                     unverifiedDoneCount = 0
+
+                    // Pending-step gate: failed action becomes the only active step. New AI actions are
+                    // recovery attempts until the original outcome is visible in a fresh DOM snapshot.
+                    if (pendingAction == null) {
+                        if (!verifyRes.passed && decision.action != "WAIT") {
+                            pendingBeforeSnapshot = snap
+                            pendingAction = decision.action
+                            pendingExpectedOutcome = expectedOutcome
+                            pendingReason = decision.reason
+                            lastVerifyReport = "PENDING STEP NOT CONFIRMED: ${decision.action} — ${verifyRes.verificationReport} Recover this step only; no next task step may begin."
+                        }
+                    } else {
+                        val pendingBefore = pendingBeforeSnapshot
+                        val pendingName = pendingAction
+                        val pendingResult = if (pendingBefore != null && pendingName != null) {
+                            WebActionVerifier.verifyActionOutcome(
+                                before = pendingBefore,
+                                after = afterSnap,
+                                actionTaken = pendingName,
+                                expectedOutcome = pendingExpectedOutcome,
+                                countFailure = false
+                            )
+                        } else null
+
+                        if (pendingResult?.passed == true) {
+                            history.add("Pending step now confirmed after recovery: ${pendingName} — ${pendingReason}")
+                            pendingBeforeSnapshot = null
+                            pendingAction = null
+                            pendingExpectedOutcome = ""
+                            pendingReason = ""
+                            lastVerifyReport = "PENDING STEP CONFIRMED by fresh DOM evidence. Current recovery action status: ${verifyRes.verificationReport}"
+                            if (!verifyRes.passed && decision.action != "WAIT") {
+                                pendingBeforeSnapshot = snap
+                                pendingAction = decision.action
+                                pendingExpectedOutcome = expectedOutcome
+                                pendingReason = decision.reason
+                                lastVerifyReport = "Previous step confirmed; current recovery action is still pending: ${verifyRes.verificationReport}"
+                            }
+                        } else {
+                            val stillPendingName = pendingAction ?: decision.action
+                            lastVerifyReport = "PENDING STEP STILL UNCONFIRMED: ${pendingReason}. Recovery action ${decision.action} reported: ${verifyRes.verificationReport}. Do not advance; choose another safe recovery method or report the blocker."
+                        }
+                    }
 
                     VideoQueueManager.appendDetailedLog(
                         context = context,
