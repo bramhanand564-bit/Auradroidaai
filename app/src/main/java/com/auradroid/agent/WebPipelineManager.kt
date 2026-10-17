@@ -324,9 +324,10 @@ object WebPipelineManager {
                     hud.updateStatus("Web • Step $step", "1s AI Confirming...", "THINKING")
 
                     val snap = WebActionVerifier.captureSnapshot(webView)
-                    val curShotB64 = if (VideoQueueManager.isScreenVisionEnabled(context)) {
-                        hud.captureWebViewScreenshotBase64()
-                    } else null
+                    // Background Web tasks must not depend on phone/display screenshots.
+                    // Use the page's live DOM/accessibility-like semantics, URL, loading state and task result.
+                    // Keep screenshot vision reserved for the foreground phone agent.
+                    val curShotB64: String? = null
 
                     val escalateHigh = VideoQueueManager.isAutoHighModelEnabled(context) && currentSense >= 3
                     val activeModelLabel = if (escalateHigh) VideoQueueManager.getHighModelName(context) else model
