@@ -858,14 +858,56 @@ class MainActivity : AppCompatActivity() {
                 btnRunYouTubeNow.isEnabled = true
                 btnRunYouTubeNow.text = "▶ फोल्डर की अगली वीडियो फोटो देखकर वायरल टाइटल संग YouTube पर डालें"
 
-                AutoTouchService.instance?.startYouTubeUploadJob(
-                    context = this@MainActivity,
-                    apiKey = apiKey,
-                    model = model,
-                    folderPath = folderPath,
-                    topicInstruction = finalInstruction
-                )
-                Toast.makeText(this@MainActivity, "▶ Uploading to YouTube Shorts with Viral Title!", Toast.LENGTH_SHORT).show()
+                val service = AutoTouchService.instance
+                if (rbModePhoneScreen.isChecked) {
+                    // Phone mode: use the real installed YouTube app and Android's actual
+                    // screen/accessibility tree. Do not route this task into the embedded WebView.
+                    val phoneGoal = """
+                        Use the REAL INSTALLED YOUTUBE ANDROID APP on this phone, not Chrome,
+                        not a browser, and not the in-app WebView. Upload this exact local video as a YouTube Short:
+                        File name: ${nextVideo.name}
+                        Local file path: ${nextVideo.absolutePath}
+                        Title/description instructions:
+                        $finalInstruction
+
+                        Open YouTube app and continue through its Create (+) > upload video flow.
+                        Select the exact file named ${nextVideo.name}; verify the selected preview matches this file.
+                        Fill title and description using the instructions above. Keep audience/privacy settings
+                        explicit and do not guess if the screen requires a user decision. Before the final
+                        Publish/Upload confirmation, verify the selected file and entered metadata. Then submit
+                        only once and wait for a visible upload/publish result. If the file is not visible in
+                        the YouTube picker, permissions are missing, or any target cannot be confirmed, stop
+                        and report the blocker. Never claim upload success without visible confirmation.
+                    """.trimIndent()
+                    service?.startUniversalAiTask(apiKey, model, phoneGoal)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "📱 YouTube Phone Mode: real YouTube app will open and continue the upload.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    VideoQueueManager.appendLog(
+                        this@MainActivity,
+                        "📱 YouTube upload mode=PHONE; target file=${nextVideo.name}; route=installed YouTube app."
+                    )
+                } else {
+                    // Background mode preserves the existing WebView/YouTube Studio pipeline.
+                    service?.startYouTubeUploadJob(
+                        context = this@MainActivity,
+                        apiKey = apiKey,
+                        model = model,
+                        folderPath = folderPath,
+                        topicInstruction = finalInstruction
+                    )
+                    Toast.makeText(
+                        this@MainActivity,
+                        "🌐 YouTube Background Web Mode: YouTube Studio will run in the embedded web agent.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    VideoQueueManager.appendLog(
+                        this@MainActivity,
+                        "🌐 YouTube upload mode=BACKGROUND_WEB; target file=${nextVideo.name}; route=YouTube Studio."
+                    )
+                }
             }
         }
     }
