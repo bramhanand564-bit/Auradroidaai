@@ -180,14 +180,61 @@ object AppAutomationRouter {
         }
     }
 
+    fun profileForUrl(rawUrl: String?): AppAutomationProfile? {
+        if (rawUrl.isNullOrBlank()) return null
+        val host = runCatching { URI(rawUrl).host?.trim('[', ']')?.lowercase().orEmpty() }.getOrDefault("")
+        return when {
+            host == "studio.youtube.com" || host.endsWith(".studio.youtube.com") ->
+                profiles.firstOrNull { it.id == "YOUTUBE_STUDIO" }
+            host == "labs.google" || host.endsWith(".labs.google") ||
+                host == "flow.google" || host.endsWith(".flow.google") ->
+                profiles.firstOrNull { it.id == "GOOGLE_FLOW" }
+            host == "youtube.com" || host.endsWith(".youtube.com") || host == "youtu.be" ->
+                profiles.firstOrNull { it.id == "YOUTUBE" }
+            host == "web.whatsapp.com" || host.endsWith(".whatsapp.com") ->
+                profiles.firstOrNull { it.id == "WHATSAPP" }
+            host == "instagram.com" || host.endsWith(".instagram.com") ->
+                profiles.firstOrNull { it.id == "INSTAGRAM" }
+            host == "mail.google.com" ->
+                profiles.firstOrNull { it.id == "GMAIL" }
+            host == "drive.google.com" ->
+                profiles.firstOrNull { it.id == "GOOGLE_DRIVE" }
+            host == "photos.google.com" ->
+                profiles.firstOrNull { it.id == "GOOGLE_PHOTOS" }
+            host == "maps.google.com" ->
+                profiles.firstOrNull { it.id == "GOOGLE_MAPS" }
+            host == "web.telegram.org" || host.endsWith(".telegram.org") ->
+                profiles.firstOrNull { it.id == "TELEGRAM" }
+            host == "facebook.com" || host.endsWith(".facebook.com") ->
+                profiles.firstOrNull { it.id == "FACEBOOK" }
+            host == "x.com" || host.endsWith(".x.com") || host == "twitter.com" || host.endsWith(".twitter.com") ->
+                profiles.firstOrNull { it.id == "X" }
+            host == "open.spotify.com" || host.endsWith(".spotify.com") ->
+                profiles.firstOrNull { it.id == "SPOTIFY" }
+            host == "linkedin.com" || host.endsWith(".linkedin.com") ->
+                profiles.firstOrNull { it.id == "LINKEDIN" }
+            else -> null
+        }
+    }
+
     fun memoryDomainForGoal(goal: String, foregroundPackage: String? = null): String {
-        return profileForPackage(foregroundPackage)?.id
-            ?: profileForGoal(goal)?.id
+        return profileForGoal(goal)?.id
+            ?: profileForPackage(foregroundPackage)?.id
             ?: "ANDROID_UI"
     }
 
-    fun adapterGuidance(goal: String, packageName: String? = null): String {
-        val profile = profileForPackage(packageName) ?: profileForGoal(goal)
+    fun memoryDomainForWebGoal(goal: String, currentUrl: String): String {
+        return profileForGoal(goal)?.id
+            ?: profileForUrl(currentUrl)?.id
+            ?: "CUSTOM_WEB"
+    }
+
+    fun adapterGuidance(
+        goal: String,
+        packageName: String? = null,
+        currentUrl: String? = null
+    ): String {
+        val profile = profileForGoal(goal) ?: profileForUrl(currentUrl) ?: profileForPackage(packageName)
         return when (profile?.id) {
             "CHROME" -> "CHROME ADAPTER: verify the current URL, tab title, loading state and active tab. Prefer current semantic/DOM targets; never use an old target index after navigation."
             "YOUTUBE", "YOUTUBE_STUDIO" -> "YOUTUBE ADAPTER: distinguish the consumer YouTube app from YouTube Studio. For uploads, verify exact filename/preview, metadata and audience/privacy before the final side effect; require visible upload evidence."
