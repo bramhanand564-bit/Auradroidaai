@@ -487,6 +487,12 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
+    fun hidePodForFocusedTextInput(hidden: Boolean) {
+        mainHandler.post {
+            val pod = podRootLayout ?: return@post
+            pod.visibility = if (hidden || !isPodVisible) View.GONE else View.VISIBLE
+        }
+    }
     private fun setSideBarExpanded(expanded: Boolean) {
         mainHandler.post {
             isSideBarExpanded = expanded
