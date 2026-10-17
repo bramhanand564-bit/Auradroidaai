@@ -261,6 +261,7 @@ object WebPipelineManager {
                     )
                     flowStageCompleted = true
                     TaskRunController.finish(flowTaskId)
+                    VideoQueueManager.appendLog(context, "✅ Flow generation stage verified; YouTube upload will be tracked as a separate task.")
 
                     hud.updateStatus("Nax Bot • Saved!", "Starting YouTube upload for Part ${episodePlan.episodeNumber}...", "UPLOADING")
                     delay(1200)
