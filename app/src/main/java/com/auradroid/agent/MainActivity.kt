@@ -544,10 +544,17 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     resp.planGoal
                 }
+                // Route from the user's request plus the proposed task goal, while only
+                // an explicit user phone request is allowed to force real-device execution.
+                val routingGoal = if (isPhoneControlIntent(userMsg)) {
+                    userMsg
+                } else {
+                    "$userMsg\n${resp.planGoal}"
+                }
                 val route = AppAutomationRouter.chooseRoute(
-                    goal = userMsg,
+                    goal = routingGoal,
                     suggestedMode = resp.suggestedMode,
-                    forcePhoneUi = isPhoneControlIntent(userMsg) || isPhoneControlIntent(resp.planGoal),
+                    forcePhoneUi = isPhoneControlIntent(userMsg),
                     suggestedUrl = resp.targetUrl,
                     pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(this@MainActivity)
                 )
