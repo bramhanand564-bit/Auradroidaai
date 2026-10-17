@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 import kotlin.math.hypot
 
 object PhoneAgentManager {
@@ -529,6 +530,12 @@ object PhoneAgentManager {
                 }
 
                 history.add("Step $step:${decision.action} ($executedSummary) -${decision.reason}")
+                if (executedSummary.startsWith("ACTION_NOT_VERIFIED:")) {
+                    service.overlayHud?.setCursorOverlayVisible(false)
+                    service.overlayHud?.updateStatus("Action unverified", "The target changed during the action. The task was paused instead of tapping again.", "ERROR")
+                    VideoQueueManager.appendLog(service, "⛔ ${executedSummary.removePrefix("ACTION_NOT_VERIFIED:").trim()} Task paused for safety.")
+                    break
+                }
                 if (decision.action.equals("TYPE", true) && executedSummary.startsWith("TYPE_NOT_VERIFIED:")) {
                     service.overlayHud?.setCursorOverlayVisible(false)
                     service.overlayHud?.updateStatus("Text entry unverified", "The input value could not be verified. The agent paused to avoid duplicate typing.", "ERROR")
@@ -602,8 +609,12 @@ object PhoneAgentManager {
                     val label = targetNode.text.ifBlank { targetNode.contentDesc }
                         .ifBlank { targetNode.hintText }.take(40).ifBlank { "Unlabelled control" }
                     onTapRecorded(targetNode.centerX, targetNode.centerY)
-                    animateAndPhysicalTapNode(service, targetNode, "Tap: ${label.take(15)}")
-                    return "Tapped validated node #${targetNode.index} ($label)"
+                    val tapped = animateAndPhysicalTapNode(service, targetNode, "Tap: ${label.take(15)}")
+                    return if (tapped) {
+                        "Tapped validated node #${targetNode.index} ($label)"
+                    } else {
+                        "ACTION_NOT_VERIFIED: target changed before click dispatch; no tap was performed"
+                    }
                 }
 
                 // Match the 3-dot menu semantically only when the model chose coordinate mode.
@@ -622,8 +633,9 @@ object PhoneAgentManager {
                     }
                     if (threeDotNode != null) {
                         onTapRecorded(threeDotNode.centerX, threeDotNode.centerY)
-                        animateAndPhysicalTapNode(service, threeDotNode, "Tap: 3-Dot Menu")
-                        return "Tapped semantically matched 3-dot menu"
+                        val tapped = animateAndPhysicalTapNode(service, threeDotNode, "Tap: 3-Dot Menu")
+                        return if (tapped) "Tapped semantically matched 3-dot menu"
+                        else "ACTION_NOT_VERIFIED: 3-dot menu changed before click dispatch; no tap was performed"
                     }
                 }
 
@@ -1273,20 +1285,33 @@ object PhoneAgentManager {
         return list
     }
 
-    suspend fun animateAndPhysicalTapNode(service: AutoTouchService, snapshot: UiNodeSnapshot, label: String) {
-        // Show the hand exactly over the node before activating it.
+    suspend fun animateAndPhysicalTapNode(service: AutoTouchService, snapshot: UiNodeSnapshot, label: String): Boolean {
         service.overlayHud?.moveBotAndShowTap(snapshot.centerX, snapshot.centerY, label)
         delay(520)
 
-        // Accessibility semantic click is more accurate than a coordinate gesture.
-        // Only fall back to a physical gesture if the node and its clickable parents reject it;
-        // this also avoids the previous double-tap (gesture followed by ACTION_CLICK).
-        if (service.clickNodeAndParents(snapshot.node)) {
-            delay(180)
-            return
+        // Rebind after the visual delay: the user or app may have changed the screen
+        // while the floating hand animation was running. Never tap the stale node.
+        val latestNodes = captureScreenNodes(service)
+        val liveNode = remapToLiveTarget(snapshot, latestNodes, forTyping = false)
+        if (liveNode == null) {
+            val targetLabel = snapshot.text.ifBlank { snapshot.contentDesc }
+                .ifBlank { snapshot.hintText }.ifBlank { snapshot.viewId }.ifBlank { snapshot.className }
+            VideoQueueManager.appendLog(
+                service,
+                "🛡️ Tap cancelled: target '${targetLabel}' changed during animation; no click or coordinate fallback was performed."
+            )
+            return false
         }
-        service.performTapGesture(snapshot.centerX, snapshot.centerY)
+
+        if (service.clickNodeAndParents(liveNode.node)) {
+            delay(180)
+            return true
+        }
+
+        // Coordinates are taken only from the freshly rebound live node.
+        service.performTapGesture(liveNode.centerX, liveNode.centerY)
         delay(180)
+        return true
     }
 
     suspend fun animateAndTapXY(service: AutoTouchService, x: Float, y: Float, label: String) {
