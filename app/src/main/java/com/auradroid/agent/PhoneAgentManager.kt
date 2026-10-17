@@ -137,10 +137,14 @@ object PhoneAgentManager {
             val seenLearnedRules = mutableSetOf<String>()
 
             for (step in 1..maxSteps) {
-                if (!TaskRunController.awaitIfRunning(service, taskRunId.orEmpty(), step)) {
-                    terminalTaskStatus = TaskStatus.CANCELLED
-                    terminalTaskMessage = "Task stopped while paused/cancelled; no completion was claimed."
-                    break
+                when (TaskRunController.awaitBeforeStep(service, taskRunId.orEmpty(), step)) {
+                    TaskGateResult.STOP -> {
+                        terminalTaskStatus = TaskStatus.CANCELLED
+                        terminalTaskMessage = "Task stopped while paused/cancelled; no completion was claimed."
+                        break
+                    }
+                    TaskGateResult.REFRESH -> continue
+                    TaskGateResult.READY -> Unit
                 }
                 val pinnedAtStepStart = pinnedNativePackage
                 if (pinnedAtStepStart != null) {
@@ -389,6 +393,18 @@ object PhoneAgentManager {
                         action = "WAIT",
                         reason = "Monitoring chat for new incoming reply..."
                     )
+                }
+
+                // Pause may be requested while Gemini is thinking. Do not dispatch a stale
+                // decision after the user pauses; discard it and obtain a fresh screen snapshot.
+                when (TaskRunController.awaitBeforeStep(service, taskRunId.orEmpty(), step)) {
+                    TaskGateResult.STOP -> {
+                        terminalTaskStatus = TaskStatus.CANCELLED
+                        terminalTaskMessage = "Task stopped before the next action was dispatched."
+                        break
+                    }
+                    TaskGateResult.REFRESH -> continue
+                    TaskGateResult.READY -> Unit
                 }
 
                 val stepMood = when (decision.action) {
