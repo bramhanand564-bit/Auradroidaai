@@ -56,6 +56,7 @@ object PhoneAgentManager {
 
         try {
             val history = mutableListOf<String>()
+            var pinnedNativePackage: String? = null
 
             if (!initialSettingAction.isNullOrBlank()) {
                 if (!openSystemSettingOrApp(service, initialSettingAction)) {
@@ -91,6 +92,7 @@ object PhoneAgentManager {
                     VideoQueueManager.appendLog(service, "⛔ App-routing verification failed. Expected '${preferredApp.label}' ($expectedPackage), observed '${actualPackage.ifBlank { "unknown" }}'. No further taps were issued.")
                     return
                 }
+                pinnedNativePackage = expectedPackage
                 val routeNote = "Native-app router opened and verified '${preferredApp.label}' ($expectedPackage); task goal preserved."
                 history.add(routeNote)
                 VideoQueueManager.appendLog(service, "✅ $routeNote")
@@ -221,6 +223,27 @@ object PhoneAgentManager {
                 )
 
                 previousPhoneScreenshotB64 = currentScreenshotB64
+
+                // Keep native-app tasks pinned to the verified package. The model cannot
+                // silently switch this task to Chrome by emitting an OPEN_APP URL/package guess.
+                val pinnedPackage = pinnedNativePackage
+                if (pinnedPackage != null &&
+                    decision.action.equals("OPEN_APP", true) &&
+                    !hasExplicitWebDestination(userGoal)
+                ) {
+                    val requested = resolveInstalledApp(service, decision.appPackageOrSetting)
+                    if (requested == null || requested.packageName != pinnedPackage) {
+                        val blockedTarget = decision.appPackageOrSetting.ifBlank { "(empty target)" }
+                        VideoQueueManager.appendLog(
+                            service,
+                            "🛡️ Blocked unintended app switch to '$blockedTarget'; keeping verified native package $pinnedPackage."
+                        )
+                        decision = decision.copy(
+                            action = "WAIT",
+                            reason = "App-switch safety guard: stay in the verified native app for the user's task."
+                        )
+                    }
+                }
 
                 if (decision.reason.startsWith("AI_ERROR:", ignoreCase = true)) {
                     consecutiveAiFailures++
