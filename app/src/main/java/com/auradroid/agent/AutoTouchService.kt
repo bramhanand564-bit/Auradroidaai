@@ -427,14 +427,17 @@ class AutoTouchService : AccessibilityService() {
     }
 
     fun clickNodeAndParents(node: AccessibilityNodeInfo): Boolean {
-        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-        var parent = node.parent
+        if (runCatching { node.performAction(AccessibilityNodeInfo.ACTION_CLICK) }.getOrDefault(false)) {
+            return true
+        }
+        var parent = runCatching { node.parent }.getOrNull()
         var depth = 0
         while (parent != null && depth < 5) {
-            if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                return true
-            }
-            parent = parent.parent
+            val clicked = runCatching {
+                parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }.getOrDefault(false)
+            if (clicked) return true
+            parent = runCatching { parent.parent }.getOrNull()
             depth++
         }
         return false
@@ -463,12 +466,25 @@ class AutoTouchService : AccessibilityService() {
     }
 
     fun performScrollDownGesture() {
+        // Use the actual display dimensions; fixed 540x1650 coordinates miss on many phones
+        // and can turn into unintended gestures near the status/navigation areas.
+        val (realW, realH) = getRealScreenDimensions()
+        if (realW <= 0f || realH <= 0f) {
+            VideoQueueManager.appendLog(this, "🛡️ Scroll blocked: invalid display dimensions.")
+            return
+        }
+        val x = (realW * 0.5f).coerceIn(8f, realW - 8f)
+        val startY = (realH * 0.78f).coerceIn(realH * 0.55f, realH - 24f)
+        val endY = (realH * 0.34f).coerceIn(realH * 0.12f, startY - 80f)
         val path = Path().apply {
-            moveTo(540f, 1650f)
-            lineTo(540f, 550f)
+            moveTo(x, startY)
+            lineTo(x, endY)
         }
         val stroke = GestureDescription.StrokeDescription(path, 0, 400)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
+        val accepted = dispatchGesture(gesture, null, null)
+        if (!accepted) {
+            VideoQueueManager.appendLog(this, "⚠️ Scroll gesture was not accepted by Android; no screen change is assumed.")
+        }
     }
 }
