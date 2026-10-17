@@ -1174,14 +1174,27 @@ object WebPipelineManager {
                 targetBox.dispatchEvent(new Event('input', { bubbles: true }));
                 targetBox.dispatchEvent(new Event('change', { bubbles: true }));
 
+                var actualPrompt = ('value' in targetBox) ? String(targetBox.value || '') :
+                    String(targetBox.innerText || targetBox.textContent || '');
+                function normalizeText(s) { return String(s || '').replace(/\\s+/g, ' ').trim(); }
+                if (normalizeText(actualPrompt) !== normalizeText(textToInsert)) {
+                    return JSON.stringify({ status: 'TYPE_FAILED' });
+                }
+
                 var btns = Array.from(document.querySelectorAll('button, [role="button"]'));
                 var submitBtn = null;
                 for (var j = 0; j < btns.length; j++) {
                     var b = btns[j];
                     var br = b.getBoundingClientRect();
+                    var style = window.getComputedStyle(b);
+                    if (br.width < 12 || br.height < 12 || br.bottom <= 0 || br.top >= vh ||
+                        br.right <= 0 || br.left >= vw || style.display === 'none' ||
+                        style.visibility === 'hidden' || b.disabled || b.getAttribute('aria-disabled') === 'true') continue;
                     if (br.top < 250) continue;
                     var btxt = ((b.innerText || '') + ' ' + (b.getAttribute('aria-label') || '') + ' ' + (b.title || '')).toLowerCase();
-                    if (btxt.indexOf('arrow_forward') !== -1 || btxt.indexOf('generate') !== -1 || btxt.indexOf('create') !== -1 || btxt.indexOf('send') !== -1 || btxt.indexOf('submit') !== -1) {
+                    if (btxt.indexOf('arrow_forward') !== -1 || btxt.indexOf('generate') !== -1 ||
+                        btxt.indexOf('submit prompt') !== -1 || btxt.trim() === 'submit' ||
+                        btxt.trim() === 'send' || btxt.indexOf('create video') !== -1) {
                         submitBtn = b;
                         break;
                     }
