@@ -107,6 +107,27 @@ class AutomationReliabilityTest {
     }
 
     @Test
+    fun intendedWebsiteWinsOverBrowserMention() {
+        val route = AppAutomationRouter.chooseRoute(
+            goal = "Open Gmail in Chrome and draft an email",
+            suggestedMode = "WEB"
+        )
+        assertEquals(AutomationMode.BACKGROUND_WEB, route.mode)
+        assertEquals("GMAIL", route.profile?.id)
+        assertEquals("https://mail.google.com/", route.startUrl)
+    }
+
+    @Test
+    fun webTaskWithoutExplicitUrlUsesItsRecognizedServiceHome() {
+        val route = AppAutomationRouter.chooseRoute(
+            goal = "Send an email from Gmail",
+            suggestedMode = "WEB",
+            suggestedUrl = "https://www.google.com/"
+        )
+        assertEquals("https://mail.google.com/", route.startUrl)
+    }
+
+    @Test
     fun popularAppProfilesAreRegistered() {
         val ids = AppAutomationRouter.allProfiles().map { it.id }
         assertTrue(ids.containsAll(listOf("CHROME", "YOUTUBE", "YOUTUBE_STUDIO", "WHATSAPP", "INSTAGRAM", "GMAIL", "GOOGLE_DRIVE")))
