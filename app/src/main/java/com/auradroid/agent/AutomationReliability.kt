@@ -81,6 +81,36 @@ object AppAutomationRouter {
             webHome = "https://drive.google.com/"
         ),
         AppAutomationProfile(
+            id = "GOOGLE_PHOTOS", displayName = "Google Photos",
+            aliases = listOf("google photos", "photos app", "google photo"),
+            packageNames = listOf("com.google.android.apps.photos"),
+            webHome = "https://photos.google.com/"
+        ),
+        AppAutomationProfile(
+            id = "GOOGLE_MAPS", displayName = "Google Maps",
+            aliases = listOf("google maps", "maps app", "maps"),
+            packageNames = listOf("com.google.android.apps.maps"),
+            webHome = "https://maps.google.com/"
+        ),
+        AppAutomationProfile(
+            id = "SPOTIFY", displayName = "Spotify",
+            aliases = listOf("spotify"),
+            packageNames = listOf("com.spotify.music"),
+            webHome = "https://open.spotify.com/"
+        ),
+        AppAutomationProfile(
+            id = "LINKEDIN", displayName = "LinkedIn",
+            aliases = listOf("linkedin"),
+            packageNames = listOf("com.linkedin.android"),
+            webHome = "https://www.linkedin.com/"
+        ),
+        AppAutomationProfile(
+            id = "ANDROID_SETTINGS", displayName = "Android Settings",
+            aliases = listOf("android settings", "phone settings", "system settings"),
+            packageNames = listOf("com.android.settings"),
+            webHome = "https://www.google.com/"
+        ),
+        AppAutomationProfile(
             id = "TELEGRAM", displayName = "Telegram",
             aliases = listOf("telegram"),
             packageNames = listOf("org.telegram.messenger", "org.thunderdog.challegram"),
@@ -102,6 +132,7 @@ object AppAutomationRouter {
 
     private val explicitPhoneSignals = listOf(
         "real phone", "phone screen", "on my phone", "actual device", "android app",
+        "control my phone", "control the phone", "control phone",
         "open app", "launch app", "phone ko control", "mere phone", "mere mobile",
         "फोन की स्क्रीन", "असली फोन", "मोबाइल ऐप"
     )
@@ -310,7 +341,16 @@ object TaskExecutionStore {
             startedAt = now,
             updatedAt = now
         )
-        save(context, listOf(record) + read(context).filterNot { it.status == TaskStatus.RUNNING || it.status == TaskStatus.VERIFYING }.take(MAX_HISTORY - 1))
+        val prior = read(context).map { previous ->
+            if (previous.status == TaskStatus.RUNNING || previous.status == TaskStatus.VERIFYING) {
+                previous.copy(
+                    status = TaskStatus.CANCELLED,
+                    message = "Superseded by a newer task; previous work was not marked completed.",
+                    updatedAt = now
+                )
+            } else previous
+        }
+        save(context, listOf(record) + prior.take(MAX_HISTORY - 1))
         return id
     }
 
@@ -343,16 +383,21 @@ object TaskExecutionStore {
     @Synchronized
     fun reconcileInterrupted(context: Context): String? {
         val records = read(context).toMutableList()
-        val index = records.indexOfFirst { it.status == TaskStatus.RUNNING || it.status == TaskStatus.VERIFYING }
-        if (index < 0) return null
-        val old = records[index]
-        records[index] = old.copy(
-            status = TaskStatus.PAUSED,
-            message = "App process ended before task completion was verified. Inspect the screen and resume manually.",
-            updatedAt = System.currentTimeMillis()
-        )
+        val interrupted = records.filter { it.status == TaskStatus.RUNNING || it.status == TaskStatus.VERIFYING }
+        if (interrupted.isEmpty()) return null
+        val now = System.currentTimeMillis()
+        for (index in records.indices) {
+            val old = records[index]
+            if (old.status == TaskStatus.RUNNING || old.status == TaskStatus.VERIFYING) {
+                records[index] = old.copy(
+                    status = TaskStatus.PAUSED,
+                    message = "App process ended before task completion was verified. Inspect the screen and resume manually.",
+                    updatedAt = now
+                )
+            }
+        }
         save(context, records.take(MAX_HISTORY))
-        return "⚠️ Previous task was interrupted and marked PAUSED; it was not auto-replayed: ${old.goal.take(100)}"
+        return "⚠️ ${interrupted.size} interrupted task(s) marked PAUSED; no task was auto-replayed: ${interrupted.first().goal.take(100)}"
     }
 
     private fun isAllowedTransition(from: TaskStatus, to: TaskStatus): Boolean {
