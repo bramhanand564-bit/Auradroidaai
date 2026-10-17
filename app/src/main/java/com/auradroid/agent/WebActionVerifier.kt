@@ -866,13 +866,21 @@ object WebActionVerifier {
      * Strong signal that Google Flow accepted a prompt: rendering/progress, an exposed video stream,
      * or explicit generation status text. A changed input field by itself is not acceptance.
      */
-    fun isFlowPromptAccepted(snapshot: DomSnapshot): Boolean {
-        if (snapshot.isFlowRenderingInProgress ||
-            snapshot.renderingProgressLabel == "100%" ||
-            snapshot.hasActiveVideoStream) return true
-        val statusText = snapshot.pageText.lowercase()
-        return Regex("""\b(generating (your )?video|rendering (your )?video|generation started|video generation started|request queued|queued for generation|your video is ready)\b""")
-            .containsMatchIn(statusText)
+    fun isFlowPromptAccepted(snapshot: DomSnapshot, before: DomSnapshot? = null): Boolean {
+        val beforeRender = before?.isFlowRenderingInProgress ?: false
+        val beforeProgress = before?.renderingProgressLabel.orEmpty()
+        val newRenderProgress = snapshot.isFlowRenderingInProgress &&
+            (!beforeRender || snapshot.renderingProgressLabel != beforeProgress)
+        val newHundredPercent = snapshot.renderingProgressLabel == "100%" && beforeProgress != "100%"
+        val newStream = snapshot.hasActiveVideoStream && before?.hasActiveVideoStream != true
+
+        val statusPattern = Regex("""\b(generating (your )?video|rendering (your )?video|generation started|video generation started|request queued|queued for generation|your video is ready)\b""")
+        val currentStatus = statusPattern.containsMatchIn(snapshot.pageText.lowercase())
+        val previousStatus = before?.pageText?.let { statusPattern.containsMatchIn(it.lowercase()) } ?: false
+        val newExplicitStatus = currentStatus && !previousStatus
+
+        // Never treat an old video card/100% label as evidence for the new prompt.
+        return newRenderProgress || newHundredPercent || newStream || newExplicitStatus
     }
 
     /**
