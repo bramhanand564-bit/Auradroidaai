@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         var onLogUpdated: ((String) -> Unit)? = null
+        var onTaskStatusUpdated: (() -> Unit)? = null
         var onBrowserUrlChanged: ((String) -> Unit)? = null
     }
 
@@ -75,10 +76,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSendChat: Button
     private lateinit var tvAutoTimerSummary: TextView
     private lateinit var tvPlanSteps: TextView
+    private lateinit var tvTaskRunStatus: TextView
+    private lateinit var tvTaskRunMetrics: TextView
+    private lateinit var btnRefreshTaskStatus: Button
     private lateinit var rgExecutionMode: RadioGroup
     private lateinit var rbModeBackgroundWeb: RadioButton
     private lateinit var rbModePhoneScreen: RadioButton
     private lateinit var btnExecutePlan: Button
+    private lateinit var btnPauseAgent: Button
     private lateinit var btnStopAgent: Button
 
     // Tab 2: In-App Browser
@@ -219,7 +224,11 @@ class MainActivity : AppCompatActivity() {
         onLogUpdated = { updatedLogs ->
             runOnUiThread {
                 tvConsoleLog.text = updatedLogs
+                refreshTaskDashboard()
             }
+        }
+        onTaskStatusUpdated = {
+            runOnUiThread { refreshTaskDashboard() }
         }
 
         onBrowserUrlChanged = { newUrl ->
@@ -230,6 +239,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        TaskExecutionStore.reconcileInterrupted(this)?.let { notice ->
+            VideoQueueManager.appendLog(this, notice)
+        }
+        TaskExecutionStore.latest(this)?.let { run ->
+            VideoQueueManager.appendLog(
+                this,
+                "📋 Latest task: ${run.status} • ${run.adapterId} • ${run.goal.take(90)} • ${run.message.take(120)}"
+            )
+        }
+        VideoQueueManager.appendLog(this, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(this)}")
+        refreshTaskDashboard()
         refreshQueueCount()
         refreshServiceStatusBadge()
     }
@@ -238,11 +258,13 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshServiceStatusBadge()
         refreshQueueCount()
+        refreshTaskDashboard()
         etNextEpisodeNumber.setText(VideoQueueManager.getNextEpisodeNumber(this).toString())
     }
 
     override fun onDestroy() {
         if (onLogUpdated != null) onLogUpdated = null
+        if (onTaskStatusUpdated != null) onTaskStatusUpdated = null
         if (onBrowserUrlChanged != null) onBrowserUrlChanged = null
         super.onDestroy()
     }
@@ -271,10 +293,15 @@ class MainActivity : AppCompatActivity() {
         btnSendChat = findViewById(R.id.btnSendChat)
         tvAutoTimerSummary = findViewById(R.id.tvAutoTimerSummary)
         tvPlanSteps = findViewById(R.id.tvPlanSteps)
+        tvTaskRunStatus = findViewById(R.id.tvTaskRunStatus)
+        tvTaskRunMetrics = findViewById(R.id.tvTaskRunMetrics)
+        btnRefreshTaskStatus = findViewById(R.id.btnRefreshTaskStatus)
+        btnRefreshTaskStatus.setOnClickListener { refreshTaskDashboard() }
         rgExecutionMode = findViewById(R.id.rgExecutionMode)
         rbModeBackgroundWeb = findViewById(R.id.rbModeBackgroundWeb)
         rbModePhoneScreen = findViewById(R.id.rbModePhoneScreen)
         btnExecutePlan = findViewById(R.id.btnExecutePlan)
+        btnPauseAgent = findViewById(R.id.btnPauseAgent)
         btnStopAgent = findViewById(R.id.btnStopAgent)
 
         btnBrowserBack = findViewById(R.id.btnBrowserBack)
@@ -524,23 +551,37 @@ class MainActivity : AppCompatActivity() {
                 // If user message or AI timer summary contains a time (e.g., 19:00 or 11 baje), auto-lock alarm!
                 tryExtractAndScheduleChatTime(userMsg + " " + resp.parsedTimerSummary)
 
-                lockedPlanGoal = if (
-                    isPhoneControlIntent(userMsg) && !isPhoneControlIntent(resp.planGoal)
-                ) {
-                    "${resp.planGoal}\n[REAL PHONE CONTROL REQUIRED: operate the real phone screen using Android AccessibilityService; do not control the in-app browser or WebView.]"
+                // Preserve the user's exact intent alongside the planner summary so the
+                // executor does not lose an app name, filename, recipient or requested side effect.
+                lockedPlanGoal = if (isPhoneControlIntent(userMsg)) {
+                    "${resp.planGoal}\n[ORIGINAL USER REQUEST: $userMsg]\n[REAL PHONE CONTROL REQUIRED: operate the real phone screen using Android AccessibilityService; do not control the in-app browser or WebView.]"
                 } else {
-                    resp.planGoal
+                    "${resp.planGoal}\n[ORIGINAL USER REQUEST: $userMsg]"
                 }
-                lockedTargetUrl = resp.targetUrl
-
-                // Explicit real-device requests must never be silently redirected to the in-app WebView.
-                if (isPhoneControlIntent(userMsg) || isPhoneControlIntent(resp.planGoal)) {
-                    rbModePhoneScreen.isChecked = true
-                } else if (resp.suggestedMode == "WEB") {
+                // Route from the user's request plus the proposed task goal, while only
+                // an explicit user phone request is allowed to force real-device execution.
+                val routingGoal = if (isPhoneControlIntent(userMsg)) {
+                    userMsg
+                } else {
+                    "$userMsg\n${resp.planGoal}"
+                }
+                val route = AppAutomationRouter.chooseRoute(
+                    goal = routingGoal,
+                    suggestedMode = resp.suggestedMode,
+                    forcePhoneUi = isPhoneControlIntent(userMsg),
+                    suggestedUrl = resp.targetUrl,
+                    pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(this@MainActivity)
+                )
+                lockedTargetUrl = route.startUrl
+                if (route.mode == AutomationMode.BACKGROUND_WEB) {
                     rbModeBackgroundWeb.isChecked = true
                 } else {
                     rbModePhoneScreen.isChecked = true
                 }
+                VideoQueueManager.appendLog(
+                    this@MainActivity,
+                    "🧭 Planned route: ${route.mode} • adapter=${route.profile?.id ?: "UNIVERSAL"} • ${route.reason}"
+                )
                 tvActiveSubtitle.text = GeminiBrain.getAutoModelStatusReport()
             }
         }
@@ -565,7 +606,11 @@ class MainActivity : AppCompatActivity() {
                 rbModePhoneScreen.isChecked = true
                 startPhoneScreenAgentSafely(apiKey, model, goalToRun)
             } else if (rbModeBackgroundWeb.isChecked) {
-                val url = lockedTargetUrl.ifBlank { VideoQueueManager.getPinnedFlowUrl(this) }
+                val url = AppAutomationRouter.resolveStartUrl(
+                    goal = goalToRun,
+                    suggestedUrl = lockedTargetUrl,
+                    pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(this)
+                )
                 WebPipelineManager.startAutonomousWebAgent(
                     context = this,
                     apiKey = apiKey,
@@ -580,9 +625,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        btnPauseAgent.setOnClickListener {
+            if (!TaskRunController.hasActiveTask()) {
+                Toast.makeText(this, "Abhi koi running task nahi hai.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val changed = if (TaskRunController.isPaused()) {
+                TaskRunController.requestResume()
+            } else {
+                TaskRunController.requestPause()
+            }
+            if (!changed) {
+                Toast.makeText(this, "Task control available nahi hai. Screen/log check karein.", Toast.LENGTH_SHORT).show()
+            } else {
+                btnPauseAgent.text = if (TaskRunController.isPaused()) "▶ RESUME" else "Ⅱ PAUSE"
+                VideoQueueManager.appendLog(
+                    this,
+                    if (TaskRunController.isPaused()) "⏸️ Pause requested; current action will finish safely before pausing."
+                    else "▶️ Resume requested; agent will refresh the screen before the next action."
+                )
+            }
+        }
+
         btnStopAgent.setOnClickListener {
+            TaskRunController.requestCancel()
             AutoTouchService.instance?.stopCurrentJob()
             WebPipelineManager.stopEverything(this)
+            btnPauseAgent.text = "Ⅱ PAUSE"
             Toast.makeText(this, "🛑 Stopped all active tasks.", Toast.LENGTH_SHORT).show()
         }
     }
@@ -681,10 +750,15 @@ class MainActivity : AppCompatActivity() {
             val apiKey = etApiKey.text.toString().trim()
             val model = etModelName.text.toString().trim()
             val folderPath = etFolderPath.text.toString().trim()
-            val url = etWebUrl.text.toString().trim()
+            val enteredUrl = etWebUrl.text.toString().trim()
             val goal = etWebTaskGoal.text.toString().trim().ifBlank {
                 VideoQueueManager.getFlowTopic(this)
             }
+            val url = AppAutomationRouter.resolveStartUrl(
+                goal = goal,
+                suggestedUrl = enteredUrl,
+                pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(this)
+            )
 
             WebPipelineManager.startAutonomousWebAgent(
                 context = this,
@@ -1171,48 +1245,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scheduleDailyPipelineAlarm(hour: Int, minute: Int) {
+        val safeHour = hour.coerceIn(0, 23)
+        val safeMinute = minute.coerceIn(0, 59)
+        val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean("daily_pipeline_enabled", true)
+            // Both key pairs are kept for compatibility with older saved settings.
+            .putInt("schedule_hour", safeHour)
+            .putInt("schedule_minute", safeMinute)
+            .putInt("sched_hour", safeHour)
+            .putInt("sched_min", safeMinute)
+            .apply()
+
         try {
-            val receiverClass = Class.forName("com.auradroid.agent.DailyUploadReceiver")
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, receiverClass)
-            val pendingIntent = PendingIntent.getBroadcast(
-                this,
-                2001,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val calendar = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, hour)
-                set(Calendar.MINUTE, minute)
-                set(Calendar.SECOND, 0)
-                if (timeInMillis <= System.currentTimeMillis()) {
-                    add(Calendar.DAY_OF_YEAR, 1)
-                }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    calendar.timeInMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    calendar.timeInMillis,
-                    pendingIntent
-                )
-            }
-
-            val timeFormatted = String.format(Locale.US, "%02d:%02d", hour, minute)
-            val msg = "⏰ Auto-Timer Locked: Daily Story + YouTube Pipeline scheduled for $timeFormatted"
+            TaskSchedulerReceiver.scheduleDailyUpload(this, safeHour, safeMinute)
+            val timeFormatted = String.format(Locale.US, "%02d:%02d", safeHour, safeMinute)
+            val msg = "⏰ Daily automation scheduled for $timeFormatted. The phone and Accessibility service must be available at run time."
             tvAutoTimerSummary.text = msg
             VideoQueueManager.saveParsedScheduleSummary(this, msg)
             VideoQueueManager.appendLog(this, msg)
-            Toast.makeText(this, "⏰ Daily Auto-Schedule set for $timeFormatted!", Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-            Toast.makeText(this, "⏰ Schedule time saved ($hour:$minute)!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "⏰ Daily schedule set for $timeFormatted", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            val msg = "⚠️ Schedule failed: ${e.message ?: "check alarm permission/settings"}"
+            tvAutoTimerSummary.text = msg
+            VideoQueueManager.appendLog(this, msg)
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1257,6 +1314,21 @@ class MainActivity : AppCompatActivity() {
         VideoQueueManager.setVideoFrameVisionSeoEnabled(this, cbVideoFrameVisionSeo.isChecked)
         VideoQueueManager.setUploadNewestFirst(this, rbUploadNewestFirst.isChecked)
         VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString().trim())
+    }
+
+    private fun refreshTaskDashboard() {
+        val latest = TaskExecutionStore.latest(this)
+        tvTaskRunStatus.text = if (latest == null) {
+            "No task has been recorded yet."
+        } else {
+            val goal = latest.goal.replace(Regex("""\s+"""), " ").take(110)
+            "${latest.status} • ${latest.mode} • ${latest.adapterId}\n" +
+                "Step: ${latest.step} • $goal\n" +
+                latest.message.take(180)
+        }
+        tvTaskRunMetrics.text = TaskAnalytics.taskMixSummary(this)
+        btnPauseAgent.text = if (TaskRunController.isPaused()) "▶ RESUME" else "Ⅱ PAUSE"
+        btnPauseAgent.isEnabled = TaskRunController.hasActiveTask()
     }
 
     private fun refreshQueueCount() {

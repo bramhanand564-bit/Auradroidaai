@@ -58,6 +58,12 @@ data class AgentDecision(
     val learnedRule: String = ""
 )
 
+data class TaskCompletionVerification(
+    val verified: Boolean,
+    val evidence: String,
+    val reason: String
+)
+
 object GeminiBrain {
 
     @Volatile
@@ -549,6 +555,114 @@ object GeminiBrain {
     }
 
     /**
+     * Second-pass completion check for native-phone tasks. A model's DONE decision is not
+     * accepted until a fresh screen is independently checked for evidence. Irreversible
+     * actions also require concrete visible outcome text, not the model's explanation alone.
+     */
+    suspend fun verifyPhoneTaskCompletion(
+        apiKey: String,
+        model: String,
+        highModelName: String,
+        goal: String,
+        screenSummary: String,
+        recentHistory: List<String>,
+        screenshotBase64: String?
+    ): TaskCompletionVerification {
+        val prompt = """
+            You are an independent task-completion verifier for Nax Bot. The phone agent proposed DONE.
+            Decide ONLY whether the current real Android screen proves the user's complete goal is finished.
+            USER GOAL: $goal
+            LIVE ACCESSIBILITY SCREEN SUMMARY:
+            ${screenSummary.take(9000)}
+            RECENT ACTION HISTORY:
+            ${recentHistory.takeLast(8).joinToString("\n").take(2500)}
+            RULES:
+            - Do not trust the previous agent's DONE decision or its explanation.
+            - The attached screenshot, if present, and live screen summary are the only evidence.
+            - A click being dispatched, a field containing text, or a changed screen alone does not prove the goal is done.
+            - For upload/publish/post/send/email/delete/payment/purchase/order/book/follow/subscribe actions, require visible evidence of the actual outcome, not merely an enabled button or populated form.
+            - If the outcome is ambiguous, still loading, hidden, or not visible, verified must be false.
+            - Do not infer success from the goal itself. Quote a short, concrete piece of current-screen evidence.
+            Return JSON only: {"verified":false,"evidence":"","reason":"why evidence is insufficient"}
+        """.trimIndent()
+
+        return try {
+            val raw = callGeminiApi(
+                apiKey = apiKey,
+                userModel = model,
+                prompt = prompt,
+                currentImageJpeg = screenshotBase64,
+                escalateToHighModel = true,
+                highModelName = highModelName,
+                enableGoogleSearch = false
+            )
+            val obj = extractCleanJsonObject(raw)
+            val modelVerified = obj.optBoolean("verified", false)
+            val evidence = obj.optString("evidence", "").trim()
+            val reason = obj.optString("reason", "Completion evidence was not provided.").trim()
+            val screen = screenSummary.lowercase().replace(Regex("""\s+"""), " ").trim()
+            val normalizedEvidence = evidence.lowercase().replace(Regex("""\s+"""), " ").trim()
+            val evidenceAppearsOnScreen = normalizedEvidence.length >= 8 &&
+                screen.contains(normalizedEvidence)
+            val goalText = goal.lowercase()
+            fun isNegated(actionPattern: String): Boolean = Regex(
+                """\b(do not|don't|dont|never|avoid|must not|should not)\s+(?:[a-z0-9]+\s+){0,2}($actionPattern)\b"""
+            ).containsMatchIn(goalText)
+
+            val asksUpload = Regex("""\b(upload|uploading)\b""").containsMatchIn(goalText) &&
+                !isNegated("upload|uploading")
+            val asksPublish = (goalText.contains("publish") || Regex(
+                """\b(post (this|it|the|to|on)|share (this|it|the)|make public)\b"""
+            ).containsMatchIn(goalText)) && !isNegated("publish|publishing|post|share|make public")
+            val asksSend = Regex("""\b(send|sending)\b""").containsMatchIn(goalText) &&
+                !isNegated("send|sending")
+            val asksDelete = Regex("""\b(delete|deleting|remove|removing|erase|erasing)\b""").containsMatchIn(goalText) &&
+                !isNegated("delete|deleting|remove|removing|erase|erasing")
+            val asksTransaction = Regex(
+                """\b(pay|payment|purchase|buy this|place an order|order this|book this|book a|book the|reserve|subscribe|renew subscription)\b"""
+            ).containsMatchIn(goalText) && !isNegated("pay|payment|purchase|buy|order|book|reserve|subscribe|renew")
+            val asksFollow = Regex("""\b(unfollow|follow)\s+(@[a-z0-9_.-]+|this account|the account|this user|the user)\b""")
+                .containsMatchIn(goalText) && !isNegated("follow|unfollow") &&
+                !Regex("""\bfollow (the )?(steps|instructions|guide|process)\b""").containsMatchIn(goalText)
+            val asksLike = Regex("""\b(like|unlike) (this|the) (post|video|photo|comment|reel)\b""")
+                .containsMatchIn(goalText) && !isNegated("like|unlike")
+            val asksSubmit = Regex("""\b(submit|apply for)\b""").containsMatchIn(goalText) &&
+                !isNegated("submit|apply")
+            val asksSave = Regex("""\b(save changes|save this file|save the file|save draft|save this|save the changes)\b""")
+                .containsMatchIn(goalText) && !isNegated("save")
+            val requiredOutcomeProofs = buildList {
+                if (asksUpload) add(listOf("upload complete", "uploaded successfully", "video uploaded", "video published", "upload successful", "saved as draft"))
+                if (asksPublish) add(listOf("published", "post published", "your post is live", "successfully posted", "post has been shared", "your post has been shared", "video is public", "video published", "story shared"))
+                if (asksSend) add(listOf("message sent", "sent successfully", "email sent", "delivered", "message delivered", "message was sent", "your message has been sent"))
+                if (asksDelete) add(listOf("deleted successfully", "item deleted", "removed successfully", "moved to trash", "moved to bin", "deleted", "removed"))
+                if (asksTransaction) add(listOf("payment successful", "payment complete", "transaction successful", "order confirmed", "your order is confirmed", "booking confirmed", "reservation confirmed", "purchased successfully", "subscription confirmed"))
+                if (asksFollow) add(listOf("followed successfully", "following", "request sent", "following you"))
+                if (asksLike) add(listOf("liked", "added to likes", "you liked this"))
+                if (asksSubmit) add(listOf("submitted successfully", "form submitted", "application submitted", "response recorded", "thank you for submitting"))
+                if (asksSave) add(listOf("saved successfully", "changes saved", "draft saved", "file saved", "saved"))
+            }
+            val sensitiveEvidence = requiredOutcomeProofs.all { alternatives ->
+                alternatives.any { phrase -> screen.contains(phrase) }
+            }
+            if (modelVerified && evidenceAppearsOnScreen && sensitiveEvidence) {
+                TaskCompletionVerification(true, evidence.take(350), reason.take(500))
+            } else {
+                val explanation = when {
+                    !sensitiveEvidence -> "Sensitive action has no concrete visible outcome confirmation."
+                    !evidenceAppearsOnScreen -> "The verifier's quoted evidence is not present in the current accessibility screen text."
+                    !modelVerified -> reason.ifBlank { "The independent verifier did not find enough evidence." }
+                    else -> reason
+                }
+                TaskCompletionVerification(false, evidence.take(350), explanation.take(500))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TaskCompletionVerification(false, "", "Completion verification failed: ${e.message ?: "unknown error"}")
+        }
+    }
+
+    /**
      * Phone accessibility agent decision maker. Kept separate from WebAgentDecision
      * because native Android nodes use nodeIndex/x/y and app/setting actions.
      */
@@ -570,6 +684,9 @@ object GeminiBrain {
         highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): AgentDecision {
+        val foregroundPackage = Regex("""Foreground app package:\s*(\S+)""")
+            .find(screenSummary)?.groupValues?.getOrNull(1)
+        val adapterGuidance = AppAutomationRouter.adapterGuidance(goal, foregroundPackage)
         val prompt = """
             You are Nax Bot, an Android PHONE UI navigation agent. You control the REAL foreground Android app through AccessibilityService, not an embedded browser.
             USER'S COMPLETE TASK (never lose or replace this goal): $goal
@@ -580,6 +697,9 @@ object GeminiBrain {
 
             CURRENT REAL DEVICE SCREEN AND APP IDENTITY:
             $screenSummary
+
+            APP-SPECIFIC ADAPTER RULES:
+            $adapterGuidance
 
             REQUIRED NAVIGATION REASONING:
             1. Identify the foreground package and current page from the node list and screenshot.
@@ -695,10 +815,14 @@ object GeminiBrain {
         highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): WebAgentDecision {
+        val adapterGuidance = AppAutomationRouter.adapterGuidance(goal, currentUrl = pageUrl)
         val prompt = """
             You are Nax Bot's 1-Second AI Step-Confirmed Web Agent.
             OVERALL GOAL: $goal
             CURRENT URL: $pageUrl
+
+            APP-SPECIFIC ADAPTER RULES:
+            $adapterGuidance
             
             TRAINED SKILL BLUEPRINT (GUIDE ONLY - VERIFY EVERY 1s):
             ${trainedBlueprint.ifBlank { "Standard navigation" }}

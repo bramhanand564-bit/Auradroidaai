@@ -55,14 +55,30 @@ object PhoneAgentManager {
                 goalLower.contains("new message notification")
 
         val maxSteps = if (isContinuousMonitor || unstoppable) 5000 else 40
+        var taskRunId: String? = null
+        var taskCompleted = false
+        var terminalTaskStatus: TaskStatus? = null
+        var terminalTaskMessage = ""
+        var unverifiedDoneCount = 0
 
         try {
+            val adapterId = AppAutomationRouter.memoryDomainForGoal(userGoal)
+            taskRunId = TaskExecutionStore.start(
+                service, userGoal, AutomationMode.PHONE_UI, adapterId
+            )
+            TaskRunController.begin(taskRunId!!)
+            VideoQueueManager.appendLog(
+                service,
+                "🧭 Task route: PHONE_UI • adapter=$adapterId • taskId=$taskRunId"
+            )
             val history = mutableListOf<String>()
             var pinnedNativePackage: String? = null
             val nativeAppIntent = isExplicitNativeAppRequest(service, userGoal)
 
             if (!initialSettingAction.isNullOrBlank() && !nativeAppIntent) {
                 if (!openSystemSettingOrApp(service, initialSettingAction)) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "Could not resolve requested app/setting: $initialSettingAction"
                     service.overlayHud?.updateStatus("Target not opened", "Could not resolve: $initialSettingAction", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ Target resolver refused '$initialSettingAction'; no unrelated app was opened.")
                     return
@@ -73,6 +89,8 @@ object PhoneAgentManager {
             if (nativeAppIntent) {
                 val preferredApp = inferPreferredNativeApp(service, userGoal)
                 if (preferredApp == null) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "No matching installed application was found; unrelated fallback was blocked."
                     service.overlayHud?.updateStatus("App not found", "No matching installed app. Won't switch to Chrome by guess.", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ Native-app intent detected for '$userGoal', but no matching launchable app was found. No browser/Settings fallback was used.")
                     return
@@ -80,6 +98,8 @@ object PhoneAgentManager {
 
                 val launched = openSystemSettingOrApp(service, preferredApp.packageName)
                 if (!launched) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "Could not launch the verified target app: ${preferredApp.label}"
                     service.overlayHud?.updateStatus("Launch failed", "Could not open ${preferredApp.label}", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ App launch failed for '${preferredApp.label}' (${preferredApp.packageName}). Task stopped rather than acting in the wrong app.")
                     return
@@ -93,6 +113,8 @@ object PhoneAgentManager {
                     if (actualPackage == expectedPackage) break
                 }
                 if (actualPackage != expectedPackage) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "Foreground verification failed: expected ${preferredApp.label}; observed ${actualPackage.ifBlank { "unknown" }}."
                     service.overlayHud?.updateStatus("Wrong app blocked", "Expected ${preferredApp.label}; foreground is ${actualPackage.ifBlank { "unknown" }}", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ App-routing verification failed. Expected '${preferredApp.label}' ($expectedPackage), observed '${actualPackage.ifBlank { "unknown" }}'. No further taps were issued.")
                     return
@@ -123,6 +145,15 @@ object PhoneAgentManager {
             val seenLearnedRules = mutableSetOf<String>()
 
             for (step in 1..maxSteps) {
+                when (TaskRunController.awaitBeforeStep(service, taskRunId.orEmpty(), step)) {
+                    TaskGateResult.STOP -> {
+                        terminalTaskStatus = TaskStatus.CANCELLED
+                        terminalTaskMessage = "Task stopped while paused/cancelled; no completion was claimed."
+                        break
+                    }
+                    TaskGateResult.REFRESH -> continue
+                    TaskGateResult.READY -> Unit
+                }
                 val pinnedAtStepStart = pinnedNativePackage
                 if (pinnedAtStepStart != null) {
                     var actualPackage = foregroundAppPackage(service)
@@ -215,7 +246,7 @@ object PhoneAgentManager {
                     )
                 }
                 // Avoid treating cursor blinking, clock changes and animated overlays as UI progress.
-                val domainKey = if (goalLower.contains("whatsapp")) "WHATSAPP" else "ANDROID_UI"
+                val domainKey = AppAutomationRouter.memoryDomainForGoal(userGoal, activePackage)
                 val currentSig = stableScreenSignature(nodes)
                 val didScreenChange = step == 1 || currentSig != previousScreenSignature
 
@@ -270,6 +301,10 @@ object PhoneAgentManager {
 
                 val useHighModelNow = autoHighModelEnabled &&
                         (consecutiveVerificationFails >= 2 || consecutiveAiFailures >= 1)
+                TaskExecutionStore.update(
+                    service, taskRunId, TaskStatus.VERIFYING, step,
+                    "Checking live app and screen state before selecting the next action."
+                )
                 val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(service, domainKey)
 
                 val thinkLabel = if (useHighModelNow) "High-Brain Verifying..." else "Multi-frame & memory check..."
@@ -368,6 +403,18 @@ object PhoneAgentManager {
                     )
                 }
 
+                // Pause may be requested while Gemini is thinking. Do not dispatch a stale
+                // decision after the user pauses; discard it and obtain a fresh screen snapshot.
+                when (TaskRunController.awaitBeforeStep(service, taskRunId.orEmpty(), step)) {
+                    TaskGateResult.STOP -> {
+                        terminalTaskStatus = TaskStatus.CANCELLED
+                        terminalTaskMessage = "Task stopped before the next action was dispatched."
+                        break
+                    }
+                    TaskGateResult.REFRESH -> continue
+                    TaskGateResult.READY -> Unit
+                }
+
                 val stepMood = when (decision.action) {
                     "DONE" -> "DONE"
                     "WAIT" -> "WAITING"
@@ -377,10 +424,60 @@ object PhoneAgentManager {
                 VideoQueueManager.appendLog(service, "🤖 Step $step [${decision.action}]:${decision.reason}")
 
                 if (decision.action.equals("DONE", true)) {
+                    TaskExecutionStore.update(
+                        service, taskRunId, TaskStatus.VERIFYING, step,
+                        "AI proposed completion; independently checking current-screen evidence."
+                    )
+                    val completion = GeminiBrain.verifyPhoneTaskCompletion(
+                        apiKey = apiKey,
+                        model = model,
+                        highModelName = highModelName,
+                        goal = userGoal,
+                        screenSummary = screenDump,
+                        recentHistory = history,
+                        screenshotBase64 = currentScreenshotB64
+                    )
+                    if (!completion.verified) {
+                        unverifiedDoneCount++
+                        val message = "DONE rejected (attempt $unverifiedDoneCount/3): ${completion.reason}"
+                        history.add("Step $step: $message")
+                        VideoQueueManager.appendLog(service, "🛡️ $message")
+                        VideoQueueManager.appendDetailedLog(
+                            context = service,
+                            modelUsed = highModelName,
+                            clickSense = "Independent Phone Completion Check",
+                            actionDesc = "Rejected unsupported DONE",
+                            whyReason = completion.evidence.ifBlank { completion.reason },
+                            verifyStatus = "⚠️ NOT VERIFIED"
+                        )
+                        if (unverifiedDoneCount >= 3) {
+                            terminalTaskStatus = TaskStatus.PAUSED
+                            terminalTaskMessage = "Stopped safely: completion could not be verified after three checks."
+                            service.overlayHud?.setCursorOverlayVisible(false)
+                            service.overlayHud?.updateStatus(
+                                "Task not verified",
+                                "The screen did not provide enough proof. Check the phone and retry.",
+                                "ERROR"
+                            )
+                            break
+                        }
+                        TaskExecutionStore.update(
+                            service, taskRunId, TaskStatus.RUNNING, step,
+                            "Completion not verified; agent will reassess the live screen."
+                        )
+                        delay(900)
+                        continue
+                    }
+
+                    taskCompleted = true
+                    TaskExecutionStore.update(
+                        service, taskRunId, TaskStatus.COMPLETED, step,
+                        "Verified completion: ${completion.evidence}"
+                    )
                     AutoTouchService.isJobRunning = false
                     service.overlayHud?.setCursorOverlayVisible(false)
-                    service.overlayHud?.updateStatus("🎉 Task Complete!", decision.reason, "DONE")
-                    VideoQueueManager.appendLog(service, "✅ Task Completed: ${decision.reason}")
+                    service.overlayHud?.updateStatus("🎉 Task Complete!", completion.evidence, "DONE")
+                    VideoQueueManager.appendLog(service, "✅ Task completed and independently verified: ${completion.evidence}")
                     break
                 }
 
@@ -570,15 +667,31 @@ object PhoneAgentManager {
                 delay(stepDelay)
             }
         } catch (e: CancellationException) {
-            // Clean user stop
+            terminalTaskStatus = TaskStatus.CANCELLED
+            terminalTaskMessage = "Task cancelled; no success was recorded."
         } catch (e: Exception) {
+            terminalTaskStatus = TaskStatus.FAILED
+            terminalTaskMessage = e.message ?: "Agent failed before completion was verified."
             AutoTouchService.isJobRunning = false
             service.overlayHud?.setCursorOverlayVisible(false)
             service.overlayHud?.updateStatus("Agent Error", e.message ?: "Failed", "ERROR")
             VideoQueueManager.appendLog(service, "❌ Agent Error: ${e.message}")
         } finally {
+            if (!taskCompleted && taskRunId != null) {
+                val status = terminalTaskStatus ?: TaskStatus.PAUSED
+                val message = terminalTaskMessage.ifBlank {
+                    "Execution ended without independent completion proof; inspect the final screen before retrying."
+                }
+                TaskExecutionStore.update(service, taskRunId, status, message = message)
+                if (status != TaskStatus.COMPLETED) {
+                    VideoQueueManager.appendLog(service, "📋 Task state saved: $status • $message")
+                }
+                VideoQueueManager.appendLog(service, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(service)}")
+            }
             service.overlayHud?.setCursorOverlayVisible(false)
             service.overlayHud?.hidePodForFocusedTextInput(false)
+            TaskRunController.finish(taskRunId)
+            VideoQueueManager.appendLog(service, "⏹ Phone task controller released; latest task state is saved.")
             AutoTouchService.isJobRunning = false
         }
     }

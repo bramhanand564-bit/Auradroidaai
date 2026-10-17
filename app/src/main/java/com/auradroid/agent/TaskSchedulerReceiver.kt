@@ -18,10 +18,13 @@ class TaskSchedulerReceiver : BroadcastReceiver() {
         val flowTopic = VideoQueueManager.getFlowTopic(context)
         val dailyLimit = VideoQueueManager.getDailyVideoLimit(context)
         val autoFlowFirst = prefs.getBoolean("auto_flow_first", true)
-        val hour = prefs.getInt("sched_hour", 19)
-        val minute = prefs.getInt("sched_min", 0)
+        val hour = prefs.getInt("schedule_hour", prefs.getInt("sched_hour", 19))
+        val minute = prefs.getInt("schedule_minute", prefs.getInt("sched_min", 0))
 
-        VideoQueueManager.appendLog(context, "⏰ Scheduled Daily 7/8 PM Pipeline Triggered!")
+        VideoQueueManager.appendLog(
+            context,
+            "⏰ Scheduled automation triggered at ${String.format(java.util.Locale.US, "%02d:%02d", hour, minute)}."
+        )
 
         val service = AutoTouchService.instance
         if (service != null) {

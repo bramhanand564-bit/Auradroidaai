@@ -116,8 +116,19 @@ object WebPipelineManager {
             return
         }
 
+        val flowTaskId = TaskExecutionStore.start(
+            context,
+            "Generate video with Google Flow: $flowTopic",
+            AutomationMode.BACKGROUND_WEB,
+            "GOOGLE_FLOW"
+        )
+        TaskRunController.begin(flowTaskId)
+        VideoQueueManager.appendLog(context, "🧭 Flow route: GOOGLE_FLOW • taskId=$flowTaskId")
         isWebTaskRunning = true
         currentWebJob = scope.launch {
+            var flowStageCompleted = false
+            var terminalFlowStatus: TaskStatus? = null
+            var terminalFlowMessage = ""
             try {
                 val storyMode = VideoQueueManager.getStoryMode(context)
                 val nextEpNum = VideoQueueManager.getNextEpisodeNumber(context)
@@ -184,7 +195,8 @@ object WebPipelineManager {
                     model = model,
                     promptToCreate = episodePlan.videoPrompt,
                     targetDurationSec = episodePlan.durationSec,
-                    folderPath = folderPath
+                    folderPath = folderPath,
+                    taskRunId = flowTaskId
                 )
 
                 if (downloadedFile != null) {
@@ -241,7 +253,17 @@ object WebPipelineManager {
                         }
                     }
 
-                    hud.updateStatus("Nax Bot • Saved!", "Uploading Part ${episodePlan.episodeNumber} to YT...", "UPLOADING")
+                    // Complete the video-generation stage, then hand off to a separately tracked
+                    // YouTube upload task. This avoids marking upload success before it is verified.
+                    TaskExecutionStore.update(
+                        context, flowTaskId, TaskStatus.COMPLETED, message =
+                        "Google Flow video saved and inspected: ${downloadedFile.name}. YouTube upload is a separate task."
+                    )
+                    flowStageCompleted = true
+                    TaskRunController.finish(flowTaskId)
+                    VideoQueueManager.appendLog(context, "✅ Flow generation stage verified; YouTube upload will be tracked as a separate task.")
+
+                    hud.updateStatus("Nax Bot • Saved!", "Starting YouTube upload for Part ${episodePlan.episodeNumber}...", "UPLOADING")
                     delay(1200)
 
                     AutoTouchService.instance?.startYouTubeUploadJob(
@@ -252,18 +274,34 @@ object WebPipelineManager {
                         topicInstruction = richTopicInstruction
                     )
                 } else {
-                    hud.updateStatus("Download Timeout", "Tap video card manually to save", "SAD")
+                    terminalFlowStatus = TaskStatus.PAUSED
+                    terminalFlowMessage = "Google Flow did not yield a verified local video. No upload was started."
+                    hud.updateStatus("Download Timeout", "Video download was not verified; upload stopped.", "SAD")
                     VideoQueueManager.appendLog(
                         context,
                         "⚠️ Video rendered on Google Flow, but automatic MP4 stream capture timed out. Tap the card in Browser tab to save."
                     )
                 }
             } catch (_: CancellationException) {
+                terminalFlowStatus = TaskStatus.CANCELLED
+                terminalFlowMessage = "Google Flow task cancelled; no upload success was claimed."
                 hud.updateStatus("Nax Bot", "Stopped", "IDLE")
             } catch (e: Exception) {
+                terminalFlowStatus = TaskStatus.FAILED
+                terminalFlowMessage = e.message ?: "Google Flow pipeline failed before a verified video was saved."
                 hud.updateStatus("Nax Bot Error", e.message?.take(24) ?: "Error", "ERROR")
                 VideoQueueManager.appendLog(context, "❌ Flow Pipeline Error: ${e.message}")
             } finally {
+                if (!flowStageCompleted) {
+                    val status = terminalFlowStatus ?: TaskStatus.PAUSED
+                    val message = terminalFlowMessage.ifBlank {
+                        "Google Flow stage stopped without a verified output file."
+                    }
+                    TaskExecutionStore.update(context, flowTaskId, status, message = message)
+                    VideoQueueManager.appendLog(context, "📋 Flow task state saved: $status • $message")
+                }
+                TaskRunController.finish(flowTaskId)
+                VideoQueueManager.appendLog(context, "⏹ Google Flow task controller released.")
                 isWebTaskRunning = false
             }
         }
@@ -282,7 +320,9 @@ object WebPipelineManager {
         skipFlowRouting: Boolean = false
     ) {
         val lowerGoal = goal.lowercase()
-        if (!skipFlowRouting && (lowerGoal.contains("flow") || startUrl.contains("labs.google/fx", true) || startUrl.contains("flow.google", true))) {
+        val explicitlyRequestsFlow = Regex("""\b(flow|google flow)\b""", RegexOption.IGNORE_CASE).containsMatchIn(goal) ||
+            lowerGoal.contains("labs.google/fx") || lowerGoal.contains("flow.google")
+        if (!skipFlowRouting && explicitlyRequestsFlow) {
             startFlowToYouTubePipeline(
                 context = context,
                 apiKey = apiKey,
@@ -296,19 +336,46 @@ object WebPipelineManager {
 
         stopCurrentJob()
         val hud = AutoTouchService.instance?.overlayHud
-        val webView = hud?.getOrCreateSharedWebView() ?: return
+        val webView = hud?.getOrCreateSharedWebView()
+        if (hud == null || webView == null) {
+            VideoQueueManager.appendLog(context, "⛔ Web task not started: Accessibility service/WebView is unavailable. Enable Auto-Touch and retry.")
+            return
+        }
+
+        val route = AppAutomationRouter.chooseRoute(
+            goal = goal,
+            suggestedMode = "WEB",
+            suggestedUrl = startUrl,
+            pinnedFlowUrl = VideoQueueManager.getPinnedFlowUrl(context)
+        )
+        val resolvedStartUrl = route.startUrl
+        val webAdapterId = AppAutomationRouter.memoryDomainForWebGoal(goal, resolvedStartUrl)
+        val taskRunId = TaskExecutionStore.start(context, goal, AutomationMode.BACKGROUND_WEB, webAdapterId)
+        TaskRunController.begin(taskRunId)
+        VideoQueueManager.appendLog(
+            context,
+            "🧭 Web route: ${route.mode} • adapter=$webAdapterId • url=$resolvedStartUrl • ${route.reason}"
+        )
 
         isWebTaskRunning = true
         currentWebJob = scope.launch {
+            var taskCompleted = false
+            var terminalTaskStatus: TaskStatus? = null
+            var terminalTaskMessage = ""
             try {
                 val firstRunLearn = VideoQueueManager.isFirstRunLiveLearnEnabled(context)
-                val verified = VideoQueueManager.isSkillLiveVerified(context, "CUSTOM_WEB")
+                val verified = VideoQueueManager.isSkillLiveVerified(context, webAdapterId)
                 if (firstRunLearn && !verified) {
                     hud.openForFirstRunLiveCalibration()
                 }
 
-                if (startUrl.isNotBlank() && webView.url != startUrl) {
-                    webView.loadUrl(startUrl)
+                if (resolvedStartUrl.isBlank() || AppAutomationRouter.normalizeHttpUrl(resolvedStartUrl) == null) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "No safe HTTPS destination could be resolved for this web task."
+                    throw IllegalArgumentException(terminalTaskMessage)
+                }
+                if (webView.url != resolvedStartUrl) {
+                    webView.loadUrl(resolvedStartUrl)
                     delay(3000)
                 }
 
@@ -331,11 +398,24 @@ object WebPipelineManager {
                 var pendingObserveCycles = 0
                 var pendingRecoveryRejectedCount = 0
                 var pendingRecoveryCycles = 0
-                val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, "CUSTOM_WEB")
+                val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, webAdapterId)
 
                 for (step in 1..36) {
                     if (!isWebTaskRunning) break
-                    hud.updateStatus("Web • Step $step", "1s AI Confirming...", "THINKING")
+                    when (TaskRunController.awaitBeforeStep(context, taskRunId, step)) {
+                        TaskGateResult.STOP -> {
+                            terminalTaskStatus = TaskStatus.CANCELLED
+                            terminalTaskMessage = "Web task stopped while paused/cancelled; no completion was claimed."
+                            break
+                        }
+                        TaskGateResult.REFRESH -> continue
+                        TaskGateResult.READY -> Unit
+                    }
+                    TaskExecutionStore.update(
+                        context, taskRunId, TaskStatus.VERIFYING, step,
+                        "Inspecting the current DOM and verifying the previous action before advancing."
+                    )
+                    hud.updateStatus("Web • Step $step", "Verifying current page state...", "THINKING")
 
                     val snap = WebActionVerifier.captureSnapshot(webView)
 
@@ -416,7 +496,7 @@ object WebPipelineManager {
                         pageTextAndElements = snap.interactiveElementsText,
                         history = history,
                         memoryVault = VideoQueueManager.getMemoryVault(context),
-                        learnedLessons = VideoQueueManager.getLearnedLessonsSummary(context, "GOOGLE_FLOW"),
+                        learnedLessons = VideoQueueManager.getLearnedLessonsSummary(context, webAdapterId),
                         trainedBlueprint = trainedBlueprint,
                         screenChangedStatus = lastVerifyReport,
                         screenshotBase64 = curShotB64,
@@ -482,6 +562,18 @@ object WebPipelineManager {
                         }
                     }
 
+                    // Pause can arrive while Gemini is deciding. Never dispatch a stale DOM target
+                    // after resume; refresh the page snapshot and request a new decision first.
+                    when (TaskRunController.awaitBeforeStep(context, taskRunId, step)) {
+                        TaskGateResult.STOP -> {
+                            terminalTaskStatus = TaskStatus.CANCELLED
+                            terminalTaskMessage = "Web task stopped before the next action was dispatched."
+                            break
+                        }
+                        TaskGateResult.REFRESH -> continue
+                        TaskGateResult.READY -> Unit
+                    }
+
                     hud.updateStatus("Web • ${decision.action}", decision.reason, "AUTO")
 
                     var senseUsed = WebActionVerifier.getSenseName(currentSense)
@@ -535,7 +627,11 @@ object WebPipelineManager {
                             }
                             val doneEvidence = WebActionVerifier.verifyGoalCompletion(goal, snap)
                             if (doneEvidence != null) {
-                                VideoQueueManager.markSkillLiveVerified(context, "CUSTOM_WEB", true)
+                                TaskExecutionStore.update(
+                                    context, taskRunId, TaskStatus.COMPLETED, step,
+                                    "Verified completion: $doneEvidence"
+                                )
+                                taskCompleted = true
                                 VideoQueueManager.appendDetailedLog(
                                     context = context,
                                     modelUsed = activeModelLabel,
@@ -560,10 +656,16 @@ object WebPipelineManager {
                                 verifyStatus = "⚠️ NO COMPLETION EVIDENCE"
                             )
                             if (unverifiedDoneCount >= 3) {
+                                terminalTaskStatus = TaskStatus.PAUSED
+                                terminalTaskMessage = "Stopped safely: the web page did not provide completion evidence after three checks."
                                 hud.updateStatus("Web • Not Verified", "AI reported DONE repeatedly, but the page gave no proof.", "ERROR")
                                 VideoQueueManager.appendLog(context, "⚠️ Web task stopped: DONE was rejected 3 times because completion evidence was absent.")
                                 break
                             }
+                            TaskExecutionStore.update(
+                                context, taskRunId, TaskStatus.RUNNING, step,
+                                "Completion not verified; re-checking live page instead of reporting success."
+                            )
                             delay(700)
                             continue
                         }
@@ -823,13 +925,34 @@ object WebPipelineManager {
                     )
 
                     history.add("Step $step: ${decision.action} -> ${if (verifyRes.passed) "CONFIRMED" else "FAILED"}")
+                    TaskExecutionStore.update(
+                        context, taskRunId, TaskStatus.RUNNING, step,
+                        if (verifyRes.passed) "Action verified; proceeding to the next step." else "Action is uncertain; the next step must re-check live page state."
+                    )
                     prevSnap = afterSnap
                     prevShotB64 = curShotB64
                 }
             } catch (_: CancellationException) {
+                terminalTaskStatus = TaskStatus.CANCELLED
+                terminalTaskMessage = "Web task cancelled; completion was not claimed."
             } catch (e: Exception) {
+                terminalTaskStatus = TaskStatus.FAILED
+                terminalTaskMessage = e.message ?: "Web agent failed before completion was verified."
                 VideoQueueManager.appendLog(context, "⚠️ Web Agent Error: ${e.message}")
             } finally {
+                if (!taskCompleted) {
+                    val status = terminalTaskStatus ?: TaskStatus.PAUSED
+                    val message = terminalTaskMessage.ifBlank {
+                        "Web execution ended without verified completion; inspect the final page before retrying."
+                    }
+                    TaskExecutionStore.update(context, taskRunId, status, message = message)
+                    if (status != TaskStatus.COMPLETED) {
+                        VideoQueueManager.appendLog(context, "📋 Web task state saved: $status • $message")
+                    }
+                    VideoQueueManager.appendLog(context, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(context)}")
+                }
+                TaskRunController.finish(taskRunId)
+                VideoQueueManager.appendLog(context, "⏹ Web task controller released; latest task state is saved.")
                 isWebTaskRunning = false
             }
         }
@@ -847,7 +970,8 @@ object WebPipelineManager {
         model: String,
         promptToCreate: String,
         targetDurationSec: Int,
-        folderPath: String
+        folderPath: String,
+        taskRunId: String
     ): java.io.File? {
         val startTimestampMs = System.currentTimeMillis()
         AiOverlayHud.lastSniffedMp4Url = null
@@ -873,6 +997,15 @@ object WebPipelineManager {
 
         for (step in 1..48) {
             if (!isWebTaskRunning) return null
+            when (TaskRunController.awaitBeforeStep(context, taskRunId, step)) {
+                TaskGateResult.STOP -> return null
+                TaskGateResult.REFRESH -> continue
+                TaskGateResult.READY -> Unit
+            }
+            TaskExecutionStore.update(
+                context, taskRunId, TaskStatus.VERIFYING, step,
+                "Checking Google Flow render/download state before taking another action."
+            )
 
             // Check 1: Did MP4 file finish saving in user's selected storage folder?
             VideoQueueManager.findNewlyDownloadedVideo(startTimestampMs, folderPath)?.let { return it }

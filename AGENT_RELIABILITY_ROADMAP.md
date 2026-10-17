@@ -1,55 +1,85 @@
-# AuraDroid AI — Agent Reliability Roadmap
+# AuraDroid AI — Reliability Roadmap
 
 ## Goal
 
-Nax Bot must act on the user's intended application and only continue when the current screen and target control have been checked. The agent must never confuse a website/domain with permission to launch Chrome, and must not silently continue in a different app.
+Nax Bot must choose the execution mode and application that match the user's real intent, use fresh screen evidence, avoid accidental side effects, persist task status and never claim success without completion evidence.
 
-## Implemented in the current routing/safety changes
+## Implemented in reliability-v1 branch
 
-1. **Intent-first native app routing** — for ambiguous social-app tasks such as “open twitter.com”, infer the intended installed app from the full user goal. Explicit wording such as “in Chrome”, “in a browser”, or “open the website” keeps the web route.
-2. **Custom Twitter-client preference** — search launchable apps by their visible label and package, prioritizing Flox/Floks/Flocs-style Twitter clients when installed, instead of picking Chrome or blindly selecting a generic X label.
-3. **No unrelated fallback** — if a native app cannot be resolved, do not quietly open Settings or Chrome and pretend the target succeeded.
-4. **Launch verification and package pinning** — check the actual foreground package after launch and keep a native-app task tied to the verified app.
-5. **Recovery from foreground drift** — before collecting targets at each step, recheck the foreground package. If an unrelated app took focus, attempt to restore the verified target and re-check before any tap.
-6. **Cross-window target guard** — when a task is pinned to an app, do not click/type into a node from a different app. The on-screen keyboard and short-lived Android permission/chooser surfaces remain eligible.
-7. **Fresh target validation** — AI-selected node IDs are revalidated against a newer accessibility snapshot, matched by package plus stable label/view ID, rather than trusted by index alone.
-8. **Prompt-level routing rule** — the model is told that OPEN_APP accepts an installed app label/package or supported setting, never a web URL, and that it must preserve a verified app task.
-9. **No visual target dots** — accessibility node indices remain internal; the phone UI stays clear.
-10. **Blocked actions are recorded** — route mismatches and refused app launches are logged, and repeated unsafe target choices pause the task rather than dispatching a blind action.
+1. **Routing foundation** — deterministic app profiles, URL normalization and explicit phone-intent priority; YouTube upload routes to Studio, and saved Flow URLs are not reused for unrelated tasks.
+2. **Popular app guidance profiles** — Chrome, YouTube/Studio, Google Flow, WhatsApp, Instagram, Gmail, Drive, Photos, Maps, Telegram, Facebook, X, Spotify, LinkedIn and Android Settings have dedicated instruction and memory domains. These are policy/profile foundations, not complete end-to-end adapters for every app.
+3. **Persistent task ledger** — records bounded task history and statuses; old active tasks are not silently dropped, and an interrupted task is marked PAUSED rather than automatically replayed.
+4. **Independent phone DONE verification** — before native phone tasks report success, the agent requests a second screen-evidence check. Sensitive actions need visible outcome evidence or remain unverified.
+5. **Web completion evidence** — the WebView agent's existing goal verifier controls its completion state; unsupported DONE decisions are rejected.
+6. **Per-app memory domain** — native phone tasks derive the lesson domain from actual foreground package/app profile; web tasks use the selected profile instead of always pulling Google Flow lessons.
+7. **Cooperative pause/resume/cancel** — UI controls and step gates stop advancing between actions; resuming performs a new observation on the next step.
+8. **Scheduling correction** — the UI calls the registered TaskSchedulerReceiver directly rather than looking for the missing DailyUploadReceiver class. Schedule preferences are saved consistently and an enabled daily alarm is restored after reboot.
+9. **Manifest hardening** — cleartext networking and Android backup are disabled. Folder/media permissions still require a broader production and compatibility review.
+10. **Regression coverage** — route/URL safety tests were added and CI is configured to run unit tests before building the debug APK on branch pushes and PRs.
+11. **Build fix** — the latest main-branch nullable AccessibilityNodeInfo smart-cast compile error had already been fixed and the corresponding main build succeeded before this branch was created.
 
-## Next reliability ideas, in priority order
+## P0 — prove the core works (next)
 
-| Priority | Idea | Expected benefit | Status |
-|---|---|---|---|
-| P0 | **App-intent resolver test matrix** for “open Twitter”, “open twitter.com”, “open Floks Twitter”, “open twitter.com in Chrome”, and apps missing from the phone | Prevent routing regressions | Next |
-| P0 | **One structured event per step**: goal, intended package, observed package, action, target label, pre/post snapshot hash, verification outcome | Makes “why did it do that?” diagnosable from logs | Next |
-| P0 | **Foreground change gate for every action** — verify the target package immediately before and after a click/type, not only at loop start | Closes remaining focus-change race windows | Partial: loop-start and fresh-node checks added |
-| P0 | **Side-effect confirmation barrier** before Send, Publish, Delete, Follow/Unfollow, or purchase; require fresh evidence that the intended control matches the task | Prevent accidental irreversible actions | Next |
-| P1 | **Three-signal verification**: accessibility tree + screenshot availability/hash + expected semantic result | Distinguishes “tap executed” from “goal achieved” | Partial: snapshot and screenshot change checks exist |
-| P1 | **Recovery ladder**: reacquire semantic target → refresh tree → wait only if loading evidence exists → scroll/reveal → safe back/reopen; stop after bounded attempts | Reduces loops and random tapping | Partial |
-| P1 | **Task-specific adapters** for Twitter/X, Instagram, YouTube Studio, Google Flow, and WhatsApp, each with known page states and success evidence | Fewer model guesses on common workflows | Next |
-| P1 | **App-specific memory** keyed by package + screen signature + action outcome, not a single generic lesson bucket | Avoid applying a Chrome lesson to a native app | Next |
-| P1 | **Screenshot health telemetry**: capture requested, callback succeeded, bitmap encoded, image size, model received image; distinguish a null screenshot from a bad analysis | Makes screenshot failure visible instead of silent | Next |
-| P1 | **Freshness budgets** for node snapshots and web DOM snapshots, with automatic reacquisition before executing stale targets | Prevents old indices/DOM nodes being reused | Partial for phone node actions |
-| P2 | **Coordinate calibration checks** using actual screenshot dimensions, rotation/insets, and the known image-to-device transform; disable coordinate taps if calibration is uncertain | Addresses wrong-coordinate taps | Next |
-| P2 | **Browser context awareness**: active tab, URL, iframe/dialog context, loading state, popup state, and current page title must be part of web decisions | Reduces wrong-tab and modal confusion | Next |
-| P2 | **Task plan with explicit done evidence**: each goal decomposed into steps with a verifiable postcondition and an overall completion test | Stops early/false “Done” claims | Partial |
-| P2 | **Confidence threshold**: when two installed apps have similar labels, don't guess; log the candidates and ask or pause safely | Avoids wrong clones/duplicates | Next |
-| P2 | **Replayable regression scenarios** based on sanitized screen trees and mocked action results | Lets CI test routing/verification without needing a physical phone | Next |
-| P3 | **User-controlled allow/deny rules** for apps, sites, and sensitive actions | Makes autonomy bounded and predictable | Next |
+| Item | Test / completion criteria |
+|---|---|
+| Branch CI | testDebugUnitTest and assembleDebug both pass on the final branch head. |
+| Routing regression matrix | Test open WhatsApp, open Chrome, a website URL, upload to YouTube, a Flow request and ambiguous app names. Explicit phone requests must not be redirected into the WebView. |
+| Phone-device tests | On real devices, verify foreground-package detection, keyboard/overlay handling, stale-node rejection and coordinates on several screen densities and rotations. |
+| Completion verifier | Verify that opening a page, typing a draft, sending a message and uploading a video have different completion evidence. Confirm no success without adequate evidence. |
+| Pause and cancel | Pause between steps, ensure no next step is issued, resume using a fresh snapshot, cancel and verify state is persisted. |
+| Permissions | Test storage/media selection and Accessibility revocation, and report actionable blockers instead of silent failure. |
 
-## Required regression cases
+## P1 — Chrome/WebView and YouTube workflows
 
-- “Open twitter.com” with a Flox/Floks Twitter client installed: open that native client; do not open Chrome.
-- “Open Twitter in Chrome” or “visit the Twitter website”: use the web route.
-- “Open Floks Twitter”: exact matching installed label wins.
-- No matching native app installed: report a blocker; never launch an unrelated app.
-- Target app launches, but Chrome unexpectedly takes focus: restore and verify the pinned package before resuming; stop safely if it cannot be restored.
-- AI returns a node index from Chrome while the task is pinned to Twitter: reject it and refresh the live tree.
-- Target node disappears between AI response and execution: refresh/remap by package and stable label/view ID; do not click stale coordinates.
-- Screenshot capture returns null: log capture failure distinctly and do not claim visual analysis occurred.
-- Upload/publish result is uncertain: verify status before retrying to avoid duplicate submissions.
+1. Build scenario tests for the exact websites/tasks most frequently used. The first priority is Chrome/WebView and YouTube Studio.
+2. Record per step: goal, app profile, URL/package, target label/role, action, before/after state, verification result and recovery outcome.
+3. Improve DOM context: current URL/title, loading state, enabled state, dialogs, frames and tab/context identity.
+4. Confirm exact video identity before upload, validate title/description/privacy/audience, prevent duplicate submission and require visible final status.
+5. Keep the WebView-vs-real-Chrome distinction explicit. The embedded WebView doesn't automatically share Chrome's cookies, active tabs or UI session.
+6. Create per-app adapters only where a tested scenario and visible success evidence are defined. App prompt guidance alone is not proof of a working integration.
 
-## Definition of “verified”
+## P1 — task lifecycle, scheduling and recovery
 
-A click or intent launch is only an attempted action. The agent may say the target was opened only after checking the observed foreground package; it may say an upload/message/post succeeded only after checking a relevant visible result state. If evidence is missing or contradictory, the correct result is “not verified” and a bounded recovery or safe pause.
+- Persist task states and bounded diagnostics; never automatically replay an uncertain irreversible action after process death.
+- Test daily schedule creation, missing alarm permission, reboot restoration, disabled Accessibility, absent network and a locked phone.
+- Consider WorkManager for deferrable persistent work. Device UI interaction must still obey Android foreground and Accessibility constraints.
+- Pause/resume must happen at safe step boundaries; a dispatched tap/upload cannot necessarily be recalled.
+
+## P2 — memory and personalized skills
+
+- Store learning per application and screen signature.
+- Learn only from verified outcomes; track rule version, confidence, evidence, success/failure and last tested time.
+- Require repeated successful regression scenarios before labelling a skill as "live verified".
+- Add user-controlled app/site allowlists and confirmation requirements for Send, Publish, Delete, Purchase and other irreversible actions.
+
+## P2 — user experience
+
+- Show task state, current application/site, current step, verification evidence and recovery reason.
+- Give a clear safe pause when a target is ambiguous or disappears.
+- Add task history and an exportable diagnostic report before adding decorative animations.
+- Expand UI polish only after the core scenarios pass repeatedly.
+
+## Known limitations — do not overclaim
+
+- A successful CI build does not validate execution on a real phone.
+- Profiles give app-specific routing, memory and model guidance, but most third-party workflows still need live end-to-end testing and likely richer adapters.
+- A WebView workflow is not the same as hidden/headless Chrome automation.
+- Android cannot run phone-side code while the phone is powered off; exact alarms and accessibility may be restricted by Android/OEM behaviour.
+- Zero errors cannot be guaranteed. The objective is measurable reliability, prevention of silent/wrong success, bounded recovery and safe stopping when evidence is ambiguous.
+
+## Required regression examples
+
+- Explicit "open WhatsApp" launches the installed native app and remains in that app.
+- "Open the WhatsApp website in a browser" chooses the web path.
+- "Upload my newest video to YouTube" starts at YouTube Studio and does not say success until visible upload evidence exists.
+- An unrelated web task never reuses the pinned Google Flow URL.
+- Unsafe URL schemes and local/private-network destinations are rejected by the route URL normalizer.
+- A stale native or DOM target causes a fresh lookup instead of tapping an old index.
+- A screenshot capture failure blocks coordinate-only phone taps.
+- If an upload/message outcome is uncertain, it is not repeated blindly.
+- A process interruption marks a task paused; the task is not automatically rerun.
+- Pause prevents the next step from dispatching; resume refreshes screen state first.
+
+## Definition of verified completion
+
+An action was **attempted** when it was dispatched. A step is **verified** only when fresh evidence supports its expected result. A task is **completed** only when task-specific completion evidence exists. If that evidence is missing or contradictory, the correct state is PAUSED/FAILED and the UI must show why rather than claim success.

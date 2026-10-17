@@ -244,6 +244,60 @@
                             android:textColor="#CBD5E1"
                             android:textSize="14sp" />
 
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            app:cardBackgroundColor="#0B101C"
+                            app:cardCornerRadius="14dp"
+                            app:strokeColor="#334155"
+                            app:strokeWidth="1dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:padding="12dp">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="🧭 LIVE TASK STATUS"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="12sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/tvTaskRunStatus"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:text="No task has been recorded yet."
+                                    android:textColor="#E2E8F0"
+                                    android:textSize="12.5sp" />
+
+                                <TextView
+                                    android:id="@+id/tvTaskRunMetrics"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:text="Task mix will appear after tasks run."
+                                    android:textColor="#94A3B8"
+                                    android:textSize="11.5sp" />
+
+                                <Button
+                                    android:id="@+id/btnRefreshTaskStatus"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="36dp"
+                                    android:layout_marginTop="6dp"
+                                    android:backgroundTint="#1E293B"
+                                    android:text="↻ Refresh status"
+                                    android:textAllCaps="false"
+                                    android:textColor="#7DD3FC"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+                        </com.google.android.material.card.MaterialCardView>
+
                         <RadioGroup
                             android:id="@+id/rgExecutionMode"
                             android:layout_width="match_parent"
@@ -289,6 +343,18 @@
                                 android:textStyle="bold" />
 
                             <Button
+                                android:id="@+id/btnPauseAgent"
+                                android:layout_width="wrap_content"
+                                android:layout_height="52dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#D97706"
+                                android:text="Ⅱ PAUSE"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <Button
                                 android:id="@+id/btnStopAgent"
                                 android:layout_width="wrap_content"
                                 android:layout_height="52dp"
@@ -296,7 +362,7 @@
                                 android:text="■ STOP"
                                 android:textAllCaps="false"
                                 android:textColor="#FFFFFF"
-                                android:textSize="14sp"
+                                android:textSize="12sp"
                                 android:textStyle="bold" />
                         </LinearLayout>
                     </LinearLayout>
