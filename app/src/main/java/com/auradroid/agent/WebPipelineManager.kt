@@ -901,7 +901,6 @@ object WebPipelineManager {
                 if (!targetBox) return JSON.stringify({ status: 'NO_BOX' });
 
                 targetBox.focus();
-                targetBox.click();
                 var textToInsert = $escapedPrompt;
 
                 if (targetBox.tagName.toLowerCase() === 'textarea' || targetBox.tagName.toLowerCase() === 'input') {
@@ -962,23 +961,9 @@ object WebPipelineManager {
                     val clean = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"") ?: "{}"
                     val obj = JSONObject(clean)
                     val status = obj.optString("status", "NO_BOX")
-                    if (status == "SUBMITTED" || status == "TYPED_ONLY") {
-                        scope.launch {
-                            delay(350)
-                            WebActionVerifier.dispatchRealWebTouch(
-                                webView = webView,
-                                hud = hud,
-                                cssX = obj.optDouble("x", 495.0).toFloat(),
-                                cssY = obj.optDouble("y", 890.0).toFloat(),
-                                viewportCssWidth = obj.optDouble("vw", 540.0).toFloat(),
-                                viewportCssHeight = obj.optDouble("vh", 960.0).toFloat(),
-                                label = "Generate"
-                            )
-                        }
-                        if (cont.isActive) cont.resume(true)
-                    } else {
-                        if (cont.isActive) cont.resume(false)
-                    }
+                    // One activation only. The DOM submit above is the primary strategy;
+                    // a physical touch is reserved for the separately gated recovery path.
+                    if (cont.isActive) cont.resume(status == "SUBMITTED")
                 } catch (_: Exception) {
                     if (cont.isActive) cont.resume(false)
                 }
