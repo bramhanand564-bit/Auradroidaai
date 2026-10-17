@@ -534,6 +534,14 @@ object PhoneAgentManager {
                     VideoQueueManager.appendLog(service, "⛔ ${executedSummary.removePrefix("ACTION_NOT_VERIFIED:").trim()} Task paused for safety.")
                     break
                 }
+                if (decision.action.equals("TYPE", true) && executedSummary.startsWith("TYPE_VISUAL_VERIFY_PENDING:")) {
+                    VideoQueueManager.appendLog(service, "🔎 ${executedSummary.removePrefix("TYPE_VISUAL_VERIFY_PENDING:").trim()}")
+                    service.overlayHud?.setCursorOverlayVisible(false)
+                    service.overlayHud?.updateStatus("Verify text", "Checking a fresh screenshot before the next step. No second typing attempt will be made automatically.", "VERIFYING")
+                    history.add("Step $step: ${executedSummary}")
+                    delay(700)
+                    continue
+                }
                 if (decision.action.equals("TYPE", true) && executedSummary.startsWith("TYPE_NOT_VERIFIED:")) {
                     service.overlayHud?.setCursorOverlayVisible(false)
                     service.overlayHud?.updateStatus("Text entry unverified", "The input value could not be verified. The agent paused to avoid duplicate typing.", "ERROR")
@@ -791,7 +799,7 @@ object PhoneAgentManager {
         }.sortedBy { it.second }
         val nearest = structuralMatches.firstOrNull() ?: return null
         val next = structuralMatches.getOrNull(1)
-        val withinFreshnessRadius = nearest.second <= 150.0
+        val withinFreshnessRadius = nearest.second <= if (forTyping) 420.0 else 150.0
         // Near-identical geometry indicates duplicate wrappers for the same control, not a far-away guess.
         val sameFootprint = nearest.second <= 24.0
         val unambiguous = next == null || next.second - nearest.second >= 50.0 || sameFootprint
@@ -825,7 +833,7 @@ object PhoneAgentManager {
     private fun goalExplicitlyRequestsSideEffect(goal: String, action: String): Boolean {
         val text = goal.lowercase()
         val pattern = when (action) {
-            "send" -> """send|sending|reply|replying|bhej|bhejna|message"""
+            "send" -> """send|sending|reply|replying|bhej|bhejna"""
             "publish" -> """publish|publishing|post|posting"""
             "delete" -> """delete|deleting|remove|removing|erase"""
             "purchase" -> """buy|purchase|pay|checkout|order"""
@@ -925,7 +933,9 @@ object PhoneAgentManager {
         // Do not paste a second copy if Android accepted SET_TEXT but the web component
         // does not expose its value through accessibility.
         if (setTextAccepted) {
-            return "TYPE_NOT_VERIFIED: ACTION_SET_TEXT was accepted, but the input value was not observable in the fresh tree"
+            // Some WebView/Compose fields accept ACTION_SET_TEXT but hide the value from
+            // Accessibility. Ask the next fresh screenshot to verify, but never paste twice.
+            return "TYPE_VISUAL_VERIFY_PENDING: ACTION_SET_TEXT accepted; inspect the next screenshot for this exact text before any further typing: ${expectedText.take(160)}"
         }
 
         service.copyToClipboard(expectedText)
@@ -957,10 +967,12 @@ object PhoneAgentManager {
         }.getOrDefault(false)
         delay(350)
         latestNodes = captureScreenNodes(service)
-        return if (pasteAccepted && targetTextIsVisible(originalTarget, expectedText, latestNodes)) {
-            "Typed & verified '${expectedText.take(18)}' using safe paste fallback"
-        } else {
-            "TYPE_NOT_VERIFIED: paste was not visibly verified in the selected input"
+        return when {
+            pasteAccepted && targetTextIsVisible(originalTarget, expectedText, latestNodes) ->
+                "Typed & verified '${expectedText.take(18)}' using safe paste fallback"
+            pasteAccepted ->
+                "TYPE_VISUAL_VERIFY_PENDING: paste action accepted; inspect the next screenshot for this exact text before any further typing: ${expectedText.take(160)}"
+            else -> "TYPE_NOT_VERIFIED: paste action was not accepted and the input value is not visible"
         }
     }
 
