@@ -487,6 +487,10 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
+    fun setClickableTargetDots(dots: List<NaxTargetDot>) {
+        mainHandler.post { pointerCanvasView?.setTargetDots(dots) }
+    }
+
     fun hidePodForFocusedTextInput(hidden: Boolean) {
         mainHandler.post {
             val pod = podRootLayout ?: return@post
@@ -988,6 +992,14 @@ class NaxBotAvatarView(context: Context) : View(context) {
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
 
+        // Persistent numbered markers map to the same accessibility node indices used by CLICK_NODE.
+        targetDots.forEach { target ->
+            val radius = 18f
+            canvas.drawCircle(target.x, target.y, radius, targetDotFill)
+            canvas.drawCircle(target.x, target.y, radius, targetDotStroke)
+            canvas.drawText(target.index.toString(), target.x, target.y + targetDotText.textSize * 0.34f, targetDotText)
+        }
+
         val cx = w / 2f
         val cy = h / 2f + sin(animPhase.toDouble()).toFloat() * 1.6f
         val headRx = w * 0.44f
@@ -1156,12 +1168,30 @@ class NaxBotAvatarView(context: Context) : View(context) {
 /**
  * Visual Hand Pointer & Ripple Overlay Canvas for Nax Bot Touch Verification
  */
+data class NaxTargetDot(val index: Int, val x: Float, val y: Float, val label: String)
+
 class NaxHandCursorCanvas(context: Context) : View(context) {
 
     private var tapX = -1f
     private var tapY = -1f
     private var tapLabel = ""
     private var rippleProgress = 0f
+    private var targetDots: List<NaxTargetDot> = emptyList()
+    private val targetDotFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#E60F172A")
+    }
+    private val targetDotStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = Color.parseColor("#38BDF8")
+    }
+    private val targetDotText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 25f
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
 
     private var swipeX1 = -1f
     private var swipeY1 = -1f
@@ -1198,6 +1228,14 @@ class NaxHandCursorCanvas(context: Context) : View(context) {
         val location = IntArray(2)
         getLocationOnScreen(location)
         return Pair(x - location[0], y - location[1])
+    }
+
+    fun setTargetDots(dots: List<NaxTargetDot>) {
+        targetDots = dots.map { dot ->
+            val local = screenToCanvas(dot.x, dot.y)
+            dot.copy(x = local.first, y = local.second)
+        }
+        invalidate()
     }
 
     fun triggerTapAnimation(x: Float, y: Float, label: String) {
