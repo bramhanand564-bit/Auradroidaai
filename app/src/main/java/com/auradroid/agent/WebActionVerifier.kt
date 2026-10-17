@@ -652,7 +652,8 @@ object WebActionVerifier {
         val urlChanged = before.url != after.url
         val targetUrl = expectedOutcome.trim()
         val urlMatchesRequested = action == "LOAD_URL" && targetUrl.isNotBlank() &&
-            after.url.startsWith(targetUrl, ignoreCase = true)
+            after.url.startsWith(targetUrl, ignoreCase = true) &&
+            (after.readyState == "interactive" || after.readyState == "complete")
         // Geometry (x/y/size/top) changes during scroll/layout are not proof that a click worked.
         val elementStateChanged = semanticElementState(before.interactiveElementsText) !=
             semanticElementState(after.interactiveElementsText)
