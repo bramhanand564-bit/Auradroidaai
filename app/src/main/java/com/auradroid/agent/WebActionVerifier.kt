@@ -30,7 +30,9 @@ data class DomSnapshot(
     val activeElementValue: String = "",
     val readyState: String = "unknown",
     val hasVisibleErrorMessage: Boolean = false,
-    val hasVisibleSuccessMessage: Boolean = false
+    val hasVisibleSuccessMessage: Boolean = false,
+    val viewportCssWidth: Float = 540f,
+    val viewportCssHeight: Float = 960f
 )
 
 data class StepVerificationResult(
@@ -486,7 +488,9 @@ object WebActionVerifier {
                     activeValue: activeValue.slice(0, 1200),
                     readyState: document.readyState || 'unknown',
                     hasError: pageErrors,
-                    hasSuccess: pageSuccess
+                    hasSuccess: pageSuccess,
+                    viewportWidth: vw,
+                    viewportHeight: vh
                 });
             })();
         """.trimIndent()
@@ -518,7 +522,9 @@ object WebActionVerifier {
                             activeElementValue = obj.optString("activeValue", ""),
                             readyState = obj.optString("readyState", "unknown"),
                             hasVisibleErrorMessage = obj.optBoolean("hasError", false),
-                            hasVisibleSuccessMessage = obj.optBoolean("hasSuccess", false)
+                            hasVisibleSuccessMessage = obj.optBoolean("hasSuccess", false),
+                            viewportCssWidth = obj.optDouble("viewportWidth", 540.0).toFloat(),
+                            viewportCssHeight = obj.optDouble("viewportHeight", 960.0).toFloat()
                         )
                         if (cont.isActive) cont.resume(snap)
                     } catch (_: Exception) {
