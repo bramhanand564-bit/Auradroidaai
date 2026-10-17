@@ -330,6 +330,7 @@ object WebPipelineManager {
                 var pendingTargetWasRisky = false
                 var pendingObserveCycles = 0
                 var pendingRecoveryRejectedCount = 0
+                var pendingRecoveryCycles = 0
                 val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, "CUSTOM_WEB")
 
                 for (step in 1..36) {
@@ -371,6 +372,7 @@ object WebPipelineManager {
                             pendingTargetWasRisky = false
                             pendingObserveCycles = 0
                             pendingRecoveryRejectedCount = 0
+                            pendingRecoveryCycles = 0
                             lastVerifyReport = "PENDING STEP CONFIRMED from a fresh DOM snapshot. It is now safe to continue."
                         } else if (pendingTargetWasRisky) {
                             pendingObserveCycles++
@@ -748,6 +750,7 @@ object WebPipelineManager {
                                 decision.action == "SUBMIT_FLOW_PROMPT"
                             pendingObserveCycles = 0
                             pendingRecoveryRejectedCount = 0
+                            pendingRecoveryCycles = 0
                             lastVerifyReport = "PENDING STEP NOT CONFIRMED: ${decision.action} — ${verifyRes.verificationReport} Recover this step only; no next task step may begin."
                         }
                     } else {
@@ -792,11 +795,21 @@ object WebPipelineManager {
                                     decision.action == "SUBMIT_FLOW_PROMPT"
                                 pendingObserveCycles = 0
                                 pendingRecoveryRejectedCount = 0
+                                pendingRecoveryCycles = 0
                                 lastVerifyReport = "Previous step confirmed; current recovery action is still pending: ${verifyRes.verificationReport}"
                             }
                         } else {
                             val stillPendingName = pendingAction ?: decision.action
+                            pendingRecoveryCycles++
                             lastVerifyReport = "PENDING STEP STILL UNCONFIRMED: ${pendingReason}. Recovery action ${decision.action} reported: ${verifyRes.verificationReport}. Do not advance; choose another safe recovery method or report the blocker."
+                            if (pendingRecoveryCycles >= 4) {
+                                hud.updateStatus("Web • Step Failed", "The same step remained unverified after 4 recovery attempts. Stopped without claiming success.", "ERROR")
+                                VideoQueueManager.appendLog(
+                                    context,
+                                    "⚠️ Web task stopped: pending step '${pendingReason}' could not be verified after 4 recovery attempts."
+                                )
+                                break
+                            }
                         }
                     }
 
