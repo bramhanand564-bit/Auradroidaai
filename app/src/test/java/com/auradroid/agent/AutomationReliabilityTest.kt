@@ -57,10 +57,31 @@ class AutomationReliabilityTest {
     }
 
     @Test
+    fun youtubeUploadDoesNotGetMistakenForNativeLaunch() {
+        val route = AppAutomationRouter.chooseRoute("Open YouTube and upload my newest video")
+        assertEquals(AutomationMode.BACKGROUND_WEB, route.mode)
+        assertEquals("https://studio.youtube.com/", route.startUrl)
+    }
+
+    @Test
+    fun explicitWebsiteRequestUsesWebMode() {
+        val route = AppAutomationRouter.chooseRoute("Open the WhatsApp website in a browser")
+        assertEquals(AutomationMode.BACKGROUND_WEB, route.mode)
+        assertEquals("https://web.whatsapp.com/", route.startUrl)
+    }
+
+    @Test
+    fun ordinaryDriveVerbDoesNotSelectGoogleDriveAdapter() {
+        assertNull(AppAutomationRouter.profileForGoal("I need to drive to work"))
+    }
+
+    @Test
     fun dangerousSchemesAndLocalHostsAreRejected() {
         assertNull(AppAutomationRouter.normalizeHttpUrl("javascript:alert(1)"))
         assertNull(AppAutomationRouter.normalizeHttpUrl("http://localhost/admin"))
         assertNull(AppAutomationRouter.normalizeHttpUrl("https://192.168.1.2/"))
+        assertNull(AppAutomationRouter.normalizeHttpUrl("https://172.16.2.3/"))
+        assertNull(AppAutomationRouter.normalizeHttpUrl("https://[::1]/"))
     }
 
     @Test
