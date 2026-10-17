@@ -361,11 +361,41 @@ object PhoneAgentManager {
                     continue
                 }
 
+                var executionNodes = nodes
+                if (decision.action.equals("CLICK_NODE", true) || decision.action.equals("TYPE", true)) {
+                    val originalTarget = nodes.firstOrNull { it.index == decision.nodeIndex }
+                    if (originalTarget == null) {
+                        val blocked = "Fresh-target guard blocked ${decision.action}: model index ${decision.nodeIndex} was not in the captured snapshot."
+                        VideoQueueManager.appendLog(service, "🛡️ $blocked")
+                        history.add("Step $step: $blocked")
+                        delay(500)
+                        continue
+                    }
+
+                    // The model response can arrive seconds after the original screen snapshot.
+                    // Re-scan and bind by package + stable label/view-id, never by stale index alone.
+                    val latestNodes = captureScreenNodes(service)
+                    val liveTarget = remapToLiveTarget(
+                        original = originalTarget,
+                        currentNodes = latestNodes,
+                        forTyping = decision.action.equals("TYPE", true)
+                    )
+                    if (liveTarget == null) {
+                        val blocked = "Fresh-target guard rejected stale/missing target '${originalTarget.text.ifBlank { originalTarget.contentDesc }.ifBlank { originalTarget.viewId }}'; no tap or typing was performed."
+                        VideoQueueManager.appendLog(service, "🛡️ $blocked")
+                        history.add("Step $step: $blocked")
+                        delay(500)
+                        continue
+                    }
+                    executionNodes = latestNodes
+                    decision = decision.copy(nodeIndex = liveTarget.index)
+                }
+
                 service.overlayHud?.setCursorOverlayVisible(true)
                 val executedSummary = executeSmartDecision(
                     service = service,
                     decision = decision,
-                    nodes = nodes,
+                    nodes = executionNodes,
                     realW = realW,
                     realH = realH,
                     repeatCount = repeatTapCount
@@ -553,6 +583,52 @@ object PhoneAgentManager {
             }
         }
         return "Waited"
+    }
+
+    /**
+     * Rebind an AI-selected accessibility target to the newest live screen snapshot.
+     * A reused numeric index is never sufficient: package/window and a stable view id
+     * or exact semantic label must match before a tap or typing action can execute.
+     */
+    private fun remapToLiveTarget(
+        original: UiNodeSnapshot,
+        currentNodes: List<UiNodeSnapshot>,
+        forTyping: Boolean
+    ): UiNodeSnapshot? {
+        val originalLabels = listOf(original.text, original.contentDesc, original.hintText)
+            .map { normalizeAppText(it) }
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (original.viewId.isBlank() && originalLabels.isEmpty()) return null
+
+        return currentNodes.asSequence()
+            .filter {
+                it.packageName == original.packageName &&
+                    it.windowType == original.windowType &&
+                    (!forTyping || it.isEditable || it.supportsSetText)
+            }
+            .mapNotNull { candidate ->
+                val sameViewId = original.viewId.isNotBlank() && candidate.viewId == original.viewId
+                val candidateLabels = listOf(candidate.text, candidate.contentDesc, candidate.hintText)
+                    .map { normalizeAppText(it) }
+                    .filter { it.isNotBlank() }
+                    .toSet()
+                val sameLabel = originalLabels.any { it in candidateLabels }
+                if (!sameViewId && !sameLabel) return@mapNotNull null
+
+                val distance = hypot(
+                    (candidate.centerX - original.centerX).toDouble(),
+                    (candidate.centerY - original.centerY).toDouble()
+                )
+                // Prefer matching view IDs, then exact visible labels, with proximity as a tie-breaker.
+                val score = (if (sameViewId) 1000 else 0) +
+                    (if (sameLabel) 250 else 0) +
+                    (if (candidate.className == original.className) 30 else 0) -
+                    distance.toInt().coerceAtMost(500)
+                candidate to score
+            }
+            .maxByOrNull { it.second }
+            ?.first
     }
 
     /**
