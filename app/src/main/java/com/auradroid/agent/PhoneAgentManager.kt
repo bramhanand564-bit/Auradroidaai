@@ -689,7 +689,7 @@ object PhoneAgentManager {
                 VideoQueueManager.appendLog(service, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(service)}")
             }
             service.overlayHud?.setCursorOverlayVisible(false)
-            service.overlayHud?.hidePodForFocusedTextInput(false)
+            service.overlayHud?.restorePodAfterTextInput()
             TaskRunController.finish(taskRunId)
             VideoQueueManager.appendLog(service, "⏹ Phone task controller released; latest task state is saved.")
             AutoTouchService.isJobRunning = false
