@@ -76,6 +76,29 @@ object PhoneAgentManager {
             for (step in 1..maxSteps) {
                 val nodes = captureScreenNodes(service)
 
+                // Number visible clickable controls; each dot uses the exact node index expected by CLICK_NODE.
+                val clickableTargets = nodes
+                    .filter { it.isClickable }
+                    .sortedWith(compareByDescending<UiNodeSnapshot> {
+                        (if (it.text.isNotBlank()) 3 else 0) +
+                        (if (it.contentDesc.isNotBlank()) 2 else 0) +
+                        (if (it.windowType == AccessibilityWindowInfo.TYPE_APPLICATION) 1 else 0)
+                    })
+                    .fold(mutableListOf<UiNodeSnapshot>()) { kept, node ->
+                        if (kept.none {
+                            kotlin.math.abs(it.centerX - node.centerX) < 20f &&
+                            kotlin.math.abs(it.centerY - node.centerY) < 20f
+                        }) kept.add(node)
+                        kept
+                    }
+                    .take(48)
+                service.overlayHud?.setClickableTargetDots(
+                    clickableTargets.map { node ->
+                        NaxTargetDot(node.index, node.centerX, node.centerY,
+                            node.text.ifBlank { node.contentDesc }.ifBlank { node.viewId }.take(28))
+                    }
+                )
+
                 // Keep the compact status pod off search boxes and keyboard suggestions while a real text field is focused.
                 service.overlayHud?.hidePodForFocusedTextInput(nodes.any { it.isEditable && it.isFocused })
 
@@ -116,6 +139,10 @@ object PhoneAgentManager {
                     appendLine("Foreground app package: ${activePackage.ifBlank { "UNKNOWN" }}")
                     appendLine("Accessibility window type: ${activeWindowType.ifBlank { "UNKNOWN" }}")
                     appendLine("Visible node count: ${nodes.size}")
+                    appendLine("NUMBERED CLICKABLE TARGET DOTS (visible dot number equals exact node index; choose only a matching listed index):")
+                    clickableTargets.forEach { n ->
+                        appendLine("DOT #${n.index} label='${n.text.ifBlank { n.contentDesc }.ifBlank { n.viewId }.ifBlank { n.className }.take(70)}' window=${n.windowType} xy=(${n.centerX.toInt()},${n.centerY.toInt()})")
+                    }
                     appendLine("VISIBLE NODES (index, app package, text, description, hint, view id, edit/click, screen coordinates):")
                     nodes.forEach {
                         appendLine("[${it.index}] pkg='${it.packageName}' text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})")
@@ -319,6 +346,7 @@ object PhoneAgentManager {
             VideoQueueManager.appendLog(service, "❌ Agent Error: ${e.message}")
         } finally {
             service.overlayHud?.setCursorOverlayVisible(false)
+            service.overlayHud?.setClickableTargetDots(emptyList())
             service.overlayHud?.hidePodForFocusedTextInput(false)
             AutoTouchService.isJobRunning = false
         }
