@@ -573,7 +573,6 @@ object WebPipelineManager {
                             }
                             val doneEvidence = WebActionVerifier.verifyGoalCompletion(goal, snap)
                             if (doneEvidence != null) {
-                                VideoQueueManager.markSkillLiveVerified(context, webAdapterId, true)
                                 TaskExecutionStore.update(
                                     context, taskRunId, TaskStatus.COMPLETED, step,
                                     "Verified completion: $doneEvidence"
