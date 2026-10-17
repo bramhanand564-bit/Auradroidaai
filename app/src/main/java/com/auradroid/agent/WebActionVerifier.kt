@@ -789,6 +789,19 @@ object WebActionVerifier {
     }
 
     /**
+     * Strong signal that Google Flow accepted a prompt: rendering/progress, an exposed video stream,
+     * or explicit generation status text. A changed input field by itself is not acceptance.
+     */
+    fun isFlowPromptAccepted(snapshot: DomSnapshot): Boolean {
+        if (snapshot.isFlowRenderingInProgress ||
+            snapshot.renderingProgressLabel == "100%" ||
+            snapshot.hasActiveVideoStream) return true
+        val statusText = snapshot.pageText.lowercase()
+        return Regex("""\\b(generating (your )?video|rendering (your )?video|generation started|video generation started|request queued|queued for generation|your video is ready)\\b""")
+            .containsMatchIn(statusText)
+    }
+
+    /**
      * 4-Sense Completed Video Card Opener & MP4 Extractor:
      * Sense 1: Zero-Click Background Network Stream Sniffer (`AiOverlayHud.lastSniffedMp4Url`)
      * Sense 2: DOM `<video>`, Performance Timing & React Fiber State Extractor
