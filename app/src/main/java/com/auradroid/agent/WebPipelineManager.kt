@@ -692,6 +692,7 @@ object WebPipelineManager {
 
         var promptAlreadySubmitted = false
         var promptSubmissionAttempted = false
+        var primarySubmitDispatched = false
         var promptFallbackAttempted = false
         var promptSubmitWaitCycles = 0
         var modeSetupAttempts = 0
@@ -742,7 +743,7 @@ object WebPipelineManager {
                     continue
                 }
 
-                if (!promptFallbackAttempted) {
+                if (!promptFallbackAttempted && !primarySubmitDispatched) {
                     promptFallbackAttempted = true
                     val fallbackTapped = retryFlowPromptSubmitByTouch(webView, hud, promptToCreate)
                     if (fallbackTapped) {
@@ -854,10 +855,11 @@ object WebPipelineManager {
             // Step 3 Confirmation: Type prompt into bottom composer and confirm after 1s that rendering started!
             if (!promptAlreadySubmitted) {
                 hud.updateStatus("Step 3 • Prompt", "Typing ${targetDurationSec}s prompt & 1s confirming...", "WORKING")
-                val submitted = typeAndSubmitFlowPromptOnce(webView, hud, promptToCreate)
-                if (submitted) {
-                    // Mark attempted immediately. Only explicit rendering/result evidence can unlock next steps.
+                val submitStatus = typeAndSubmitFlowPromptOnce(webView, hud, promptToCreate)
+                if (submitStatus == "SUBMITTED" || submitStatus == "TYPED_ONLY") {
+                    // Never use the physical fallback after a DOM submit was already dispatched.
                     promptSubmissionAttempted = true
+                    primarySubmitDispatched = submitStatus == "SUBMITTED"
                     val (afterSubmitSnap, confirmRes) = WebActionVerifier.confirmStepInOneSecond(
                         webView = webView,
                         before = beforeSnap,
@@ -882,8 +884,8 @@ object WebPipelineManager {
                         VideoQueueManager.appendDetailedLog(
                             context = context,
                             modelUsed = model,
-                            clickSense = "Single DOM Submit",
-                            actionDesc = "Submit was attempted once; waiting for result evidence",
+                            clickSense = if (primarySubmitDispatched) "Single DOM Submit" else "Composer Filled",
+                            actionDesc = if (primarySubmitDispatched) "DOM submit dispatched once; waiting for result evidence" else "Prompt filled; no submit control activated yet",
                             whyReason = confirmRes.verificationReport,
                             verifyStatus = "⏳ DO NOT RESUBMIT"
                         )
@@ -970,7 +972,7 @@ object WebPipelineManager {
         webView: WebView,
         hud: AiOverlayHud,
         promptText: String
-    ): Boolean = suspendCancellableCoroutine { cont ->
+    ): String = suspendCancellableCoroutine { cont ->
         val escapedPrompt = JSONObject.quote(promptText)
         val js = """
             (function() {
@@ -1053,11 +1055,10 @@ object WebPipelineManager {
                     val clean = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"") ?: "{}"
                     val obj = JSONObject(clean)
                     val status = obj.optString("status", "NO_BOX")
-                    // SUBMITTED means one DOM activation occurred; TYPED_ONLY means the value is set
-                    // and the separately gated physical-touch fallback may attempt the button later.
-                    if (cont.isActive) cont.resume(status == "SUBMITTED" || status == "TYPED_ONLY")
+                    // Preserve whether submit was actually activated so recovery never double-submits.
+                    if (cont.isActive) cont.resume(status)
                 } catch (_: Exception) {
-                    if (cont.isActive) cont.resume(false)
+                    if (cont.isActive) cont.resume("ERROR")
                 }
             }
         }
