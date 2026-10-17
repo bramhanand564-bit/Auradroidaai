@@ -61,6 +61,8 @@ data class WebAgentDecision(
     val learnedRule: String = ""
 )
 
+data class PhoneTaskCompletionVerification(val verified: Boolean, val reason: String)
+
 object GeminiBrain {
 
     @Volatile
@@ -757,4 +759,18 @@ object GeminiBrain {
         val high = activeHighModel ?: "Auto-Pro (3.8/3.1)"
         return "Fast: $fast • High: $high • Live: ${discoveredLiveModels.size}"
     }
+    /** Independently verify a proposed DONE state against current-screen evidence. */
+    suspend fun verifyPhoneTaskCompletion(
+        apiKey: String, model: String, highModelName: String, goal: String,
+        screenSummary: String, recentHistory: List<String>, screenshotBase64: String?
+    ): PhoneTaskCompletionVerification {
+        val prompt = "Verify whether this Android task is demonstrably complete. Do not trust a proposed DONE state without evidence. If uncertain, return verified=false. Goal: $goal. Current screen: $screenSummary. Recent actions: ${recentHistory.takeLast(8).joinToString(\"; \")}. Return JSON only: {\"verified\":true/false,\"reason\":\"brief evidence\"}."
+        return try {
+            val raw = callGeminiApi(apiKey=apiKey, userModel=model, prompt=prompt, currentImageJpeg=screenshotBase64, escalateToHighModel=true, highModelName=highModelName)
+            val obj = extractCleanJsonObject(raw)
+            PhoneTaskCompletionVerification(obj.optBoolean("verified", false), obj.optString("reason", "No clear completion evidence."))
+        } catch (e: CancellationException) { throw e }
+          catch (e: Exception) { PhoneTaskCompletionVerification(false, "Independent verification unavailable: ${e.message ?: \"unknown error\"}") }
+    }
+
 }
