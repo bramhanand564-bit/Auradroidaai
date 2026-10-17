@@ -116,8 +116,19 @@ object WebPipelineManager {
             return
         }
 
+        val flowTaskId = TaskExecutionStore.start(
+            context,
+            "Generate video with Google Flow: $flowTopic",
+            AutomationMode.BACKGROUND_WEB,
+            "GOOGLE_FLOW"
+        )
+        TaskRunController.begin(flowTaskId)
+        VideoQueueManager.appendLog(context, "🧭 Flow route: GOOGLE_FLOW • taskId=$flowTaskId")
         isWebTaskRunning = true
         currentWebJob = scope.launch {
+            var flowStageCompleted = false
+            var terminalFlowStatus: TaskStatus? = null
+            var terminalFlowMessage = ""
             try {
                 val storyMode = VideoQueueManager.getStoryMode(context)
                 val nextEpNum = VideoQueueManager.getNextEpisodeNumber(context)
@@ -184,7 +195,8 @@ object WebPipelineManager {
                     model = model,
                     promptToCreate = episodePlan.videoPrompt,
                     targetDurationSec = episodePlan.durationSec,
-                    folderPath = folderPath
+                    folderPath = folderPath,
+                    taskRunId = flowTaskId
                 )
 
                 if (downloadedFile != null) {
@@ -241,7 +253,16 @@ object WebPipelineManager {
                         }
                     }
 
-                    hud.updateStatus("Nax Bot • Saved!", "Uploading Part ${episodePlan.episodeNumber} to YT...", "UPLOADING")
+                    // Complete the video-generation stage, then hand off to a separately tracked
+                    // YouTube upload task. This avoids marking upload success before it is verified.
+                    TaskExecutionStore.update(
+                        context, flowTaskId, TaskStatus.COMPLETED, message =
+                        "Google Flow video saved and inspected: ${downloadedFile.name}. YouTube upload is a separate task."
+                    )
+                    flowStageCompleted = true
+                    TaskRunController.finish(flowTaskId)
+
+                    hud.updateStatus("Nax Bot • Saved!", "Starting YouTube upload for Part ${episodePlan.episodeNumber}...", "UPLOADING")
                     delay(1200)
 
                     AutoTouchService.instance?.startYouTubeUploadJob(
@@ -252,18 +273,33 @@ object WebPipelineManager {
                         topicInstruction = richTopicInstruction
                     )
                 } else {
-                    hud.updateStatus("Download Timeout", "Tap video card manually to save", "SAD")
+                    terminalFlowStatus = TaskStatus.PAUSED
+                    terminalFlowMessage = "Google Flow did not yield a verified local video. No upload was started."
+                    hud.updateStatus("Download Timeout", "Video download was not verified; upload stopped.", "SAD")
                     VideoQueueManager.appendLog(
                         context,
                         "⚠️ Video rendered on Google Flow, but automatic MP4 stream capture timed out. Tap the card in Browser tab to save."
                     )
                 }
             } catch (_: CancellationException) {
+                terminalFlowStatus = TaskStatus.CANCELLED
+                terminalFlowMessage = "Google Flow task cancelled; no upload success was claimed."
                 hud.updateStatus("Nax Bot", "Stopped", "IDLE")
             } catch (e: Exception) {
+                terminalFlowStatus = TaskStatus.FAILED
+                terminalFlowMessage = e.message ?: "Google Flow pipeline failed before a verified video was saved."
                 hud.updateStatus("Nax Bot Error", e.message?.take(24) ?: "Error", "ERROR")
                 VideoQueueManager.appendLog(context, "❌ Flow Pipeline Error: ${e.message}")
             } finally {
+                if (!flowStageCompleted) {
+                    val status = terminalFlowStatus ?: TaskStatus.PAUSED
+                    val message = terminalFlowMessage.ifBlank {
+                        "Google Flow stage stopped without a verified output file."
+                    }
+                    TaskExecutionStore.update(context, flowTaskId, status, message = message)
+                    VideoQueueManager.appendLog(context, "📋 Flow task state saved: $status • $message")
+                }
+                TaskRunController.finish(flowTaskId)
                 isWebTaskRunning = false
             }
         }
@@ -930,7 +966,8 @@ object WebPipelineManager {
         model: String,
         promptToCreate: String,
         targetDurationSec: Int,
-        folderPath: String
+        folderPath: String,
+        taskRunId: String
     ): java.io.File? {
         val startTimestampMs = System.currentTimeMillis()
         AiOverlayHud.lastSniffedMp4Url = null
@@ -956,6 +993,15 @@ object WebPipelineManager {
 
         for (step in 1..48) {
             if (!isWebTaskRunning) return null
+            when (TaskRunController.awaitBeforeStep(context, taskRunId, step)) {
+                TaskGateResult.STOP -> return null
+                TaskGateResult.REFRESH -> continue
+                TaskGateResult.READY -> Unit
+            }
+            TaskExecutionStore.update(
+                context, taskRunId, TaskStatus.VERIFYING, step,
+                "Checking Google Flow render/download state before taking another action."
+            )
 
             // Check 1: Did MP4 file finish saving in user's selected storage folder?
             VideoQueueManager.findNewlyDownloadedVideo(startTimestampMs, folderPath)?.let { return it }
