@@ -1321,7 +1321,7 @@ class MainActivity : AppCompatActivity() {
         tvTaskRunStatus.text = if (latest == null) {
             "No task has been recorded yet."
         } else {
-            val goal = latest.goal.replace(Regex("""\\s+"""), " ").take(110)
+            val goal = latest.goal.replace(Regex("""\s+"""), " ").take(110)
             "${latest.status} • ${latest.mode} • ${latest.adapterId}\n" +
                 "Step: ${latest.step} • $goal\n" +
                 latest.message.take(180)
