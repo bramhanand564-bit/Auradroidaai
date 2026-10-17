@@ -383,6 +383,22 @@ object WebPipelineManager {
                     var senseUsed = WebActionVerifier.getSenseName(currentSense)
                     when (decision.action) {
                         "DONE" -> {
+                            val lowerGoal = goal.lowercase()
+                            val isYouTubeUpload = lowerGoal.contains("upload") &&
+                                (lowerGoal.contains("youtube") || lowerGoal.contains("youtube studio") || lowerGoal.contains("short"))
+                            val visibleText = snap.interactiveElementsText.lowercase()
+                            val uploadConfirmationPhrases = listOf(
+                                "video published", "upload complete", "upload completed",
+                                "video uploaded", "your video is now public", "video is now public",
+                                "successfully uploaded"
+                            )
+                            val uploadConfirmed = uploadConfirmationPhrases.any { visibleText.contains(it) }
+                            if (isYouTubeUpload && !uploadConfirmed) {
+                                val message = "YouTube upload was not independently confirmed on the current screen. The task is stopping without reporting success."
+                                VideoQueueManager.appendLog(context, "🛡️ $message Visible page evidence: ${snap.interactiveElementsText.take(500)}")
+                                hud.updateStatus("Upload not verified", message, "ERROR")
+                                break
+                            }
                             VideoQueueManager.markSkillLiveVerified(context, "CUSTOM_WEB", true)
                             hud.collapseToCompactStage()
                             hud.updateStatus("Nax Bot • Done", decision.reason, "HAPPY")

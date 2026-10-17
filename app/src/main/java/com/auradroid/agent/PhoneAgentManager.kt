@@ -842,9 +842,15 @@ object PhoneAgentManager {
                 rawX = rawX.coerceIn(5f, realW - 5f)
                 rawY = rawY.coerceIn(statusBarLimitY + 5f, realH - 5f)
 
+                // Only snap to controls that can actually receive an accessibility action.
+                // Plain text labels are not tap targets and caused nearby taps to drift.
                 val nearestNode = nodes.filter {
                     nodeAllowedInPinnedTask(it, pinnedNativePackage) &&
-                        it.centerY >= statusBarLimitY && (it.isClickable || it.text.isNotEmpty() || it.contentDesc.isNotEmpty())
+                        it.centerY >= statusBarLimitY &&
+                        (it.isClickable || it.node.isClickable || it.isEditable || it.supportsSetText ||
+                            it.node.actionList.any { action ->
+                                action.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK
+                            })
                 }.minByOrNull {
                     hypot(
                         (it.centerX - rawX).toDouble(),
