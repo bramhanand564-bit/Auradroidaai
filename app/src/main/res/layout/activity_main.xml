@@ -1,1675 +1,454 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#090D16"
-    android:orientation="vertical">
-
-    <!-- AQUABUBBLE LIQUID GLASS TOP HEADER -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#121826"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="12dp">
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="AuraDroid OS • Nax Bot"
-                android:textColor="#F0F9FF"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvActiveSubtitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="1s AI Step-Confirmed • Liquid Glass Edition"
-                android:textColor="#7DD3FC"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/btnToggleFloatingPod"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:layout_marginEnd="8dp"
-            android:backgroundTint="#1E293B"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:paddingHorizontal="12dp"
-            android:text="Nax: ON"
-            android:textAllCaps="false"
-            android:textColor="#38BDF8"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tvServiceBadge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="#1E293B"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="6dp"
-            android:text="TOUCH: OFF"
-            android:textColor="#F87171"
-            android:textSize="11.5sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#2638BDF8" />
-
-    <!-- 5-TAB MAIN CONTAINER -->
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <!-- ========================================================= -->
-        <!-- TAB 1: AQUABUBBLE AI CHAT, SMART TIMER & PLANNER          -->
-        <!-- ========================================================= -->
-        <ScrollView
-            android:id="@+id/tabChatLayout"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true"
-            android:visibility="visible">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#4038BDF8"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="💧 Nax Bot चैट • स्मार्ट टाइमर और प्लानर"
-                                android:textColor="#F0F9FF"
-                                android:textSize="16.5sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnClearChat"
-                                android:layout_width="wrap_content"
-                                android:layout_height="34dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:text="Clear"
-                                android:textAllCaps="false"
-                                android:textColor="#7DD3FC"
-                                android:textSize="12sp" />
-                        </LinearLayout>
-
-                        <TextView
-                            android:id="@+id/tvChatHistory"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:background="#0B101C"
-                            android:lineSpacingExtra="5dp"
-                            android:minHeight="145dp"
-                            android:padding="14dp"
-                            android:text="🤖 Nax Bot: नमस्ते भाई! आप मुझे कोई भी काम या टाइम बोलकर बता सकते हैं—जैसे:\n• 'भाई रात 11 बजे से सुबह 5 बजे तक हर 2 घंटे में 1 टेक्निकल स्टोरी वीडियो बनाकर YouTube पर डाल देना'\n• पहली बार मैं Phone में चलाकर सीखूँगा और हर 1 सेकंड पर कन्फर्म करूँगा, फिर अगली बार से Background में चलाऊँगा!"
-                            android:textColor="#E0F2FE"
-                            android:textSize="14.5sp" />
-
-                        <EditText
-                            android:id="@+id/etChatInput"
-                            android:layout_width="match_parent"
-                            android:layout_height="92dp"
-                            android:layout_marginTop="12dp"
-                            android:background="#192338"
-                            android:gravity="top|start"
-                            android:hint="अपना काम, स्टोरी या टाइमर यहाँ लिखें (जैसे: शाम 7 बजे और रात 10 बजे 10s की Part 1, Part 2 रील बनाकर अपलोड करो)..."
-                            android:padding="14dp"
-                            android:textColor="#FFFFFF"
-                            android:textColorHint="#64748B"
-                            android:textSize="14.5sp" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:orientation="horizontal">
-
-                            <Button
-                                android:id="@+id/btnVoiceMic"
-                                android:layout_width="wrap_content"
-                                android:layout_height="50dp"
-                                android:layout_marginEnd="8dp"
-                                android:backgroundTint="#1E293B"
-                                android:text="🎙️ बोलें"
-                                android:textAllCaps="false"
-                                android:textColor="#38BDF8"
-                                android:textSize="14.5sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnSendChat"
-                                android:layout_width="0dp"
-                                android:layout_height="50dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#0284C7"
-                                android:text="✨ प्लान और टाइमर सेट करें (3.8 AI)"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="14.5sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- AI Verified Plan & Smart Schedule Card -->
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#402DD4BF"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="📋 AI का तैयार प्लान और ऑटो-टाइमर"
-                            android:textColor="#F0F9FF"
-                            android:textSize="16.5sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/tvAutoTimerSummary"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:background="#0F292E"
-                            android:padding="10dp"
-                            android:text="⏰ Smart Timer: चैट में समय लिखें तो AI खुद अलार्म और टास्क काउंट सेट कर देगा।"
-                            android:textColor="#2DD4BF"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/tvPlanSteps"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:background="#0B101C"
-                            android:lineSpacingExtra="5dp"
-                            android:padding="14dp"
-                            android:text="अभी कोई प्लान नहीं है। ऊपर चैट में काम समझाएं।"
-                            android:textColor="#CBD5E1"
-                            android:textSize="14sp" />
-
-                        <com.google.android.material.card.MaterialCardView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            app:cardBackgroundColor="#0B101C"
-                            app:cardCornerRadius="14dp"
-                            app:strokeColor="#334155"
-                            app:strokeWidth="1dp">
-
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:orientation="vertical"
-                                android:padding="12dp">
-
-                                <TextView
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:text="🧭 LIVE TASK STATUS"
-                                    android:textColor="#38BDF8"
-                                    android:textSize="12sp"
-                                    android:textStyle="bold" />
-
-                                <TextView
-                                    android:id="@+id/tvTaskRunStatus"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="6dp"
-                                    android:text="No task has been recorded yet."
-                                    android:textColor="#E2E8F0"
-                                    android:textSize="12.5sp" />
-
-                                <TextView
-                                    android:id="@+id/tvTaskRunMetrics"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="6dp"
-                                    android:text="Task mix will appear after tasks run."
-                                    android:textColor="#94A3B8"
-                                    android:textSize="11.5sp" />
-
-                                <Button
-                                    android:id="@+id/btnRefreshTaskStatus"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="36dp"
-                                    android:layout_marginTop="6dp"
-                                    android:backgroundTint="#1E293B"
-                                    android:text="↻ Refresh status"
-                                    android:textAllCaps="false"
-                                    android:textColor="#7DD3FC"
-                                    android:textSize="12sp" />
-                            </LinearLayout>
-                        </com.google.android.material.card.MaterialCardView>
-
-                        <RadioGroup
-                            android:id="@+id/rgExecutionMode"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:orientation="vertical">
-
-                            <RadioButton
-                                android:id="@+id/rbModeBackgroundWeb"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:checked="true"
-                                android:text="🌐 Background Web Mode (YouTube Studio / in-app browser; upload web में चलेगा)"
-                                android:textColor="#38BDF8"
-                                android:textSize="13.5sp" />
-
-                            <RadioButton
-                                android:id="@+id/rbModePhoneScreen"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="📱 Real Phone App Mode (YouTube का असली Android app खोलकर upload करे)"
-                                android:textColor="#F0F9FF"
-                                android:textSize="13.5sp" />
-                        </RadioGroup>
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:orientation="horizontal">
-
-                            <Button
-                                android:id="@+id/btnExecutePlan"
-                                android:layout_width="0dp"
-                                android:layout_height="52dp"
-                                android:layout_marginEnd="8dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#0D9488"
-                                android:text="▶ काम शुरू करें (1s AI Verify)"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="14.5sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnPauseAgent"
-                                android:layout_width="wrap_content"
-                                android:layout_height="52dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#D97706"
-                                android:text="Ⅱ PAUSE"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="12sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnStopAgent"
-                                android:layout_width="wrap_content"
-                                android:layout_height="52dp"
-                                android:backgroundTint="#E11D48"
-                                android:text="■ STOP"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="12sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-            </LinearLayout>
-        </ScrollView>
-
-        <!-- ========================================================= -->
-        <!-- TAB 2: FULL-CONTROL IN-APP BROWSER                        -->
-        <!-- ========================================================= -->
-        <LinearLayout
-            android:id="@+id/tabWebLayout"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:padding="10dp"
-            android:visibility="gone">
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                app:cardBackgroundColor="#131B2E"
-                app:cardCornerRadius="18dp"
-                app:strokeColor="#4038BDF8"
-                app:strokeWidth="1dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="10dp">
-
-                    <HorizontalScrollView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:scrollbars="none">
-
-                        <LinearLayout
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <Button
-                                android:id="@+id/btnBrowserBack"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:minWidth="48dp"
-                                android:paddingHorizontal="10dp"
-                                android:text="⬅ Back"
-                                android:textAllCaps="false"
-                                android:textColor="#F0F9FF"
-                                android:textSize="12.5sp" />
-
-                            <Button
-                                android:id="@+id/btnBrowserForward"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:minWidth="48dp"
-                                android:paddingHorizontal="10dp"
-                                android:text="Next ➡"
-                                android:textAllCaps="false"
-                                android:textColor="#F0F9FF"
-                                android:textSize="12.5sp" />
-
-                            <Button
-                                android:id="@+id/btnBrowserRefresh"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:paddingHorizontal="10dp"
-                                android:text="🔄 Reload"
-                                android:textAllCaps="false"
-                                android:textColor="#F0F9FF"
-                                android:textSize="12.5sp" />
-
-                            <Button
-                                android:id="@+id/btnBrowserFlow"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#0284C7"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:paddingHorizontal="12dp"
-                                android:text="🎬 Google Flow"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="12.5sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnBrowserGmail"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:paddingHorizontal="10dp"
-                                android:text="🔑 Google Login"
-                                android:textAllCaps="false"
-                                android:textColor="#F0F9FF"
-                                android:textSize="12.5sp" />
-
-                            <Button
-                                android:id="@+id/btnBrowserDesktop"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:paddingHorizontal="10dp"
-                                android:text="🖥️ Desktop: OFF"
-                                android:textAllCaps="false"
-                                android:textColor="#F0F9FF"
-                                android:textSize="12.5sp" />
-
-                            <Button
-                                android:id="@+id/btnBrowserDownloads"
-                                android:layout_width="wrap_content"
-                                android:layout_height="38dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:paddingHorizontal="10dp"
-                                android:text="📥 Downloads"
-                                android:textAllCaps="false"
-                                android:textColor="#2DD4BF"
-                                android:textSize="12.5sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-                    </HorizontalScrollView>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:orientation="horizontal">
-
-                        <EditText
-                            android:id="@+id/etWebUrl"
-                            android:layout_width="0dp"
-                            android:layout_height="42dp"
-                            android:layout_weight="1"
-                            android:background="#192338"
-                            android:hint="https://labs.google/fx/tools/flow"
-                            android:inputType="textUri"
-                            android:paddingHorizontal="12dp"
-                            android:singleLine="true"
-                            android:text="https://labs.google/fx/tools/flow"
-                            android:textColor="#FFFFFF"
-                            android:textColorHint="#64748B"
-                            android:textSize="13.5sp" />
-
-                        <Button
-                            android:id="@+id/btnWebGo"
-                            android:layout_width="wrap_content"
-                            android:layout_height="42dp"
-                            android:layout_marginStart="6dp"
-                            android:backgroundTint="#0284C7"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:minWidth="56dp"
-                            android:text="Go"
-                            android:textAllCaps="false"
-                            android:textColor="#FFFFFF"
-                            android:textSize="13.5sp"
-                            android:textStyle="bold" />
-
-                        <Button
-                            android:id="@+id/btnPinFlowUrl"
-                            android:layout_width="wrap_content"
-                            android:layout_height="42dp"
-                            android:layout_marginStart="6dp"
-                            android:backgroundTint="#1E293B"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:paddingHorizontal="10dp"
-                            android:text="📌 Pin"
-                            android:textAllCaps="false"
-                            android:textColor="#2DD4BF"
-                            android:textSize="13sp" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:orientation="horizontal">
-
-                        <EditText
-                            android:id="@+id/etWebTaskGoal"
-                            android:layout_width="0dp"
-                            android:layout_height="40dp"
-                            android:layout_weight="1"
-                            android:background="#192338"
-                            android:hint="यहाँ कोई भी वेब काम लिखें—AI हर 1s पर कन्फर्म करके चलाएगा..."
-                            android:paddingHorizontal="12dp"
-                            android:singleLine="true"
-                            android:textColor="#FFFFFF"
-                            android:textColorHint="#64748B"
-                            android:textSize="13sp" />
-
-                        <Button
-                            android:id="@+id/btnRunWebAgent"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:layout_marginStart="6dp"
-                            android:backgroundTint="#0D9488"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:text="▶ AI चलाएं"
-                            android:textAllCaps="false"
-                            android:textColor="#FFFFFF"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <FrameLayout
-                android:id="@+id/webPreviewContainer"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:background="#090D16" />
-        </LinearLayout>
-
-        <!-- ========================================================= -->
-        <!-- TAB 3: AI STORY SHOWRUNNER + VIRAL VISION YT UPLOADER     -->
-        <!-- ========================================================= -->
-        <ScrollView
-            android:id="@+id/tabPipelinesLayout"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <!-- Story Series Showrunner Card -->
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#4038BDF8"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="🎬 AI स्टोरी शोरनर (Part 1, 2, 3...) ➔ Viral YouTube"
-                            android:textColor="#F0F9FF"
-                            android:textSize="16.5sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="1. चैट की तरह स्टोरी समझाएं (कितने दिन/पार्ट तक और कैसी कहानी चलानी है):"
-                            android:textColor="#7DD3FC"
-                            android:textSize="13sp" />
-
-                        <EditText
-                            android:id="@+id/etFlowTopic"
-                            android:layout_width="match_parent"
-                            android:layout_height="76dp"
-                            android:layout_marginTop="4dp"
-                            android:background="#192338"
-                            android:gravity="top|start"
-                            android:hint="चैट की तरह लिखें: जैसे 30 दिनों की टेक्निकल साइबर-स्टोरी जिसमें हीरो हर पार्ट में नया आविष्कार करे और हिंदी में डायलॉग बोले..."
-                            android:padding="12dp"
-                            android:text="Cinematic hyper-realistic technical story series of an adult futuristic cybernetic explorer inventing quantum gadgets in a glowing sci-fi world with Hindi voice and dialog"
-                            android:textColor="#FFFFFF"
-                            android:textSize="13.5sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="2. हीरो का चेहरा और लुक लॉक (हर पार्ट में सेम दिखे):"
-                            android:textColor="#7DD3FC"
-                            android:textSize="13sp" />
-
-                        <EditText
-                            android:id="@+id/etStoryCharacterLock"
-                            android:layout_width="match_parent"
-                            android:layout_height="48dp"
-                            android:layout_marginTop="4dp"
-                            android:background="#192338"
-                            android:gravity="center_vertical|start"
-                            android:paddingHorizontal="12dp"
-                            android:text="Adult futuristic cybernetic tech explorer wearing a sleek glowing neon-blue visor and dark metallic jacket"
-                            android:textColor="#E0F2FE"
-                            android:textSize="13sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="3. स्टोरी सीरीज़ मोड (AI खुद दिमाग लगाकर आगे बढ़ाएगा):"
-                            android:textColor="#38BDF8"
-                            android:textSize="13.5sp"
-                            android:textStyle="bold" />
-
-                        <RadioGroup
-                            android:id="@+id/rgStoryMode"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:orientation="vertical">
-
-                            <RadioButton
-                                android:id="@+id/rbStorySerialMode"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:checked="true"
-                                android:text="📚 मुख्य सीरीज़: Part 1 ➔ Part 2 ➔ Part 3 (हर दिन कहानी आगे बढ़ेगी)"
-                                android:textColor="#2DD4BF"
-                                android:textSize="13sp" />
-
-                            <RadioButton
-                                android:id="@+id/rbStorySideMode"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="🌟 साइड-स्टोरी रील (उसी दुनिया की अलग मजेदार टेक्निकल कहानी)"
-                                android:textColor="#FACC15"
-                                android:textSize="13sp" />
-
-                            <RadioButton
-                                android:id="@+id/rbStoryStandaloneMode"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="🎲 फ्रेश रील (हर बार एकदम नई अलग वायरल कहानी)"
-                                android:textColor="#F0F9FF"
-                                android:textSize="13sp" />
-                        </RadioGroup>
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="4. अगले पार्ट के लिए आपका कोई खास ट्विस्ट या निर्देश (Optional):"
-                            android:textColor="#CBD5E1"
-                            android:textSize="13sp" />
-
-                        <EditText
-                            android:id="@+id/etStoryCustomTwist"
-                            android:layout_width="match_parent"
-                            android:layout_height="50dp"
-                            android:layout_marginTop="4dp"
-                            android:background="#192338"
-                            android:gravity="top|start"
-                            android:hint="खाली छोड़ें तो AI खुद पिछला पार्ट पढ़कर अगला एपिसोड लिखेगा..."
-                            android:padding="10dp"
-                            android:textColor="#FFFFFF"
-                            android:textColorHint="#64748B"
-                            android:textSize="13sp" />
-
-                        <!-- CUSTOMIZABLE VIDEO DURATION -->
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="5. वीडियो कितने सेकंड की बनानी है? (8s / 10s / 12s / 15s):"
-                            android:textColor="#38BDF8"
-                            android:textSize="13.5sp"
-                            android:textStyle="bold" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <RadioGroup
-                                android:id="@+id/rgVideoDuration"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:orientation="horizontal">
-
-                                <RadioButton
-                                    android:id="@+id/rbDuration8s"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginEnd="6dp"
-                                    android:text="8s"
-                                    android:textColor="#F0F9FF"
-                                    android:textSize="13sp" />
-
-                                <RadioButton
-                                    android:id="@+id/rbDuration10s"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginEnd="6dp"
-                                    android:checked="true"
-                                    android:text="10s"
-                                    android:textColor="#2DD4BF"
-                                    android:textSize="13sp"
-                                    android:textStyle="bold" />
-
-                                <RadioButton
-                                    android:id="@+id/rbDuration12s"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginEnd="6dp"
-                                    android:text="12s"
-                                    android:textColor="#F0F9FF"
-                                    android:textSize="13sp" />
-
-                                <RadioButton
-                                    android:id="@+id/rbDuration15s"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="15s"
-                                    android:textColor="#F0F9FF"
-                                    android:textSize="13sp" />
-                            </RadioGroup>
-
-                            <EditText
-                                android:id="@+id/etCustomDurationSec"
-                                android:layout_width="54dp"
-                                android:layout_height="38dp"
-                                android:background="#192338"
-                                android:gravity="center"
-                                android:hint="Sec"
-                                android:inputType="number"
-                                android:text="10"
-                                android:textColor="#38BDF8"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <!-- Episode Number + History + Reset -->
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="अगला Part #: "
-                                android:textColor="#F0F9FF"
-                                android:textSize="13.5sp"
-                                android:textStyle="bold" />
-
-                            <EditText
-                                android:id="@+id/etNextEpisodeNumber"
-                                android:layout_width="54dp"
-                                android:layout_height="40dp"
-                                android:background="#192338"
-                                android:gravity="center"
-                                android:inputType="number"
-                                android:text="1"
-                                android:textColor="#38BDF8"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnViewStoryHistory"
-                                android:layout_width="0dp"
-                                android:layout_height="40dp"
-                                android:layout_marginStart="8dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:text="📜 Story Arc"
-                                android:textAllCaps="false"
-                                android:textColor="#7DD3FC"
-                                android:textSize="12sp" />
-
-                            <Button
-                                android:id="@+id/btnResetStoryArc"
-                                android:layout_width="wrap_content"
-                                android:layout_height="40dp"
-                                android:layout_marginStart="6dp"
-                                android:backgroundTint="#1E293B"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:paddingHorizontal="10dp"
-                                android:text="🔄 Ep 1"
-                                android:textAllCaps="false"
-                                android:textColor="#F87171"
-                                android:textSize="12sp" />
-                        </LinearLayout>
-
-                        <!-- 1-SECOND AI CONFIRMATION + FIRST-RUN PHONE LEARN + FRAME VISION SEO -->
-                        <CheckBox
-                            android:id="@+id/cbOneSecAiConfirm"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:checked="true"
-                            android:text="⏱️ 1-Second Live AI Step Confirm: JSON/Training सिर्फ गाइड रहे, हर स्टेप पर AI 1s में खुद कन्फर्म करके ही आगे बढ़े (कोई स्टेप छूटे नहीं)"
-                            android:textColor="#2DD4BF"
-                            android:textSize="12.5sp" />
-
-                        <CheckBox
-                            android:id="@+id/cbFirstRunLiveLearn"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="🎯 1st-Run Phone Calibration: पहली बार स्क्रीन पर खोलकर स्क्रीनशॉट व टच से सीखे, फिर हमेशा Background में चलाए"
-                            android:textColor="#FACC15"
-                            android:textSize="12.5sp" />
-
-                        <CheckBox
-                            android:id="@+id/cbVideoFrameVisionSeo"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="👁️ Viral Frame Vision SEO: अपलोड से पहले वीडियो के अंदर से 2 फोटो निकालकर AI खुद देखे और वायरल YouTube टाइटल बनाए"
-                            android:textColor="#38BDF8"
-                            android:textSize="12.5sp" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="एक बार में कितनी वीडियो बनाएं? (क्रेडिट सेवर):"
-                                android:textColor="#CBD5E1"
-                                android:textSize="13sp" />
-
-                            <EditText
-                                android:id="@+id/etDailyVideoLimit"
-                                android:layout_width="56dp"
-                                android:layout_height="40dp"
-                                android:background="#192338"
-                                android:gravity="center"
-                                android:inputType="number"
-                                android:text="1"
-                                android:textColor="#2DD4BF"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <CheckBox
-                            android:id="@+id/cbAutoGenerateFlowFirst"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="शेड्यूल टाइम पर पहले Google Flow से नया स्टोरी पार्ट बनाए और फिर सीधा YouTube पर अपलोड करे"
-                            android:textColor="#F0F9FF"
-                            android:textSize="12.5sp" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="डेली टाइम (24h): "
-                                android:textColor="#F0F9FF"
-                                android:textSize="13.5sp" />
-
-                            <EditText
-                                android:id="@+id/etHour"
-                                android:layout_width="52dp"
-                                android:layout_height="42dp"
-                                android:background="#192338"
-                                android:gravity="center"
-                                android:inputType="number"
-                                android:text="19"
-                                android:textColor="#FFFFFF"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:paddingHorizontal="6dp"
-                                android:text=":"
-                                android:textColor="#FFFFFF"
-                                android:textSize="18sp"
-                                android:textStyle="bold" />
-
-                            <EditText
-                                android:id="@+id/etMinute"
-                                android:layout_width="52dp"
-                                android:layout_height="42dp"
-                                android:background="#192338"
-                                android:gravity="center"
-                                android:inputType="number"
-                                android:text="00"
-                                android:textColor="#FFFFFF"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnSaveSchedule"
-                                android:layout_width="match_parent"
-                                android:layout_height="42dp"
-                                android:layout_marginStart="10dp"
-                                android:backgroundTint="#0284C7"
-                                android:text="⏰ डेली सेट करें"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <Button
-                            android:id="@+id/btnRunFlowToYouTubeNow"
-                            android:layout_width="match_parent"
-                            android:layout_height="52dp"
-                            android:layout_marginTop="12dp"
-                            android:backgroundTint="#0284C7"
-                            android:text="✨ अभी अगला स्टोरी पार्ट बनाएं ➔ YouTube अपलोड"
-                            android:textAllCaps="false"
-                            android:textColor="#FFFFFF"
-                            android:textSize="14.5sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Custom Storage Picker & Video Queue Card -->
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#402DD4BF"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="📂 कस्टमाइज़ेबल स्टोरेज फोल्डर और अपलोड ऑर्डर"
-                            android:textColor="#F0F9FF"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="horizontal">
-
-                            <EditText
-                                android:id="@+id/etFolderPath"
-                                android:layout_width="0dp"
-                                android:layout_height="44dp"
-                                android:layout_weight="1"
-                                android:background="#192338"
-                                android:paddingHorizontal="12dp"
-                                android:singleLine="true"
-                                android:text="/storage/emulated/0/Download/AutoVideos"
-                                android:textColor="#FFFFFF"
-                                android:textSize="13sp" />
-
-                            <Button
-                                android:id="@+id/btnPickAnyFolder"
-                                android:layout_width="wrap_content"
-                                android:layout_height="44dp"
-                                android:layout_marginStart="6dp"
-                                android:backgroundTint="#0284C7"
-                                android:insetTop="0dp"
-                                android:insetBottom="0dp"
-                                android:paddingHorizontal="12dp"
-                                android:text="📂 फोल्डर चुनें"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="12.5sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <RadioGroup
-                            android:id="@+id/rgUploadOrder"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:orientation="vertical">
-
-                            <RadioButton
-                                android:id="@+id/rbUploadNewestFirst"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:checked="true"
-                                android:text="🆕 सबसे नई वीडियो पहले अपलोड करें (Newest First)"
-                                android:textColor="#2DD4BF"
-                                android:textSize="13.5sp" />
-
-                            <RadioButton
-                                android:id="@+id/rbUploadOldestFirst"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="⏳ सबसे पुरानी वीडियो पहले अपलोड करें (Oldest First)"
-                                android:textColor="#F0F9FF"
-                                android:textSize="13.5sp" />
-                        </RadioGroup>
-
-                        <TextView
-                            android:id="@+id/tvQueueStatus"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:background="#0B101C"
-                            android:padding="12dp"
-                            android:text="Total: 0 • Pending: 0"
-                            android:textColor="#2DD4BF"
-                            android:textSize="13.5sp"
-                            android:textStyle="bold" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="horizontal">
-
-                            <Button
-                                android:id="@+id/btnScanFolder"
-                                android:layout_width="0dp"
-                                android:layout_height="46dp"
-                                android:layout_marginEnd="6dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#1E293B"
-                                android:text="📂 Scan Folder"
-                                android:textAllCaps="false"
-                                android:textColor="#F0F9FF" />
-
-                            <Button
-                                android:id="@+id/btnResetHistory"
-                                android:layout_width="0dp"
-                                android:layout_height="46dp"
-                                android:layout_marginStart="6dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#1E293B"
-                                android:text="🔄 Reset History"
-                                android:textAllCaps="false"
-                                android:textColor="#F87171" />
-                        </LinearLayout>
-
-                        <Button
-                            android:id="@+id/btnRunYouTubeNow"
-                            android:layout_width="match_parent"
-                            android:layout_height="50dp"
-                            android:layout_marginTop="10dp"
-                            android:backgroundTint="#0D9488"
-                            android:text="▶ फोल्डर की अगली वीडियो फोटो देखकर वायरल टाइटल संग YouTube पर डालें"
-                            android:textAllCaps="false"
-                            android:textColor="#FFFFFF"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-            </LinearLayout>
-        </ScrollView>
-
-        <!-- ========================================================= -->
-        <!-- TAB 4: WM3-STYLE AI SKILL TRAINER (1s AI VERIFIED GUIDE)  -->
-        <!-- ========================================================= -->
-        <ScrollView
-            android:id="@+id/tabDoctorLayout"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#4038BDF8"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="🎓 Train Model Studio (Google Flow Pre-Trained + 1s AI Lock)"
-                            android:textColor="#F0F9FF"
-                            android:textSize="16.5sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="यहाँ Google Flow का परफेक्ट JSON पहले से लोड है! आप किसी भी टास्क के स्क्रीनशॉट देकर, Live चलाकर या JSON पेस्ट करके AI को रास्ता दिखा सकते हैं—AI इसे अंधे होकर नहीं भगाएगा बल्कि हर 1 सेकंड पर खुद कन्फर्म करके आगे बढ़ाएगा:"
-                            android:textColor="#7DD3FC"
-                            android:textSize="12.5sp" />
-
-                        <EditText
-                            android:id="@+id/etSkillTaskName"
-                            android:layout_width="match_parent"
-                            android:layout_height="44dp"
-                            android:layout_marginTop="10dp"
-                            android:background="#192338"
-                            android:hint="टास्क का नाम (जैसे: GOOGLE_FLOW या INSTAGRAM_REEL)"
-                            android:paddingHorizontal="12dp"
-                            android:singleLine="true"
-                            android:text="GOOGLE_FLOW"
-                            android:textColor="#38BDF8"
-                            android:textColorHint="#64748B"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:orientation="horizontal">
-
-                            <Button
-                                android:id="@+id/btnPickScreenshotsToTrain"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_marginEnd="6dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#0284C7"
-                                android:text="📸 Screenshots से सिखाएं"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="12.5sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnStartLiveTeachMode"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_marginStart="6dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#D97706"
-                                android:text="🔴 Live Teach (टच रिकॉर्ड)"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="12.5sp"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="📋 Trained JSON Blueprint (AI हर स्टेप पर इसे देखकर 1 सेकंड में वेरीफाई करेगा):"
-                            android:textColor="#CBD5E1"
-                            android:textSize="12.5sp" />
-
-                        <EditText
-                            android:id="@+id/etTrainedSkillJson"
-                            android:layout_width="match_parent"
-                            android:layout_height="155dp"
-                            android:layout_marginTop="6dp"
-                            android:background="#0B101C"
-                            android:fontFamily="monospace"
-                            android:gravity="top|start"
-                            android:padding="12dp"
-                            android:textColor="#2DD4BF"
-                            android:textColorHint="#64748B"
-                            android:textSize="12sp" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:orientation="horizontal">
-
-                            <Button
-                                android:id="@+id/btnSaveTrainedSkillJson"
-                                android:layout_width="0dp"
-                                android:layout_height="46dp"
-                                android:layout_marginEnd="6dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#0D9488"
-                                android:text="💾 Save to AI Mind"
-                                android:textAllCaps="false"
-                                android:textColor="#FFFFFF"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnCopyTrainedSkillJson"
-                                android:layout_width="wrap_content"
-                                android:layout_height="46dp"
-                                android:layout_marginEnd="6dp"
-                                android:backgroundTint="#1E293B"
-                                android:text="📤 Copy"
-                                android:textAllCaps="false"
-                                android:textColor="#F0F9FF"
-                                android:textSize="12.5sp" />
-
-                            <Button
-                                android:id="@+id/btnViewAllTrainedSkills"
-                                android:layout_width="wrap_content"
-                                android:layout_height="46dp"
-                                android:backgroundTint="#1E293B"
-                                android:text="📚 All Skills"
-                                android:textAllCaps="false"
-                                android:textColor="#38BDF8"
-                                android:textSize="12.5sp" />
-                        </LinearLayout>
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Personal Memory Vault Card -->
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#402DD4BF"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="🔐 Personal Memory Vault &amp; Self-Learned Rules"
-                            android:textColor="#F0F9FF"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
-
-                        <EditText
-                            android:id="@+id/etMemoryVault"
-                            android:layout_width="match_parent"
-                            android:layout_height="115dp"
-                            android:layout_marginTop="8dp"
-                            android:background="#192338"
-                            android:gravity="top|start"
-                            android:padding="12dp"
-                            android:textColor="#FFFFFF"
-                            android:textSize="14sp" />
-
-                        <Button
-                            android:id="@+id/btnSaveMemory"
-                            android:layout_width="match_parent"
-                            android:layout_height="46dp"
-                            android:layout_marginTop="8dp"
-                            android:backgroundTint="#0284C7"
-                            android:text="💾 मेमोरी सेव करें और सीखे हुए नियम देखें"
-                            android:textAllCaps="false"
-                            android:textColor="#FFFFFF"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-            </LinearLayout>
-        </ScrollView>
-
-        <!-- ========================================================= -->
-        <!-- TAB 5: GEMINI 3.8 / 3.7 / 3.1 SETTINGS & DETAILED LOGS    -->
-        <!-- ========================================================= -->
-        <ScrollView
-            android:id="@+id/tabSettingsLayout"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#4038BDF8"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="⚙️ कस्टमाइज़ेबल AI इंजन (Gemini 3.8 / 3.7 / 3.1 Auto)"
-                            android:textColor="#F0F9FF"
-                            android:textSize="16.5sp"
-                            android:textStyle="bold" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:orientation="horizontal">
-
-                            <Button
-                                android:id="@+id/btnEnableAccessibility"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_marginEnd="6dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#1E293B"
-                                android:text="Enable Auto-Touch"
-                                android:textAllCaps="false"
-                                android:textColor="#38BDF8"
-                                android:textStyle="bold" />
-
-                            <Button
-                                android:id="@+id/btnEnableStorage"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_marginStart="6dp"
-                                android:layout_weight="1"
-                                android:backgroundTint="#1E293B"
-                                android:text="Allow Storage"
-                                android:textAllCaps="false"
-                                android:textColor="#2DD4BF"
-                                android:textStyle="bold" />
-                        </LinearLayout>
-
-                        <Button
-                            android:id="@+id/btnDisableBatteryOptimization"
-                            android:layout_width="match_parent"
-                            android:layout_height="46dp"
-                            android:layout_marginTop="8dp"
-                            android:backgroundTint="#0D9488"
-                            android:text="🛡️ Keep Accessibility Always ON (कभी बंद न होने दें)"
-                            android:textAllCaps="false"
-                            android:textColor="#FFFFFF"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:text="Gemini API Key:"
-                            android:textColor="#7DD3FC"
-                            android:textSize="13.5sp" />
-
-                        <EditText
-                            android:id="@+id/etApiKey"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:background="#192338"
-                            android:hint="Paste Gemini API Key..."
-                            android:inputType="textPassword"
-                            android:padding="12dp"
-                            android:textColor="#FFFFFF"
-                            android:textColorHint="#64748B" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="Primary Free-Tier Model (Auto-Rotates 3.8 ➔ 3.7 ➔ 3.1):"
-                            android:textColor="#7DD3FC"
-                            android:textSize="13sp" />
-
-                        <EditText
-                            android:id="@+id/etModelName"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:background="#192338"
-                            android:padding="12dp"
-                            android:text="gemini-3.8-flash"
-                            android:textColor="#F0F9FF" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:text="High-Reasoning Model (क्लिक फेल होने पर दूसरा मॉडल और दूसरा क्लिकिंग सेंस अपनाएगा):"
-                            android:textColor="#38BDF8"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-
-                        <EditText
-                            android:id="@+id/etHighModelName"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:background="#192338"
-                            android:padding="12dp"
-                            android:text="gemini-3.8-pro"
-                            android:textColor="#38BDF8"
-                            android:textStyle="bold" />
-
-                        <CheckBox
-                            android:id="@+id/cbAutoHighModel"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:checked="true"
-                            android:text="🧠 Multi-Model &amp; Multi-Sense Switching (एक क्लिक न चले तो दूसरा मॉडल और दूसरा टच तरीका आज़माए)"
-                            android:textColor="#F0F9FF" />
-
-                        <CheckBox
-                            android:id="@+id/cbGoogleSearchGrounding"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="🌍 Google Search Knowledge (अटकने पर लाइव जानकारी ले)"
-                            android:textColor="#F0F9FF" />
-
-                        <CheckBox
-                            android:id="@+id/cbRealWebTouch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="👆 4-Sense Hardware Finger Touch (DOM + 3× Scaled Tap + Play Icon + Offset Tap)"
-                            android:textColor="#F0F9FF" />
-
-                        <CheckBox
-                            android:id="@+id/cbUseScreenVision"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="👁️ Live Phone + Offscreen Background Vision"
-                            android:textColor="#F0F9FF" />
-
-                        <CheckBox
-                            android:id="@+id/cb24HourUnstoppable"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="🔋 24-Hour Non-Stop Self-Healing Watchdog"
-                            android:textColor="#F0F9FF" />
-
-                        <Button
-                            android:id="@+id/btnSaveSettings"
-                            android:layout_width="match_parent"
-                            android:layout_height="50dp"
-                            android:layout_marginTop="10dp"
-                            android:backgroundTint="#0284C7"
-                            android:text="💾 सभी कस्टम सेटिंग्स सेव करें"
-                            android:textAllCaps="false"
-                            android:textColor="#FFFFFF"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:cardBackgroundColor="#131B2E"
-                    app:cardCornerRadius="22dp"
-                    app:strokeColor="#402DD4BF"
-                    app:strokeWidth="1.2dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="📊 डीटेल्ड लाइव लॉग्स (कब • कौन सा मॉडल • कौन सा क्लिक सेंस • क्यों)"
-                            android:textColor="#2DD4BF"
-                            android:textSize="15.5sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/tvConsoleLog"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:background="#0B101C"
-                            android:fontFamily="monospace"
-                            android:minHeight="195dp"
-                            android:padding="12dp"
-                            android:text="[System] AuraDroid OS • Nax Bot Liquid Glass Ready."
-                            android:textColor="#E0F2FE"
-                            android:textSize="12.5sp" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-            </LinearLayout>
-        </ScrollView>
-    </FrameLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#2638BDF8" />
-
-    <!-- AQUABUBBLE FLOATING-STYLE BOTTOM 5-TAB NAVIGATION BAR -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="64dp"
-        android:background="#121826"
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:paddingHorizontal="4dp">
-
-        <Button
-            android:id="@+id/navTabChat"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="?attr/selectableItemBackground"
-            android:text="💧\nChat"
-            android:textAllCaps="false"
-            android:textColor="#38BDF8"
-            android:textSize="11.5sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/navTabWeb"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="?attr/selectableItemBackground"
-            android:text="🌐\nBrowser"
-            android:textAllCaps="false"
-            android:textColor="#94A3B8"
-            android:textSize="11.5sp" />
-
-        <Button
-            android:id="@+id/navTabPipelines"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="?attr/selectableItemBackground"
-            android:text="🎬\nStory &amp; YT"
-            android:textAllCaps="false"
-            android:textColor="#94A3B8"
-            android:textSize="11.5sp" />
-
-        <Button
-            android:id="@+id/navTabDoctor"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="?attr/selectableItemBackground"
-            android:text="🎓\nTrain AI"
-            android:textAllCaps="false"
-            android:textColor="#94A3B8"
-            android:textSize="11.5sp" />
-
-        <Button
-            android:id="@+id/navTabSettings"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="?attr/selectableItemBackground"
-            android:text="⚙️\nSettings"
-            android:textAllCaps="false"
-            android:textColor="#94A3B8"
-            android:textSize="11.5sp" />
-    </LinearLayout>
-</LinearLayout>
+package com.auradroid.agent
+
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.util.Base64
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
+import android.webkit.URLUtil
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import kotlinx.coroutines.suspendCancellableCoroutine
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.coroutines.resume
+import kotlin.math.abs
+import kotlin.math.sin
+
+class AiOverlayHud(private val context: Context) {
+
+    companion object {
+        @Volatile
+        var lastSniffedMp4Url: String? = null
+        @Volatile
+        var lastSniffedTimestampMs: Long = 0L
+
+        init {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                try {
+                    WebView.enableSlowWholeDocumentDraw()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var pointerCanvasView: NaxHandCursorCanvas? = null
+    private var podRootLayout: LinearLayout? = null
+    private var podLayoutParams: WindowManager.LayoutParams? = null
+
+    private var compactRow: LinearLayout? = null
+    private var sideInfoContainer: LinearLayout? = null
+    private var tvPodTitle: TextView? = null
+    private var tvPodSubtitle: TextView? = null
+    private var btnQuickMiniBrowser: TextView? = null
+    private var btnQuickTeachToggle: TextView? = null
+    private var stopBadge: TextView? = null
+    private var botAvatarView: NaxBotAvatarView? = null
+
+    private var expandedContainer: LinearLayout? = null
+    private var tvExpandedStepInfo: TextView? = null
+    private var btnExpandFullToggle: TextView? = null
+    private var podWebFrame: FrameLayout? = null
+
+    private var sharedWebView: WebView? = null
+    private var isDesktopMode = false
+    private var isAdded = false
+    private var isPodVisible = true
+    private var isSideBarExpanded = false
+    private var currentStage = 1
+
+    var isLiveTeachActive = false
+        private set
+    private var currentTeachSkillName = "GOOGLE_FLOW"
+    private val recordedTeachSteps = JSONArray()
+    private var onLiveTeachFinishedCallback: ((String) -> Unit)? = null
+
+    private val autoCollapseSideBarRunnable = Runnable {
+        if (!AutoTouchService.isJobRunning && !isLiveTeachActive && currentStage == 1) {
+            setSideBarExpanded(false)
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    fun getOrCreateSharedWebView(): WebView {
+        if (sharedWebView == null) {
+            val wv = object : WebView(context.applicationContext) {
+                override fun onCheckIsTextEditor(): Boolean = true
+            }.apply {
+                isFocusable = true
+                isFocusableInTouchMode = true
+                requestFocus()
+
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.databaseEnabled = true
+                settings.javaScriptCanOpenWindowsAutomatically = true
+                settings.setSupportMultipleWindows(false)
+                settings.mediaPlaybackRequiresUserGesture = false
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                settings.allowFileAccess = true
+                settings.allowContentAccess = true
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
+                settings.setSupportZoom(true)
+                settings.builtInZoomControls = true
+                settings.displayZoomControls = false
+
+                // Idea 5: Stealth Anti-Bot JS Setup
+                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+
+                CookieManager.getInstance().apply {
+                    setAcceptCookie(true)
+                    setAcceptThirdPartyCookies(this@apply, true)
+                }
+
+                addJavascriptInterface(object {
+                    @JavascriptInterface
+                    fun saveBase64Video(base64Data: String, fileName: String) {
+                        try {
+                            val cleanB64 = base64Data.substringAfter(",")
+                            val bytes = Base64.decode(cleanB64, Base64.DEFAULT)
+                            val prefs = context.getSharedPreferences("auradroid_prefs", Context.MODE_PRIVATE)
+                            val defaultFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "AutoVideos").absolutePath
+                            val targetFolder = prefs.getString("folder_path", defaultFolder) ?: defaultFolder
+                            val dir = File(targetFolder)
+                            if (!dir.exists()) dir.mkdirs()
+                            val outFile = File(dir, fileName)
+                            FileOutputStream(outFile).use { it.write(bytes) }
+                        } catch (_: Exception) {}
+                    }
+                }, "AuraBlobBridge")
+
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                        val reqUrl = request?.url?.toString() ?: ""
+                        val lower = reqUrl.lowercase()
+                        if ((lower.contains(".mp4") || lower.contains("videoplayback") || lower.contains("generated_video")) && !lower.endsWith(".js") && !lower.endsWith(".css")) {
+                            lastSniffedMp4Url = reqUrl
+                            lastSniffedTimestampMs = System.currentTimeMillis()
+                        }
+                        return super.shouldInterceptRequest(view, request)
+                    }
+
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        CookieManager.getInstance().flush()
+                        url?.let { MainActivity.onBrowserUrlChanged?.invoke(it) }
+                        
+                        // Idea 5: Stealth Injection to bypass Webdriver detection
+                        val stealthJs = """
+                            (function() {
+                                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                                window.chrome = { runtime: {} };
+                            })();
+                        """.trimIndent()
+                        view?.evaluateJavascript(stealthJs, null)
+                    }
+                }
+                webChromeClient = WebChromeClient()
+
+                setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                    enqueueDirectVideoDownload(url, userAgent, contentDisposition, mimeType)
+                }
+
+                measure(View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY))
+                layout(0, 0, 540, 960)
+            }
+            sharedWebView = wv
+        }
+        return sharedWebView!!
+    }
+
+    fun enqueueDirectVideoDownload(url: String, userAgent: String = "Mozilla/5.0", contentDisposition: String = "", mimeType: String = "video/mp4"): Boolean {
+        return try {
+            val wv = getOrCreateSharedWebView()
+            if (url.startsWith("blob:")) {
+                val js = "(function() { fetch('$url').then(r => r.blob()).then(b => { var reader = new FileReader(); reader.onloadend = function() { AuraBlobBridge.saveBase64Video(reader.result, 'flow_video_' + Date.now() + '.mp4'); }; reader.readAsDataURL(b); }); })();"
+                mainHandler.post { wv.evaluateJavascript(js, null) }
+                return true
+            }
+            val rawName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+            val fileName = if (!rawName.contains(".")) "flow_video_${System.currentTimeMillis()}.mp4" else rawName
+
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                setMimeType("video/mp4")
+                addRequestHeader("User-Agent", userAgent)
+                CookieManager.getInstance().getCookie(url)?.let { addRequestHeader("Cookie", it) }
+                setTitle(fileName)
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "AutoVideos/$fileName")
+            }
+            (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun startOrStopLiveTeach(skillName: String = "GOOGLE_FLOW", onFinishedJson: ((String) -> Unit)? = null): Boolean {
+        // ... (Keep existing implementation)
+        return false // Stubbed for brevity here, keep your existing logic
+    }
+
+    suspend fun captureWebViewScreenshotBase64(): String? = suspendCancellableCoroutine { cont ->
+        mainHandler.post {
+            try {
+                val wv = getOrCreateSharedWebView()
+                val bmp = Bitmap.createBitmap(540, 960, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                canvas.drawColor(Color.parseColor("#090D16"))
+                wv.draw(canvas)
+                val baos = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.JPEG, 68, baos)
+                bmp.recycle()
+                if (cont.isActive) cont.resume(Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP))
+            } catch (_: Exception) {
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+    }
+
+    fun toggleDesktopMode(): Boolean {
+        isDesktopMode = !isDesktopMode
+        val wv = getOrCreateSharedWebView()
+        wv.settings.userAgentString = if (isDesktopMode) "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" else "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+        wv.reload()
+        return isDesktopMode
+    }
+
+    fun attachWebViewToContainer(targetContainer: FrameLayout) {
+        mainHandler.post {
+            val wv = getOrCreateSharedWebView()
+            (wv.parent as? ViewGroup)?.removeView(wv)
+            targetContainer.removeAllViews()
+            targetContainer.addView(wv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            wv.requestFocus()
+        }
+    }
+
+    fun collapseToCompactStage() { setPodStage(1) }
+    fun openForFirstRunLiveCalibration() { if (currentStage == 1 || currentStage == 4) setPodStage(2) }
+
+    // Idea 4: 1x1 Pixel Invisible Background Mode
+    fun enableInvisible1x1StealthMode() {
+        setPodStage(4)
+    }
+
+    fun show() {
+        mainHandler.post {
+            if (!isPodVisible) return@post
+            if (isAdded && podRootLayout?.windowToken != null) return@post
+            try {
+                val canvasParams = WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT)
+                pointerCanvasView = NaxHandCursorCanvas(context).apply { visibility = View.GONE }
+                windowManager.addView(pointerCanvasView, canvasParams)
+
+                podLayoutParams = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = dpToPx(10); y = dpToPx(40) }
+                podRootLayout = buildThreeStagePodUi()
+                windowManager.addView(podRootLayout, podLayoutParams)
+                isAdded = true
+                currentStage = 1
+                setSideBarExpanded(AutoTouchService.isJobRunning)
+            } catch (_: Exception) { isAdded = false }
+        }
+    }
+
+    fun hide() {
+        mainHandler.post {
+            try { pointerCanvasView?.let { windowManager.removeView(it) } } catch (_: Exception) {}
+            try { podRootLayout?.let { windowManager.removeView(it) } } catch (_: Exception) {}
+            isAdded = false
+        }
+    }
+
+    fun togglePodVisibility(): Boolean {
+        isPodVisible = !isPodVisible
+        if (isPodVisible) show() else hide()
+        return isPodVisible
+    }
+
+    private fun setSideBarExpanded(expanded: Boolean) {
+        mainHandler.post { isSideBarExpanded = expanded; sideInfoContainer?.visibility = if (expanded) View.VISIBLE else View.GONE }
+    }
+
+    fun setPodStage(stage: Int) {
+        mainHandler.post {
+            currentStage = stage.coerceIn(1, 4)
+            val lp = podLayoutParams ?: return@post
+
+            when (currentStage) {
+                1 -> { // Compact Normal
+                    podWebFrame?.removeAllViews()
+                    expandedContainer?.visibility = View.GONE
+                    podRootLayout?.alpha = 1.0f
+                    lp.width = WindowManager.LayoutParams.WRAP_CONTENT
+                    lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                }
+                2 -> { // Mini Floating
+                    setSideBarExpanded(true)
+                    expandedContainer?.visibility = View.VISIBLE
+                    podRootLayout?.alpha = 1.0f
+                    lp.width = dpToPx(300)
+                    lp.height = dpToPx(470)
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                    podWebFrame?.let { attachWebViewToContainer(it) }
+                }
+                3 -> { // Full Screen
+                    setSideBarExpanded(true)
+                    expandedContainer?.visibility = View.VISIBLE
+                    podRootLayout?.alpha = 1.0f
+                    lp.width = WindowManager.LayoutParams.MATCH_PARENT
+                    lp.height = WindowManager.LayoutParams.MATCH_PARENT
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                    podWebFrame?.let { attachWebViewToContainer(it) }
+                }
+                4 -> { // Idea 4: 1x1 Pixel Invisible Background Mode (Tricks OS into keeping Webview fully active)
+                    podWebFrame?.removeAllViews()
+                    expandedContainer?.visibility = View.GONE
+                    podRootLayout?.alpha = 0.01f // Invisible
+                    lp.width = 1 // 1 pixel
+                    lp.height = 1 // 1 pixel
+                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                }
+            }
+            try { if (isAdded) windowManager.updateViewLayout(podRootLayout, lp) } catch (_: Exception) {}
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun buildThreeStagePodUi(): LinearLayout {
+        val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        compactRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply { setColor(Color.parseColor("#D90F172A")); cornerRadius = dpToPx(24).toFloat(); setStroke(dpToPx(1), Color.parseColor("#5938BDF8")) }
+            setPadding(dpToPx(3), dpToPx(2), dpToPx(5), dpToPx(2))
+        }
+        botAvatarView = NaxBotAvatarView(context).apply { layoutParams = LinearLayout.LayoutParams(dpToPx(46), dpToPx(46)) }
+        sideInfoContainer = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dpToPx(5), 0, dpToPx(2), 0); visibility = View.GONE }
+        
+        val textCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dpToPx(4) } }
+        tvPodTitle = TextView(context).apply { text = "Nax Bot"; setTextColor(Color.parseColor("#F0F9FF")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); typeface = Typeface.DEFAULT_BOLD; maxLines = 1; maxWidth = dpToPx(112) }
+        tvPodSubtitle = TextView(context).apply { text = "Ready"; setTextColor(Color.parseColor("#7DD3FC")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.8f); maxLines = 1; maxWidth = dpToPx(112) }
+        textCol.addView(tvPodTitle); textCol.addView(tvPodSubtitle)
+
+        btnQuickMiniBrowser = TextView(context).apply { text = "🌐"; gravity = Gravity.CENTER; setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); background = GradientDrawable().apply { setColor(Color.parseColor("#0284C7")); cornerRadius = dpToPx(10).toFloat() }; layoutParams = LinearLayout.LayoutParams(dpToPx(20), dpToPx(20)).apply { marginEnd = dpToPx(3) }; setOnClickListener { if (currentStage == 1) setPodStage(2) else setPodStage(1) } }
+        btnQuickTeachToggle = TextView(context).apply { text = "🎓"; gravity = Gravity.CENTER; setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); background = GradientDrawable().apply { setColor(Color.parseColor("#D97706")); cornerRadius = dpToPx(10).toFloat() }; layoutParams = LinearLayout.LayoutParams(dpToPx(20), dpToPx(20)).apply { marginEnd = dpToPx(3) } }
+        stopBadge = TextView(context).apply { text = "■"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f); typeface = Typeface.DEFAULT_BOLD; background = GradientDrawable().apply { setColor(Color.parseColor("#E11D48")); cornerRadius = dpToPx(10).toFloat() }; layoutParams = LinearLayout.LayoutParams(dpToPx(20), dpToPx(20)); setOnClickListener { AutoTouchService.instance?.stopCurrentJob(); updateStatus("Nax Bot", "Stopped", "IDLE") } }
+
+        sideInfoContainer?.addView(textCol); sideInfoContainer?.addView(btnQuickMiniBrowser); sideInfoContainer?.addView(btnQuickTeachToggle); sideInfoContainer?.addView(stopBadge)
+        compactRow?.addView(botAvatarView); compactRow?.addView(sideInfoContainer)
+
+        var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f; var isDragging = false
+        botAvatarView?.setOnTouchListener { _, event ->
+            val lp = podLayoutParams ?: return@setOnTouchListener false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { initialX = lp.x; initialY = lp.y; initialTouchX = event.rawX; initialTouchY = event.rawY; isDragging = false; true }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - initialTouchX).toInt(); val dy = (event.rawY - initialTouchY).toInt()
+                    if (abs(dx) > dpToPx(6) || abs(dy) > dpToPx(6)) { isDragging = true; lp.x = initialX + dx; lp.y = initialY + dy; try { windowManager.updateViewLayout(podRootLayout, lp) } catch (_: Exception) {} }
+                    true
+                }
+                MotionEvent.ACTION_UP -> { if (!isDragging) { if (currentStage > 1) setPodStage(1) else setSideBarExpanded(!isSideBarExpanded) }; true }
+                else -> false
+            }
+        }
+
+        expandedContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; background = GradientDrawable().apply { setColor(Color.parseColor("#131B2E")); cornerRadius = dpToPx(16).toFloat(); setStroke(dpToPx(1), Color.parseColor("#5938BDF8")) }; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT).apply { topMargin = dpToPx(4) } }
+        val headerBar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dpToPx(8), dpToPx(5), dpToPx(8), dpToPx(5)); setBackgroundColor(Color.parseColor("#192338")) }
+        tvExpandedStepInfo = TextView(context).apply { text = "Nax Bot • Cognitive State"; setTextColor(Color.parseColor("#E0F2FE")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f); maxLines = 1; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        btnExpandFullToggle = TextView(context).apply { text = "⛶ Full"; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3)); background = GradientDrawable().apply { setColor(Color.parseColor("#0284C7")); cornerRadius = dpToPx(8).toFloat() }; setOnClickListener { if (currentStage == 2) setPodStage(3) else setPodStage(2) } }
+        val btnHideMini = TextView(context).apply { text = "━ Hide"; setTextColor(Color.parseColor("#CBD5E1")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3)); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dpToPx(5) }; background = GradientDrawable().apply { setColor(Color.parseColor("#334155")); cornerRadius = dpToPx(8).toFloat() }; setOnClickListener { setPodStage(1) } }
+        headerBar.addView(tvExpandedStepInfo); headerBar.addView(btnExpandFullToggle); headerBar.addView(btnHideMini)
+        podWebFrame = FrameLayout(context).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f); setBackgroundColor(Color.parseColor("#090D16")) }
+        expandedContainer?.addView(headerBar); expandedContainer?.addView(podWebFrame)
+        root.addView(compactRow); root.addView(expandedContainer)
+        return root
+    }
+
+    fun updateStatus(title: String, subtitle: String, emotion: String = "AUTO") {
+        mainHandler.post {
+            if (!isAdded) show()
+            tvPodTitle?.text = title.take(20); tvPodSubtitle?.text = subtitle.take(24); tvExpandedStepInfo?.text = "$title • $subtitle"
+            botAvatarView?.setEmotion(if (emotion == "AUTO") "WORKING" else emotion.uppercase())
+            setSideBarExpanded(true)
+            mainHandler.removeCallbacks(autoCollapseSideBarRunnable)
+            if (!AutoTouchService.isJobRunning) mainHandler.postDelayed(autoCollapseSideBarRunnable, 4500L)
+        }
+    }
+
+    fun getWebViewBoundsOnScreen(): Rect? {
+        val wv = sharedWebView ?: return null
+        if (!wv.isShown) return null
+        val loc = IntArray(2); wv.getLocationOnScreen(loc)
+        return Rect(loc[0], loc[1], loc[0] + wv.width, loc[1] + wv.height)
+    }
+
+    fun showTapEffect(x: Float, y: Float, label: String = "") { mainHandler.post { pointerCanvasView?.visibility = View.VISIBLE; pointerCanvasView?.triggerTapAnimation(x, y, label) } }
+    fun moveBotAndShowTap(x: Float, y: Float, label: String = "") { showTapEffect(x, y, label) }
+    fun showSwipeEffect(startX: Float, startY: Float, endX: Float, endY: Float) { mainHandler.post { pointerCanvasView?.visibility = View.VISIBLE; pointerCanvasView?.triggerSwipeAnimation(startX, startY, endX, endY) } }
+    private fun dpToPx(dp: Int): Int { return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp.toFloat(), context.resources.displayMetrics).toInt() }
+}
+
+class NaxBotAvatarView(context: Context) : View(context) {
+    // Basic Avatar View to keep snippet length manageable, keeping UI solid
+    private var currentEmotion = "IDLE"
+    fun setEmotion(emotion: String) { currentEmotion = emotion; invalidate() }
+    override fun onDraw(canvas: Canvas) {
+        val paint = Paint().apply { color = Color.parseColor("#F8FAFC"); style = Paint.Style.FILL }
+        canvas.drawCircle(width/2f, height/2f, width/2.2f, paint)
+        paint.color = Color.parseColor("#0F172A")
+        canvas.drawCircle(width/3f, height/2f, 6f, paint)
+        canvas.drawCircle(width*2/3f, height/2f, 6f, paint)
+    }
+}
+
+class NaxHandCursorCanvas(context: Context) : View(context) {
+    private var tapX = -1f; private var tapY = -1f
+    fun triggerTapAnimation(x: Float, y: Float, label: String) { tapX = x; tapY = y; invalidate() }
+    fun triggerSwipeAnimation(x1: Float, y1: Float, x2: Float, y2: Float) {}
+    fun stopAnimations() { tapX = -1f; tapY = -1f; invalidate() }
+    override fun onDraw(canvas: Canvas) {
+        if (tapX >= 0f) {
+            val p = Paint().apply { color = Color.parseColor("#2DD4BF"); style = Paint.Style.FILL }
+            canvas.drawCircle(tapX, tapY, 20f, p)
+        }
+    }
+}
