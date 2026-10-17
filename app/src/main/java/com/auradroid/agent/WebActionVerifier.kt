@@ -739,7 +739,7 @@ object WebActionVerifier {
 
         return when {
             listOf("upload", "uploaded", "youtube studio").any { g.contains(it) } ->
-                if (hasAny("upload complete", "uploaded successfully", "video uploaded", "processing checks",
+                if (hasAny("upload complete", "uploaded successfully", "video uploaded",
                         "video published", "saved as draft", "upload complete!")) {
                     "Goal evidence verified: page shows an upload/processing/publish confirmation."
                 } else null
