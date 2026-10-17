@@ -57,6 +57,16 @@ class AutomationReliabilityTest {
     }
 
     @Test
+    fun unsafeExplicitUrlIsNotReplacedBySuggestedDestination() {
+        val resolved = AppAutomationRouter.resolveStartUrl(
+            goal = "Open https://172.16.1.9/admin",
+            suggestedUrl = "https://example.com/",
+            pinnedFlowUrl = ""
+        )
+        assertEquals("https://www.google.com/", resolved)
+    }
+
+    @Test
     fun youtubeUploadDoesNotGetMistakenForNativeLaunch() {
         val route = AppAutomationRouter.chooseRoute("Open YouTube and upload my newest video")
         assertEquals(AutomationMode.BACKGROUND_WEB, route.mode)
