@@ -522,6 +522,13 @@ object WebPipelineManager {
                                     pendingAction = null
                                     pendingExpectedOutcome = ""
                                     pendingReason = ""
+                                    pendingTargetOriginalElements = ""
+                                    pendingTargetIndex = -1
+                                    pendingTargetX = -1f
+                                    pendingTargetY = -1f
+                                    pendingTargetWasRisky = false
+                                    pendingObserveCycles = 0
+                                    pendingRecoveryRejectedCount = 0
                                 }
                             }
                             val doneEvidence = WebActionVerifier.verifyGoalCompletion(goal, snap)
@@ -731,6 +738,16 @@ object WebPipelineManager {
                             pendingAction = decision.action
                             pendingExpectedOutcome = expectedOutcome
                             pendingReason = decision.reason
+                            pendingTargetOriginalElements = snap.interactiveElementsText
+                            pendingTargetIndex = if (decision.action == "CLICK_EL" || decision.action == "TYPE_EL") decision.elementIndex else -1
+                            pendingTargetX = decision.tapX
+                            pendingTargetY = decision.tapY
+                            val firstTargetLine = snap.interactiveElementsText.lineSequence()
+                                .firstOrNull { it.trimStart().startsWith("[${decision.elementIndex}] ") }.orEmpty()
+                            pendingTargetWasRisky = WebActionVerifier.isNonRepeatableAction("$firstTargetLine ${decision.reason}") ||
+                                decision.action == "SUBMIT_FLOW_PROMPT"
+                            pendingObserveCycles = 0
+                            pendingRecoveryRejectedCount = 0
                             lastVerifyReport = "PENDING STEP NOT CONFIRMED: ${decision.action} — ${verifyRes.verificationReport} Recover this step only; no next task step may begin."
                         }
                     } else {
@@ -752,12 +769,29 @@ object WebPipelineManager {
                             pendingAction = null
                             pendingExpectedOutcome = ""
                             pendingReason = ""
+                            pendingTargetOriginalElements = ""
+                            pendingTargetIndex = -1
+                            pendingTargetX = -1f
+                            pendingTargetY = -1f
+                            pendingTargetWasRisky = false
+                            pendingObserveCycles = 0
+                            pendingRecoveryRejectedCount = 0
                             lastVerifyReport = "PENDING STEP CONFIRMED by fresh DOM evidence. Current recovery action status: ${verifyRes.verificationReport}"
                             if (!verifyRes.passed && decision.action != "WAIT") {
                                 pendingBeforeSnapshot = snap
                                 pendingAction = decision.action
                                 pendingExpectedOutcome = expectedOutcome
                                 pendingReason = decision.reason
+                                pendingTargetOriginalElements = snap.interactiveElementsText
+                                pendingTargetIndex = if (decision.action == "CLICK_EL" || decision.action == "TYPE_EL") decision.elementIndex else -1
+                                pendingTargetX = decision.tapX
+                                pendingTargetY = decision.tapY
+                                val retryTargetLine = snap.interactiveElementsText.lineSequence()
+                                    .firstOrNull { it.trimStart().startsWith("[${decision.elementIndex}] ") }.orEmpty()
+                                pendingTargetWasRisky = WebActionVerifier.isNonRepeatableAction("$retryTargetLine ${decision.reason}") ||
+                                    decision.action == "SUBMIT_FLOW_PROMPT"
+                                pendingObserveCycles = 0
+                                pendingRecoveryRejectedCount = 0
                                 lastVerifyReport = "Previous step confirmed; current recovery action is still pending: ${verifyRes.verificationReport}"
                             }
                         } else {
