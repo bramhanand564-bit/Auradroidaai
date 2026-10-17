@@ -652,6 +652,52 @@ object WebActionVerifier {
     }
 
     /**
+     * Retrying these targets can duplicate irreversible or expensive side effects.
+     * For such actions, observe and reassess instead of blindly tapping again.
+     */
+    fun isNonRepeatableAction(targetAndReason: String): Boolean {
+        val s = targetAndReason.lowercase()
+        return Regex("""\\b(submit|upload|publish|post|send|delete|remove|pay|purchase|buy|order|confirm|create|generate|save|apply|follow|subscribe|book|comment|share|start)\\b""")
+            .containsMatchIn(s)
+    }
+
+    /**
+     * Re-resolve a target after a failed attempt instead of assuming that DOM indexes remain stable.
+     * A duplicate label is accepted only when the same index still names that label.
+     */
+    fun resolveElementIndexByLabel(
+        originalElements: String,
+        currentElements: String,
+        originalIndex: Int
+    ): Int {
+        val originalLine = originalElements.lineSequence()
+            .firstOrNull { it.trimStart().startsWith("[$originalIndex] ") } ?: return -1
+        fun tag(line: String): String = line.substringAfter("] ").substringBefore(' ').trim()
+        fun label(line: String): String {
+            val first = line.indexOf('"')
+            if (first < 0) return ""
+            val last = line.indexOf('"', first + 1)
+            if (last <= first) return ""
+            return line.substring(first + 1, last).trim()
+        }
+        val expectedTag = tag(originalLine)
+        val expectedLabel = label(originalLine)
+        if (expectedLabel.isBlank()) return -1
+
+        val matches = currentElements.lineSequence().filter {
+            tag(it) == expectedTag && label(it).equals(expectedLabel, ignoreCase = true)
+        }.toList()
+        if (matches.size == 1) {
+            return Regex("""^\\[(\\d+)\\]""").find(matches.first().trim())
+                ?.groupValues?.getOrNull(1)?.toIntOrNull() ?: -1
+        }
+        val sameIndex = currentElements.lineSequence()
+            .firstOrNull { it.trimStart().startsWith("[$originalIndex] ") }
+        return if (sameIndex != null && tag(sameIndex) == expectedTag &&
+            label(sameIndex).equals(expectedLabel, ignoreCase = true)) originalIndex else -1
+    }
+
+    /**
      * Require task-specific visible evidence before accepting the model's DONE decision.
      * Returns a report only when success is supported; otherwise the caller must reassess.
      */
