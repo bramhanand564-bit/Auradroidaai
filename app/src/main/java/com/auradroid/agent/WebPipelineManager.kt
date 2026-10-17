@@ -947,6 +947,7 @@ object WebPipelineManager {
                     if (status != TaskStatus.COMPLETED) {
                         VideoQueueManager.appendLog(context, "📋 Web task state saved: $status • $message")
                     }
+                    VideoQueueManager.appendLog(context, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(context)}")
                 }
                 TaskRunController.finish(taskRunId)
                 isWebTaskRunning = false
