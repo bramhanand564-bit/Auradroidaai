@@ -454,7 +454,7 @@ object WebActionVerifier {
                 }
 
                 var bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
-                var pctMatch = bodyText.match(/\b(\d{1,3})%\b/);
+                var pctMatch = bodyText.match(/\b(\d{1,3})\s*%/);
                 var isRendering = false;
                 var pctLabel = '';
                 if (pctMatch) {
