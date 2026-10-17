@@ -314,7 +314,7 @@ object WebActionVerifier {
     }
 
     /**
-     * Captures a live DOM snapshot, tags interactive elements with indices `[0]..[47]`,
+     * Captures live DOM/semantic state and up to 80 visible interactive target candidates,
      * and checks Google Flow rendering progress (0%..100%) and completed video cards.
      */
     suspend fun captureSnapshot(webView: WebView): DomSnapshot = suspendCancellableCoroutine { cont ->
@@ -338,7 +338,14 @@ object WebActionVerifier {
                     if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) < 0.08) continue;
 
                     var tag = el.tagName.toLowerCase();
-                    var rawTxt = el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+                    var rawTxt = '';
+                    if (tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable) {
+                        rawTxt = el.getAttribute('aria-label') || el.placeholder ||
+                            el.getAttribute('name') || el.getAttribute('title') || '';
+                        if (!rawTxt) rawTxt = tag.toUpperCase() + (el.type ? ':' + el.type : '');
+                    } else {
+                        rawTxt = el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+                    }
                     var txt = rawTxt.replace(/\s+/g, ' ').trim();
                     if (txt.length > 75) txt = txt.substring(0, 75) + '...';
 
@@ -355,8 +362,10 @@ object WebActionVerifier {
                     var disabled = !!el.disabled || el.getAttribute('aria-disabled') === 'true';
                     var selected = el.getAttribute('aria-selected') || el.getAttribute('aria-pressed') ||
                         el.getAttribute('aria-checked') || (el.checked === true ? 'true' : '');
+                    var rawFieldValue = (tag === 'input' || tag === 'textarea' || tag === 'select')
+                        ? String(el.value || '') : '';
                     var valueHint = (tag === 'input' || tag === 'textarea' || tag === 'select')
-                        ? (' value=' + String(el.value || '').replace(/\s+/g, ' ').slice(0, 90))
+                        ? (' valuePresent=' + (rawFieldValue.length > 0 ? 'yes' : 'no') + ' valueLength=' + rawFieldValue.length)
                         : '';
                     lines.push('[' + idx + '] ' + tag.toUpperCase() + ' role=' + role +
                         ' "' + label.replace(/\s+/g, ' ').slice(0, 100) + '"' +
@@ -364,7 +373,7 @@ object WebActionVerifier {
                         (selected ? ' selected=' + selected : '') + valueHint +
                         ' @(' + cx + ',' + cy + ') size=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' top=' + Math.round(r.top));
                     idx++;
-                    if (idx >= 48) break;
+                    if (idx >= 80) break;
                 }
 
                 var bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
@@ -657,7 +666,7 @@ object WebActionVerifier {
      */
     fun isNonRepeatableAction(targetAndReason: String): Boolean {
         val s = targetAndReason.lowercase()
-        return Regex("""\\b(submit|upload|publish|post|send|delete|remove|pay|purchase|buy|order|confirm|create|generate|save|apply|follow|subscribe|book|comment|share|start)\\b""")
+        return Regex("""\b(submit|upload|publish|post|send|delete|remove|pay|purchase|buy|order|confirm|create|generate|save|apply|follow|subscribe|book|comment|share|start)\b""")
             .containsMatchIn(s)
     }
 
@@ -688,7 +697,7 @@ object WebActionVerifier {
             tag(it) == expectedTag && label(it).equals(expectedLabel, ignoreCase = true)
         }.toList()
         if (matches.size == 1) {
-            return Regex("""^\\[(\\d+)\\]""").find(matches.first().trim())
+            return Regex("""^\[(\d+)\]""").find(matches.first().trim())
                 ?.groupValues?.getOrNull(1)?.toIntOrNull() ?: -1
         }
         val sameIndex = currentElements.lineSequence()
