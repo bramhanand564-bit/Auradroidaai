@@ -76,6 +76,9 @@ object PhoneAgentManager {
             for (step in 1..maxSteps) {
                 val nodes = captureScreenNodes(service)
 
+                // Keep the compact status pod off search boxes and keyboard suggestions while a real text field is focused.
+                service.overlayHud?.hidePodForFocusedTextInput(nodes.any { it.isEditable && it.isFocused })
+
                 // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
                 // If reply text is sitting inside the bottom message input box AND the green Send button is visible, tap Send immediately!
                 val unsentInputNode = nodes.firstOrNull {
@@ -312,6 +315,7 @@ object PhoneAgentManager {
             VideoQueueManager.appendLog(service, "❌ Agent Error: ${e.message}")
         } finally {
             service.overlayHud?.setCursorOverlayVisible(false)
+            service.overlayHud?.hidePodForFocusedTextInput(false)
             AutoTouchService.isJobRunning = false
         }
     }
