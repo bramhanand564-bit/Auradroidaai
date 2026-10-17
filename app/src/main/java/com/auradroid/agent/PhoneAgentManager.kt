@@ -292,16 +292,22 @@ object PhoneAgentManager {
                     }
                 }
 
+                // The vision screenshot is deliberately resized to 540x1200 before it is sent
+                // to Gemini. Models often return coordinates in that image-space even when
+                // asked for physical pixels, so convert them explicitly before touching.
                 var rawX = decision.x
                 var rawY = decision.y
                 val statusBarLimitY = realH * 0.052f
-
-                if (rawY in 10f..statusBarLimitY && rawX <= 1000f) {
-                    rawX = (rawX / 1000f) * realW
-                    rawY = ((rawY / 1000f) * realH).coerceAtLeast(statusBarLimitY + 35f)
-                } else if (rawY < statusBarLimitY) {
-                    rawY = (statusBarLimitY + 55f)
+                val visionWidth = 540f
+                val visionHeight = 1200f
+                if (rawX in 0f..visionWidth && rawY in 0f..visionHeight &&
+                    (realW > visionWidth * 1.15f || realH > visionHeight * 1.15f)
+                ) {
+                    rawX = rawX / visionWidth * realW
+                    rawY = rawY / visionHeight * realH
                 }
+                rawX = rawX.coerceIn(5f, realW - 5f)
+                rawY = rawY.coerceIn(statusBarLimitY + 5f, realH - 5f)
 
                 val nearestNode = nodes.filter {
                     it.centerY >= statusBarLimitY && (it.isClickable || it.text.isNotEmpty() || it.contentDesc.isNotEmpty())
@@ -482,11 +488,19 @@ object PhoneAgentManager {
     }
 
     suspend fun animateAndPhysicalTapNode(service: AutoTouchService, snapshot: UiNodeSnapshot, label: String) {
+        // Show the hand exactly over the node before activating it.
         service.overlayHud?.moveBotAndShowTap(snapshot.centerX, snapshot.centerY, label)
-        delay(420)
+        delay(520)
+
+        // Accessibility semantic click is more accurate than a coordinate gesture.
+        // Only fall back to a physical gesture if the node and its clickable parents reject it;
+        // this also avoids the previous double-tap (gesture followed by ACTION_CLICK).
+        if (service.clickNodeAndParents(snapshot.node)) {
+            delay(180)
+            return
+        }
         service.performTapGesture(snapshot.centerX, snapshot.centerY)
         delay(180)
-        service.clickNodeAndParents(snapshot.node)
     }
 
     suspend fun animateAndTapXY(service: AutoTouchService, x: Float, y: Float, label: String) {
