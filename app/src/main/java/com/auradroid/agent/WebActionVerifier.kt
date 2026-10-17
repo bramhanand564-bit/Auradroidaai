@@ -821,14 +821,17 @@ object WebActionVerifier {
         fun hasAny(vararg phrases: String): Boolean = phrases.any { page.contains(it) }
 
         return when {
-            listOf("upload", "uploaded", "youtube studio").any { g.contains(it) } ->
-                if (hasAny("upload complete", "uploaded successfully", "video uploaded",
-                        "video published", "saved as draft", "upload complete!")) {
-                    "Goal evidence verified: page shows an upload/processing/publish confirmation."
-                } else null
-            listOf("publish", "post this", "post the", "publish the").any { g.contains(it) } ->
-                if (hasAny("published", "post published", "your post is live", "successfully posted")) {
+            // Publishing is a stronger goal than merely uploading; it must be verified first.
+            listOf("publish", "post this", "post the", "publish the", "make public").any { g.contains(it) } ->
+                if (hasAny("published", "post published", "your post is live", "successfully posted",
+                        "video is public", "video published")) {
                     "Goal evidence verified: published/post confirmation is visible."
+                } else null
+            listOf("upload", "uploaded").any { g.contains(it) } ->
+                if (hasAny("upload complete", "uploaded successfully", "video uploaded",
+                        "video published", "upload complete!") ||
+                    ("saved as draft" in page && !g.contains("publish"))) {
+                    "Goal evidence verified: explicit upload/draft confirmation is visible."
                 } else null
             listOf("send message", "send this message", "send an email", "send email").any { g.contains(it) } ->
                 if (hasAny("message sent", "sent successfully", "email sent", "delivered")) {
