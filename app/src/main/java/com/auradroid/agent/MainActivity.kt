@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         var onLogUpdated: ((String) -> Unit)? = null
+        var onTaskStatusUpdated: (() -> Unit)? = null
         var onBrowserUrlChanged: ((String) -> Unit)? = null
     }
 
@@ -75,6 +76,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSendChat: Button
     private lateinit var tvAutoTimerSummary: TextView
     private lateinit var tvPlanSteps: TextView
+    private lateinit var tvTaskRunStatus: TextView
+    private lateinit var tvTaskRunMetrics: TextView
+    private lateinit var btnRefreshTaskStatus: Button
     private lateinit var rgExecutionMode: RadioGroup
     private lateinit var rbModeBackgroundWeb: RadioButton
     private lateinit var rbModePhoneScreen: RadioButton
@@ -220,9 +224,11 @@ class MainActivity : AppCompatActivity() {
         onLogUpdated = { updatedLogs ->
             runOnUiThread {
                 tvConsoleLog.text = updatedLogs
-                btnPauseAgent.text = if (TaskRunController.isPaused()) "▶ RESUME" else "Ⅱ PAUSE"
-                btnPauseAgent.isEnabled = TaskRunController.hasActiveTask()
+                refreshTaskDashboard()
             }
+        }
+        onTaskStatusUpdated = {
+            runOnUiThread { refreshTaskDashboard() }
         }
 
         onBrowserUrlChanged = { newUrl ->
@@ -243,6 +249,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
         VideoQueueManager.appendLog(this, "📊 Recorded task mix: ${TaskAnalytics.taskMixSummary(this)}")
+        refreshTaskDashboard()
         refreshQueueCount()
         refreshServiceStatusBadge()
     }
@@ -251,11 +258,13 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshServiceStatusBadge()
         refreshQueueCount()
+        refreshTaskDashboard()
         etNextEpisodeNumber.setText(VideoQueueManager.getNextEpisodeNumber(this).toString())
     }
 
     override fun onDestroy() {
         if (onLogUpdated != null) onLogUpdated = null
+        if (onTaskStatusUpdated != null) onTaskStatusUpdated = null
         if (onBrowserUrlChanged != null) onBrowserUrlChanged = null
         super.onDestroy()
     }
@@ -284,6 +293,10 @@ class MainActivity : AppCompatActivity() {
         btnSendChat = findViewById(R.id.btnSendChat)
         tvAutoTimerSummary = findViewById(R.id.tvAutoTimerSummary)
         tvPlanSteps = findViewById(R.id.tvPlanSteps)
+        tvTaskRunStatus = findViewById(R.id.tvTaskRunStatus)
+        tvTaskRunMetrics = findViewById(R.id.tvTaskRunMetrics)
+        btnRefreshTaskStatus = findViewById(R.id.btnRefreshTaskStatus)
+        btnRefreshTaskStatus.setOnClickListener { refreshTaskDashboard() }
         rgExecutionMode = findViewById(R.id.rgExecutionMode)
         rbModeBackgroundWeb = findViewById(R.id.rbModeBackgroundWeb)
         rbModePhoneScreen = findViewById(R.id.rbModePhoneScreen)
@@ -1301,6 +1314,21 @@ class MainActivity : AppCompatActivity() {
         VideoQueueManager.setVideoFrameVisionSeoEnabled(this, cbVideoFrameVisionSeo.isChecked)
         VideoQueueManager.setUploadNewestFirst(this, rbUploadNewestFirst.isChecked)
         VideoQueueManager.saveMemoryVault(this, etMemoryVault.text.toString().trim())
+    }
+
+    private fun refreshTaskDashboard() {
+        val latest = TaskExecutionStore.latest(this)
+        tvTaskRunStatus.text = if (latest == null) {
+            "No task has been recorded yet."
+        } else {
+            val goal = latest.goal.replace(Regex("""\\s+"""), " ").take(110)
+            "${latest.status} • ${latest.mode} • ${latest.adapterId}\n" +
+                "Step: ${latest.step} • $goal\n" +
+                latest.message.take(180)
+        }
+        tvTaskRunMetrics.text = TaskAnalytics.taskMixSummary(this)
+        btnPauseAgent.text = if (TaskRunController.isPaused()) "▶ RESUME" else "Ⅱ PAUSE"
+        btnPauseAgent.isEnabled = TaskRunController.hasActiveTask()
     }
 
     private fun refreshQueueCount() {
