@@ -29,7 +29,7 @@ private class AuraBrainDatabase(context: Context) :
             db.delete(
                 "episodic_memory",
                 "rule_learned = ?",
-                arrayOf("Never auto-send because text is present. Click Send only when the user's complete task explicitly requests sending a reply and the current Send control has been verified.")
+                arrayOf("If reply text is already typed inside the bottom Message input box and the green Send button (desc='Send') is visible, immediately click the Send node.")
             )
         }
         createAllTables(db)
@@ -80,7 +80,7 @@ private class AuraBrainDatabase(context: Context) :
             "GOOGLE_FLOW" to "Every trained JSON step is a guide only: wait 1 second after every action to confirm the screen actually updated before moving to the next step.",
             "GOOGLE_FLOW" to "When video rendering reaches 100% and the thumbnail card appears, try Sense-1 (Background MP4 Stream Sniffer), Sense-2 (DOM/React Fiber URL), Sense-3 (3x Finger Tap on Play icon), and Sense-4 (Card Center Tap -> Download).",
             "YOUTUBE" to "Never use the raw file name or 'Google Flow' in YouTube titles; always inspect actual video frames with Vision AI to craft a curiosity-driven viral title.",
-            "WHATSAPP" to "If reply text is already typed inside the bottom Message input box and the green Send button (desc='Send') is visible, immediately click the Send node."
+            "WHATSAPP" to "Never auto-send because text is present. Click Send only when the user's complete task explicitly requests sending a reply and the current Send control has been verified."
         )
         for ((dom, rule) in coreLessons) {
             val cv = ContentValues().apply {
