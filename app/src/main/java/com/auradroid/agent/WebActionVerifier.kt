@@ -613,9 +613,13 @@ object WebActionVerifier {
             "LOAD_URL" -> urlMatchesRequested || (urlChanged && after.readyState != "loading")
             "TYPE_EL" -> {
                 val requestedText = expectedOutcome.trim()
-                formStateChanged && (requestedText.isBlank() ||
+                if (requestedText.isBlank()) {
+                    formStateChanged
+                } else {
                     after.activeElementValue.contains(requestedText, ignoreCase = false) ||
-                    after.pageText.contains(requestedText, ignoreCase = false))
+                        after.pageText.contains(requestedText, ignoreCase = false) ||
+                        (formStateChanged && after.activeElementValue == requestedText)
+                }
             }
             "SCROLL" -> scrollChanged || (elementStateChanged && pageTextChanged)
             "DOWNLOAD_VIDEO" -> streamAppeared || successAppeared ||
