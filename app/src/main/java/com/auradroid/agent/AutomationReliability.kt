@@ -263,7 +263,11 @@ object AppAutomationRouter {
         }
 
         val explicit = urlRegex.find(goal)?.value
-        if (explicit != null) normalizeHttpUrl(explicit)?.let { return it }
+        if (explicit != null) {
+            // Never silently substitute an unrelated suggested URL when the user's explicit
+            // destination is unsafe or malformed.
+            return normalizeHttpUrl(explicit) ?: "https://www.google.com/"
+        }
 
         val profile = profileForGoal(goal)
         if (profile != null && (isWebRequest(value) || isWebsiteWorkflow(value) ||
