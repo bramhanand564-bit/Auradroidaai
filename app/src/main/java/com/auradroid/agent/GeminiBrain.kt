@@ -600,7 +600,10 @@ object GeminiBrain {
             val modelVerified = obj.optBoolean("verified", false)
             val evidence = obj.optString("evidence", "").trim()
             val reason = obj.optString("reason", "Completion evidence was not provided.").trim()
-            val screen = screenSummary.lowercase()
+            val screen = screenSummary.lowercase().replace(Regex("""\\s+"""), " ").trim()
+            val normalizedEvidence = evidence.lowercase().replace(Regex("""\\s+"""), " ").trim()
+            val evidenceAppearsOnScreen = normalizedEvidence.length >= 8 &&
+                screen.contains(normalizedEvidence)
             val goalText = goal.lowercase()
             val sensitiveEvidence = when {
                 listOf("publish", "publish now", "post this", "post it", "make public").any { goalText.contains(it) } ->
@@ -615,13 +618,13 @@ object GeminiBrain {
                     listOf("upload complete", "uploaded successfully", "video uploaded", "video published", "saved as draft").any { screen.contains(it) }
                 else -> true
             }
-            if (modelVerified && evidence.length >= 8 && sensitiveEvidence) {
+            if (modelVerified && evidenceAppearsOnScreen && sensitiveEvidence) {
                 TaskCompletionVerification(true, evidence.take(350), reason.take(500))
             } else {
                 val explanation = when {
                     !sensitiveEvidence -> "Sensitive action has no concrete visible outcome confirmation."
+                    !evidenceAppearsOnScreen -> "The verifier's quoted evidence is not present in the current accessibility screen text."
                     !modelVerified -> reason.ifBlank { "The independent verifier did not find enough evidence." }
-                    evidence.length < 8 -> "The verifier did not cite specific screen evidence."
                     else -> reason
                 }
                 TaskCompletionVerification(false, evidence.take(350), explanation.take(500))
