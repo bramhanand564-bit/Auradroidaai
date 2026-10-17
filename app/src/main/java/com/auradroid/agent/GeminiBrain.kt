@@ -58,6 +58,12 @@ data class AgentDecision(
     val learnedRule: String = ""
 )
 
+data class TaskCompletionVerification(
+    val verified: Boolean,
+    val evidence: String,
+    val reason: String
+)
+
 object GeminiBrain {
 
     @Volatile
@@ -545,6 +551,85 @@ object GeminiBrain {
                 title = "${episodeTitle.ifBlank { "Cybernetic Secret" }} #shorts #viral".take(95),
                 description = "$storySummary\n\n#shorts #viral"
             )
+        }
+    }
+
+    /**
+     * Second-pass completion check for native-phone tasks. A model's DONE decision is not
+     * accepted until a fresh screen is independently checked for evidence. Irreversible
+     * actions also require concrete visible outcome text, not the model's explanation alone.
+     */
+    suspend fun verifyPhoneTaskCompletion(
+        apiKey: String,
+        model: String,
+        highModelName: String,
+        goal: String,
+        screenSummary: String,
+        recentHistory: List<String>,
+        screenshotBase64: String?
+    ): TaskCompletionVerification {
+        val prompt = """
+            You are an independent task-completion verifier for Nax Bot. The phone agent proposed DONE.
+            Decide ONLY whether the current real Android screen proves the user's complete goal is finished.
+            USER GOAL: $goal
+            LIVE ACCESSIBILITY SCREEN SUMMARY:
+            ${screenSummary.take(9000)}
+            RECENT ACTION HISTORY:
+            ${recentHistory.takeLast(8).joinToString("\n").take(2500)}
+            RULES:
+            - Do not trust the previous agent's DONE decision or its explanation.
+            - The attached screenshot, if present, and live screen summary are the only evidence.
+            - A click being dispatched, a field containing text, or a changed screen alone does not prove the goal is done.
+            - For upload/publish/post/send/email/delete/payment/purchase/order/book/follow/subscribe actions, require visible evidence of the actual outcome, not merely an enabled button or populated form.
+            - If the outcome is ambiguous, still loading, hidden, or not visible, verified must be false.
+            - Do not infer success from the goal itself. Quote a short, concrete piece of current-screen evidence.
+            Return JSON only: {"verified":false,"evidence":"","reason":"why evidence is insufficient"}
+        """.trimIndent()
+
+        return try {
+            val raw = callGeminiApi(
+                apiKey = apiKey,
+                userModel = model,
+                prompt = prompt,
+                currentImageJpeg = screenshotBase64,
+                escalateToHighModel = true,
+                highModelName = highModelName,
+                enableGoogleSearch = false
+            )
+            val obj = extractCleanJsonObject(raw)
+            val modelVerified = obj.optBoolean("verified", false)
+            val evidence = obj.optString("evidence", "").trim()
+            val reason = obj.optString("reason", "Completion evidence was not provided.").trim()
+            val screen = screenSummary.lowercase()
+            val goalText = goal.lowercase()
+            val sensitiveEvidence = when {
+                listOf("publish", "publish now", "post this", "post it", "make public").any { goalText.contains(it) } ->
+                    listOf("published", "post published", "your post is live", "successfully posted", "video is public", "video published", "upload complete", "uploaded successfully").any { screen.contains(it) }
+                listOf("send message", "send this message", "send an email", "send email", "send the message").any { goalText.contains(it) } ->
+                    listOf("message sent", "sent successfully", "email sent", "delivered", "message delivered").any { screen.contains(it) }
+                listOf("delete", "remove this", "remove the").any { goalText.contains(it) } ->
+                    listOf("deleted successfully", "item deleted", "removed successfully", "moved to trash", "deleted").any { screen.contains(it) }
+                listOf("pay", "payment", "purchase", "buy this", "place an order", "book this", "subscribe", "follow this account").any { goalText.contains(it) } ->
+                    listOf("payment successful", "order confirmed", "booking confirmed", "purchased successfully", "subscription confirmed", "followed successfully").any { screen.contains(it) }
+                listOf("upload", "upload video", "upload file").any { goalText.contains(it) } ->
+                    listOf("upload complete", "uploaded successfully", "video uploaded", "video published", "saved as draft").any { screen.contains(it) }
+                else -> true
+            }
+            if (modelVerified && evidence.length >= 8 && sensitiveEvidence) {
+                TaskCompletionVerification(true, evidence.take(350), reason.take(500))
+            } else {
+                val explanation = when {
+                    !sensitiveEvidence -> "Sensitive action has no concrete visible outcome confirmation."
+                    !modelVerified -> reason.ifBlank { "The independent verifier did not find enough evidence." }
+                    evidence.length < 8 -> "The verifier did not cite specific screen evidence."
+                    else -> reason
+                }
+                TaskCompletionVerification(false, evidence.take(350), explanation.take(500))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            TaskCompletionVerification(false, "", "Completion verification failed: ${e.message ?: "unknown error"}")
         }
     }
 
