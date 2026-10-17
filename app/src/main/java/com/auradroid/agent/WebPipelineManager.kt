@@ -301,6 +301,7 @@ object WebPipelineManager {
                     VideoQueueManager.appendLog(context, "📋 Flow task state saved: $status • $message")
                 }
                 TaskRunController.finish(flowTaskId)
+                VideoQueueManager.appendLog(context, "⏹ Google Flow task controller released.")
                 isWebTaskRunning = false
             }
         }
