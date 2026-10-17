@@ -492,16 +492,11 @@ object PhoneAgentManager {
                 }
 
                 if (decision.action.equals("CLICK_XY", true) && currentScreenshotB64 == null) {
-                    consecutiveFreshTargetRejects++
-                    val blocked = "Coordinate action blocked because screenshot capture is unavailable (attempt $consecutiveFreshTargetRejects/3)."
+                    val blocked = "Coordinate action blocked because screenshot capture is unavailable; no tap was performed."
                     VideoQueueManager.appendLog(service, "🛡️ $blocked")
                     history.add("Step $step: $blocked")
-                    if (consecutiveFreshTargetRejects >= 3) {
-                        service.overlayHud?.updateStatus("Task paused safely", "Visual coordinates cannot be verified because screenshot capture failed.", "ERROR")
-                        break
-                    }
-                    delay(350)
-                    continue
+                    service.overlayHud?.updateStatus("Task paused safely", "Visual coordinates cannot be verified because screenshot capture failed.", "ERROR")
+                    break
                 }
 
                 service.overlayHud?.setCursorOverlayVisible(true)
@@ -655,7 +650,7 @@ object PhoneAgentManager {
                 }
                 // Reject model defaults like (-1, -1) instead of turning them into a corner tap.
                 if (decision.x < 0f || decision.x > 540f || decision.y < 0f || decision.y > 1200f) {
-                    return "Blocked invalid CLICK_XY coordinates (${decision.x}, ${decision.y}); no tap was performed"
+                    return "ACTION_NOT_VERIFIED: invalid CLICK_XY coordinates (${decision.x}, ${decision.y}); no tap was performed"
                 }
 
                 // The vision screenshot is deliberately resized to 540x1200 before it is sent
@@ -1015,8 +1010,11 @@ object PhoneAgentManager {
             )
         }
         if (searchButton != null && (looksLikeSearchField || searchButton.viewId.contains("search", true))) {
-            animateAndPhysicalTapNode(service, searchButton, "Tap: Search")
-            return "Tapped visible Search/Go/Enter keyboard action"
+            return if (animateAndPhysicalTapNode(service, searchButton, "Tap: Search")) {
+                "Tapped visible Search/Go/Enter keyboard action"
+            } else {
+                null
+            }
         }
 
         return null
