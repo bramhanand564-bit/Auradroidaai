@@ -789,7 +789,7 @@ object GeminiBrain {
         highModelName: String = "gemini-3.8-pro",
         useGoogleSearch: Boolean = false
     ): WebAgentDecision {
-        val adapterGuidance = AppAutomationRouter.adapterGuidance(goal)
+        val adapterGuidance = AppAutomationRouter.adapterGuidance(goal, currentUrl = pageUrl)
         val prompt = """
             You are Nax Bot's 1-Second AI Step-Confirmed Web Agent.
             OVERALL GOAL: $goal
