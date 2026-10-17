@@ -341,7 +341,6 @@ object PhoneAgentManager {
             VideoQueueManager.appendLog(service, "❌ Agent Error: ${e.message}")
         } finally {
             service.overlayHud?.setCursorOverlayVisible(false)
-            service.overlayHud?.setClickableTargetDots(emptyList())
             service.overlayHud?.hidePodForFocusedTextInput(false)
             AutoTouchService.isJobRunning = false
         }
