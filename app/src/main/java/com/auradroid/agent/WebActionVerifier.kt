@@ -653,7 +653,9 @@ object WebActionVerifier {
         val targetUrl = expectedOutcome.trim()
         val urlMatchesRequested = action == "LOAD_URL" && targetUrl.isNotBlank() &&
             after.url.startsWith(targetUrl, ignoreCase = true)
-        val elementStateChanged = before.interactiveElementsText != after.interactiveElementsText
+        // Geometry (x/y/size/top) changes during scroll/layout are not proof that a click worked.
+        val elementStateChanged = semanticElementState(before.interactiveElementsText) !=
+            semanticElementState(after.interactiveElementsText)
         val formStateChanged = before.formStateFingerprint != after.formStateFingerprint
         val activeControlChanged = before.activeElementSummary != after.activeElementSummary
         val activeValueChanged = before.activeElementValue != after.activeElementValue
@@ -732,6 +734,14 @@ object WebActionVerifier {
             consecutiveFailures = consecutiveStuckCount,
             recommendedSense = nextSense
         )
+    }
+
+    private fun semanticElementState(raw: String): String {
+        return raw.lineSequence()
+            .map { line ->
+                line.replace(Regex(""" @\\(-?\\d+,-?\\d+\\) size=\\d+x\\d+ top=-?\\d+"""), "")
+            }
+            .joinToString("\n")
     }
 
     private fun commonPrefixLength(a: String, b: String): Int {
