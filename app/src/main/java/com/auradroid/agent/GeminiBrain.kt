@@ -764,13 +764,30 @@ object GeminiBrain {
         apiKey: String, model: String, highModelName: String, goal: String,
         screenSummary: String, recentHistory: List<String>, screenshotBase64: String?
     ): PhoneTaskCompletionVerification {
-        val prompt = "Verify whether this Android task is demonstrably complete. Do not trust a proposed DONE state without evidence. If uncertain, return verified=false. Goal: $goal. Current screen: $screenSummary. Recent actions: ${recentHistory.takeLast(8).joinToString(\"; \")}. Return JSON only: {\"verified\":true/false,\"reason\":\"brief evidence\"}."
+        val prompt = """
+            Independently verify whether the Android task is demonstrably complete.
+            Do not trust a proposed DONE state or attempted action without evidence.
+            If evidence is missing or ambiguous, verified must be false.
+            Goal: $goal
+            Current screen summary: $screenSummary
+            Recent actions: ${recentHistory.takeLast(8).joinToString("; ")}
+            Return JSON only: {"verified": true/false, "reason": "brief evidence-based explanation"}
+        """.trimIndent()
         return try {
-            val raw = callGeminiApi(apiKey=apiKey, userModel=model, prompt=prompt, currentImageJpeg=screenshotBase64, escalateToHighModel=true, highModelName=highModelName)
+            val raw = callGeminiApi(
+                apiKey = apiKey, userModel = model, prompt = prompt,
+                currentImageJpeg = screenshotBase64,
+                escalateToHighModel = true, highModelName = highModelName
+            )
             val obj = extractCleanJsonObject(raw)
-            PhoneTaskCompletionVerification(obj.optBoolean("verified", false), obj.optString("reason", "No clear completion evidence."))
-        } catch (e: CancellationException) { throw e }
-          catch (e: Exception) { PhoneTaskCompletionVerification(false, "Independent verification unavailable: ${e.message ?: \"unknown error\"}") }
+            PhoneTaskCompletionVerification(
+                verified = obj.optBoolean("verified", false),
+                reason = obj.optString("reason", "No clear completion evidence.").ifBlank { "No clear completion evidence." }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            PhoneTaskCompletionVerification(false, "Independent verification unavailable: ${e.message ?: "unknown error"}")
+        }
     }
-
 }
