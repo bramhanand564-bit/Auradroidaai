@@ -691,6 +691,10 @@ object WebPipelineManager {
         }
 
         var promptAlreadySubmitted = false
+        var promptSubmissionAttempted = false
+        var promptFallbackAttempted = false
+        var promptSubmitWaitCycles = 0
+        var modeSetupAttempts = 0
         var downloadAttempts = 0
         var newProjectSenseLevel = 1
 
@@ -710,6 +714,63 @@ object WebPipelineManager {
             }
 
             val beforeSnap = WebActionVerifier.captureSnapshot(webView)
+
+            // After one submit attempt, observe the background DOM instead of typing/submitting again.
+            if (promptSubmissionAttempted && !promptAlreadySubmitted) {
+                if (WebActionVerifier.isFlowPromptAccepted(beforeSnap)) {
+                    promptAlreadySubmitted = true
+                    promptSubmitWaitCycles = 0
+                    VideoQueueManager.appendDetailedLog(
+                        context = context,
+                        modelUsed = model,
+                        clickSense = "Prompt Result Evidence",
+                        actionDesc = "Prompt acceptance detected from live DOM",
+                        whyReason = "A render/progress/result signal appeared after one submit attempt.",
+                        verifyStatus = "✅ PROMPT ACCEPTED"
+                    )
+                    continue
+                }
+
+                promptSubmitWaitCycles++
+                if (promptSubmitWaitCycles < 4) {
+                    hud.updateStatus(
+                        "Prompt • Verifying",
+                        "Waiting for actual render evidence. Submission will not be repeated.",
+                        "THINKING"
+                    )
+                    delay(1800L)
+                    continue
+                }
+
+                if (!promptFallbackAttempted) {
+                    promptFallbackAttempted = true
+                    val fallbackTapped = retryFlowPromptSubmitByTouch(webView, hud, promptToCreate)
+                    if (fallbackTapped) {
+                        promptSubmitWaitCycles = 0
+                        VideoQueueManager.appendDetailedLog(
+                            context = context,
+                            modelUsed = model,
+                            clickSense = "Single Touch Recovery",
+                            actionDesc = "Used physical touch once after DOM submit showed no progress",
+                            whyReason = "The same prompt field still contained the exact text and an enabled submit control was present.",
+                            verifyStatus = "⏳ WAITING FOR RENDER EVIDENCE"
+                        )
+                        delay(1800L)
+                        continue
+                    }
+                }
+
+                hud.updateStatus(
+                    "Prompt • Not Verified",
+                    "No render confirmation. Stopped to avoid duplicate generation.",
+                    "ERROR"
+                )
+                VideoQueueManager.appendLog(
+                    context,
+                    "⚠️ Google Flow prompt submission was not confirmed after one DOM submit and one bounded recovery. Stopped without retyping/resubmitting."
+                )
+                break
+            }
 
             // Step 4 Confirmation: While Google Flow is rendering (0% .. 99%), confirm progress every 1-3s and wait
             if (beforeSnap.isFlowRenderingInProgress) {
@@ -766,12 +827,28 @@ object WebPipelineManager {
                 continue
             }
 
-            // Step 2 Confirmation: Ensure Video • 8s/10s • x1 mode is locked (never Nano Banana Image / x2)
+            // Step 2: The mode selector changes at most one option per pass. Re-snapshot before proceeding.
             if (!promptAlreadySubmitted) {
                 val modeStatus = WebActionVerifier.ensureFlowVideoMode8s(webView, hud, targetDurationSec)
-                if (modeStatus.contains("OPENED_MODE_PILL") || modeStatus.contains("SWITCHED_OPTIONS")) {
-                    delay(1100)
+                if (!modeStatus.startsWith("OK_VIDEO_MODE")) {
+                    modeSetupAttempts++
+                    VideoQueueManager.appendDetailedLog(
+                        context = context,
+                        modelUsed = model,
+                        clickSense = "Flow Mode Setup",
+                        actionDesc = modeStatus,
+                        whyReason = "Select/verify one setting, then capture a fresh DOM snapshot.",
+                        verifyStatus = "⏳ MODE STEP PENDING ($modeSetupAttempts/10)"
+                    )
+                    if (modeSetupAttempts >= 10) {
+                        hud.updateStatus("Flow • Mode Unverified", "Could not confirm Video / 9:16 / $targetDurationSec-second / x1 settings.", "ERROR")
+                        VideoQueueManager.appendLog(context, "⚠️ Google Flow stopped: mode configuration could not be confirmed after 10 safe attempts.")
+                        break
+                    }
+                    delay(850L)
+                    continue
                 }
+                modeSetupAttempts = 0
             }
 
             // Step 3 Confirmation: Type prompt into bottom composer and confirm after 1s that rendering started!
@@ -779,24 +856,39 @@ object WebPipelineManager {
                 hud.updateStatus("Step 3 • Prompt", "Typing ${targetDurationSec}s prompt & 1s confirming...", "WORKING")
                 val submitted = typeAndSubmitFlowPromptOnce(webView, hud, promptToCreate)
                 if (submitted) {
+                    // Mark attempted immediately. Only explicit rendering/result evidence can unlock next steps.
+                    promptSubmissionAttempted = true
                     val (afterSubmitSnap, confirmRes) = WebActionVerifier.confirmStepInOneSecond(
                         webView = webView,
                         before = beforeSnap,
                         actionTaken = "SUBMIT_FLOW_PROMPT",
-                        expectedOutcome = "Rendering card (0%..100%) appears",
+                        expectedOutcome = "A real rendering/progress/result signal appears",
                         waitMs = 1800L
                     )
-                    if (confirmRes.passed || afterSubmitSnap.isFlowRenderingInProgress) {
+                    if (WebActionVerifier.isFlowPromptAccepted(afterSubmitSnap)) {
                         promptAlreadySubmitted = true
                         VideoQueueManager.appendDetailedLog(
                             context = context,
                             modelUsed = model,
-                            clickSense = "React Setter + 3x Submit Tap",
-                            actionDesc = "Prompt Submitted & Locked",
-                            whyReason = "Blueprint Step 3 confirmed in 1s; preventing duplicate typing",
-                            verifyStatus = "✅ 1s CONFIRMED LOCK"
+                            clickSense = "Single DOM Submit",
+                            actionDesc = "Prompt acceptance verified",
+                            whyReason = "Fresh DOM showed render/progress/result evidence, not merely a changed input.",
+                            verifyStatus = "✅ PROMPT ACCEPTED"
                         )
-                        delay(3000)
+                        delay(1800L)
+                        continue
+                    } else {
+                        promptSubmitWaitCycles = 0
+                        VideoQueueManager.appendDetailedLog(
+                            context = context,
+                            modelUsed = model,
+                            clickSense = "Single DOM Submit",
+                            actionDesc = "Submit was attempted once; waiting for result evidence",
+                            whyReason = confirmRes.verificationReport,
+                            verifyStatus = "⏳ DO NOT RESUBMIT"
+                        )
+                        hud.updateStatus("Prompt • Verifying", "Waiting for a rendering/result signal before any recovery.", "THINKING")
+                        delay(1800L)
                         continue
                     }
                 }
