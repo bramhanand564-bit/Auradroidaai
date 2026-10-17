@@ -696,7 +696,14 @@ object GeminiBrain {
     ): AgentDecision {
         val prompt = """
             You are Nax Bot's Cognitive State-Machine & Pure Vision Android Phone Agent.
-            Phone resolution: ${screenWidth}x${screenHeight} pixels.
+            Phone resolution: ${screenWidth}x${screenHeight} physical pixels.
+            COORDINATE CONTRACT (CRITICAL):
+            - CLICK_NODE: nodeIndex MUST exactly match an index in SCREEN UI NODES. Prefer this whenever the target node exists.
+            - CLICK_XY: x and y MUST be coordinates in the 540x1200 screenshot image-space, NOT physical screen pixels. The executor scales 540x1200 coordinates to the physical display.
+            - Keep CLICK_XY within x=0..540 and y=0..1200. Never return normalized 0..1000 coordinates.
+            - Never guess a tap from stale history. If the current screenshot or node list does not identify the target, return WAIT and request a fresh screen observation.
+            - For login, password, account chooser, CAPTCHA, or permission prompts requiring user choice, return WAIT and explain that the user must handle it manually. Never enter credentials or bypass verification.
+            - Only return DONE when the goal is complete and visible evidence supports completion; otherwise continue or WAIT.
             OVERALL GOAL: $goal
             
             VECTOR RAG LESSONS:
