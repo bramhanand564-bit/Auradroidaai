@@ -1,6 +1,7 @@
 package com.auradroid.agent
 
 import android.content.Context
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
@@ -473,5 +474,81 @@ object TaskExecutionStore {
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_RUNS, array.toString()).apply()
+    }
+}
+
+
+/**
+ * Single foreground task controller shared by phone and web executors.
+ * Pause takes effect between action steps; cancellation remains an immediate coroutine cancel.
+ */
+object TaskRunController {
+    @Volatile private var activeTaskId: String? = null
+    @Volatile private var pauseRequested: Boolean = false
+    @Volatile private var cancelRequested: Boolean = false
+
+    @Synchronized
+    fun begin(taskId: String) {
+        activeTaskId = taskId
+        pauseRequested = false
+        cancelRequested = false
+    }
+
+    @Synchronized
+    fun requestPause(): Boolean {
+        if (activeTaskId.isNullOrBlank() || cancelRequested) return false
+        pauseRequested = true
+        return true
+    }
+
+    @Synchronized
+    fun requestResume(): Boolean {
+        if (activeTaskId.isNullOrBlank() || cancelRequested) return false
+        pauseRequested = false
+        return true
+    }
+
+    @Synchronized
+    fun requestCancel(): Boolean {
+        if (activeTaskId.isNullOrBlank()) return false
+        cancelRequested = true
+        pauseRequested = false
+        return true
+    }
+
+    fun isPaused(): Boolean = pauseRequested
+    fun hasActiveTask(): Boolean = !activeTaskId.isNullOrBlank() && !cancelRequested
+
+    suspend fun awaitIfRunning(context: Context, taskId: String, step: Int): Boolean {
+        if (activeTaskId != taskId) return false
+        var announcedPause = false
+        while (activeTaskId == taskId && pauseRequested && !cancelRequested) {
+            if (!announcedPause) {
+                TaskExecutionStore.update(
+                    context, taskId, TaskStatus.PAUSED, step,
+                    "Paused by user between actions. Resume to continue safely."
+                )
+                VideoQueueManager.appendLog(context, "⏸️ Task paused at step $step; no new action will run until resumed.")
+                announcedPause = true
+            }
+            delay(250)
+        }
+        if (activeTaskId != taskId || cancelRequested) return false
+        if (announcedPause) {
+            TaskExecutionStore.update(
+                context, taskId, TaskStatus.RUNNING, step,
+                "Resumed by user; refreshing screen state before continuing."
+            )
+            VideoQueueManager.appendLog(context, "▶️ Task resumed; the next action will use a fresh screen snapshot.")
+        }
+        return true
+    }
+
+    @Synchronized
+    fun finish(taskId: String?) {
+        if (taskId.isNullOrBlank() || activeTaskId != taskId) return
+        activeTaskId = null
+        pauseRequested = false
+        cancelRequested = false
     }
 }
