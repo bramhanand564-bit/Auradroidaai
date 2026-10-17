@@ -66,6 +66,7 @@ object PhoneAgentManager {
             taskRunId = TaskExecutionStore.start(
                 service, userGoal, AutomationMode.PHONE_UI, adapterId
             )
+            TaskRunController.begin(taskRunId!!)
             VideoQueueManager.appendLog(
                 service,
                 "🧭 Task route: PHONE_UI • adapter=$adapterId • taskId=$taskRunId"
@@ -136,6 +137,11 @@ object PhoneAgentManager {
             val seenLearnedRules = mutableSetOf<String>()
 
             for (step in 1..maxSteps) {
+                if (!TaskRunController.awaitIfRunning(service, taskRunId.orEmpty(), step)) {
+                    terminalTaskStatus = TaskStatus.CANCELLED
+                    terminalTaskMessage = "Task stopped while paused/cancelled; no completion was claimed."
+                    break
+                }
                 val pinnedAtStepStart = pinnedNativePackage
                 if (pinnedAtStepStart != null) {
                     var actualPackage = foregroundAppPackage(service)
@@ -659,6 +665,7 @@ object PhoneAgentManager {
             }
             service.overlayHud?.setCursorOverlayVisible(false)
             service.overlayHud?.hidePodForFocusedTextInput(false)
+            TaskRunController.finish(taskRunId)
             AutoTouchService.isJobRunning = false
         }
     }
