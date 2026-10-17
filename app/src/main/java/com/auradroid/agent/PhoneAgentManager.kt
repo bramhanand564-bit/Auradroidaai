@@ -215,6 +215,7 @@ object PhoneAgentManager {
                     )
                 }
                 // Avoid treating cursor blinking, clock changes and animated overlays as UI progress.
+                val domainKey = if (goalLower.contains("whatsapp")) "WHATSAPP" else "ANDROID_UI"
                 val currentSig = stableScreenSignature(nodes)
                 val didScreenChange = step == 1 || currentSig != previousScreenSignature
 
@@ -259,6 +260,7 @@ object PhoneAgentManager {
                 } else if (didScreenChange) {
                     consecutiveVerificationFails = 0
                     consecutiveNoProgressWaits = 0
+                    consecutiveFreshTargetRejects = 0
                     "SCREEN_CHANGED: YES (The accessibility UI state changed after the last action)."
                 } else {
                     consecutiveVerificationFails++
@@ -268,7 +270,6 @@ object PhoneAgentManager {
 
                 val useHighModelNow = autoHighModelEnabled &&
                         (consecutiveVerificationFails >= 2 || consecutiveAiFailures >= 1)
-                val domainKey = if (goalLower.contains("whatsapp")) "WHATSAPP" else "ANDROID_UI"
                 val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(service, domainKey)
 
                 val thinkLabel = if (useHighModelNow) "High-Brain Verifying..." else "Multi-frame & memory check..."
@@ -515,13 +516,8 @@ object PhoneAgentManager {
                 ) { tapX, tapY ->
                     if (hypot(tapX - lastTapX, tapY - lastTapY) < 25f) {
                         repeatTapCount++
-                        if (repeatTapCount >= 2) {
-                            VideoQueueManager.recordLearnedLesson(
-                                service,
-                                "Tapping repeatedly at (${tapX.toInt()},${tapY.toInt()}) did not change the screen; use CLICK_NODE instead.",
-                                domainKey
-                            )
-                        }
+                        // Repeated taps without verified screen progress are handled by the circuit breaker.
+                        // Do not store a new memory rule from an unverified failed interaction.
                     } else {
                         repeatTapCount = 0
                     }
