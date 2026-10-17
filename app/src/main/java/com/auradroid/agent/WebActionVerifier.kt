@@ -325,7 +325,18 @@ object WebActionVerifier {
                     var cx = Math.round(r.left + r.width / 2);
                     var cy = Math.round(r.top + r.height / 2);
                     var label = txt ? txt : (isMediaCard ? 'MEDIA_CARD_THUMBNAIL' : tag.toUpperCase());
-                    lines.push('[' + idx + '] ' + tag.toUpperCase() + ' "' + label + '" @(' + cx + ',' + cy + ') size=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' top=' + Math.round(r.top));
+                    var role = el.getAttribute('role') || tag;
+                    var disabled = !!el.disabled || el.getAttribute('aria-disabled') === 'true';
+                    var selected = el.getAttribute('aria-selected') || el.getAttribute('aria-pressed') ||
+                        el.getAttribute('aria-checked') || (el.checked === true ? 'true' : '');
+                    var valueHint = (tag === 'input' || tag === 'textarea' || tag === 'select')
+                        ? (' value=' + String(el.value || '').replace(/\s+/g, ' ').slice(0, 90))
+                        : '';
+                    lines.push('[' + idx + '] ' + tag.toUpperCase() + ' role=' + role +
+                        ' "' + label.replace(/\s+/g, ' ').slice(0, 100) + '"' +
+                        ' disabled=' + (disabled ? 'yes' : 'no') +
+                        (selected ? ' selected=' + selected : '') + valueHint +
+                        ' @(' + cx + ',' + cy + ') size=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' top=' + Math.round(r.top));
                     idx++;
                     if (idx >= 48) break;
                 }
@@ -358,9 +369,49 @@ object WebActionVerifier {
 
                 var invalidMode = bodyText.indexOf('Nano Banana') !== -1 || bodyText.indexOf('x2') !== -1 || bodyText.indexOf('x4') !== -1;
 
-                // Fingerprint meaningful page state, not just text length/count.
-                // This detects same-length label changes, selected states, URL and progress changes.
-                var fpSource = location.href + '|' + (document.title || '') + '|' + bodyText + '|' + lines.join('|');
+                // Local-only state used to verify actions. Do not send entered values to Gemini by default.
+                var formParts = [];
+                var fields = Array.from(document.querySelectorAll('input, textarea, select, [contenteditable="true"]'));
+                for (var q = 0; q < fields.length; q++) {
+                    var field = fields[q];
+                    var fr = field.getBoundingClientRect();
+                    if (fr.width < 1 || fr.height < 1) continue;
+                    var fval = ('value' in field) ? String(field.value || '') : String(field.innerText || '');
+                    formParts.push((field.tagName || '') + '|' + (field.type || '') + '|' +
+                        (field.getAttribute('aria-label') || field.placeholder || '') + '|' +
+                        fval + '|' + (field.checked === true) + '|' +
+                        (!!field.disabled || field.getAttribute('aria-disabled') === 'true'));
+                }
+                var formState = formParts.join('||');
+                var formHash = 0;
+                for (var fh = 0; fh < formState.length; fh++) {
+                    formHash = ((formHash << 5) - formHash + formState.charCodeAt(fh)) | 0;
+                }
+
+                var active = document.activeElement;
+                var activeTag = active && active.tagName ? active.tagName.toLowerCase() : '';
+                var activeLabel = active ? (active.getAttribute('aria-label') || active.placeholder ||
+                    active.getAttribute('name') || active.innerText || '') : '';
+                var activeValue = active ? (('value' in active) ? String(active.value || '') :
+                    (active.isContentEditable ? String(active.innerText || '') : '')) : '';
+                var activeSummary = (activeTag + ' ' + String(activeLabel).replace(/\s+/g, ' ').slice(0, 100)).trim();
+
+                function visibleMessage(el) {
+                    if (!el) return '';
+                    var rr = el.getBoundingClientRect();
+                    var st = window.getComputedStyle(el);
+                    if (rr.width < 1 || rr.height < 1 || st.display === 'none' || st.visibility === 'hidden') return '';
+                    return String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+                }
+                var errorMessages = Array.from(document.querySelectorAll('[role="alert"], [aria-invalid="true"], [data-state="error"], .error, .toast-error'))
+                    .map(visibleMessage).filter(Boolean).slice(0, 5);
+                var successMessages = Array.from(document.querySelectorAll('[role="status"], [aria-live="polite"], [data-state="success"], .toast-success'))
+                    .map(visibleMessage).filter(Boolean).slice(0, 5);
+                var pageErrors = /\b(error|failed|failure|could not|cannot|try again)\b/i.test(errorMessages.join(' '));
+                var pageSuccess = /\b(success|completed|complete|uploaded|published|saved|sent successfully)\b/i.test(successMessages.join(' '));
+
+                var fpSource = location.href + '|' + (document.title || '') + '|' + bodyText + '|' +
+                    lines.join('|') + '|' + formState + '|' + activeSummary + '|' + window.scrollY;
                 var fpHash = 0;
                 for (var h = 0; h < fpSource.length; h++) {
                     fpHash = ((fpHash << 5) - fpHash + fpSource.charCodeAt(h)) | 0;
@@ -369,14 +420,22 @@ object WebActionVerifier {
                 return JSON.stringify({
                     url: location.href,
                     title: document.title ? document.title : '',
-                    elementsText: lines.join('\n'),
+                    elementsText: lines.join('\\n'),
                     count: idx,
                     hasStream: hasStream,
                     hasCard: hasCard,
                     isRendering: isRendering,
                     pctLabel: pctLabel,
                     invalidMode: invalidMode,
-                    textHash: String(fpHash)
+                    textHash: String(fpHash),
+                    pageText: bodyText.slice(0, 8000),
+                    scrollY: window.scrollY || 0,
+                    formHash: formHash,
+                    activeSummary: activeSummary,
+                    activeValue: activeValue.slice(0, 1200),
+                    readyState: document.readyState || 'unknown',
+                    hasError: pageErrors,
+                    hasSuccess: pageSuccess
                 });
             })();
         """.trimIndent()
@@ -400,7 +459,15 @@ object WebActionVerifier {
                             hasCompletedProjectCard = obj.optBoolean("hasCard", false),
                             isFlowRenderingInProgress = obj.optBoolean("isRendering", false),
                             renderingProgressLabel = obj.optString("pctLabel", ""),
-                            isInvalidModelModeSelected = obj.optBoolean("invalidMode", false)
+                            isInvalidModelModeSelected = obj.optBoolean("invalidMode", false),
+                            pageText = obj.optString("pageText", ""),
+                            scrollY = obj.optDouble("scrollY", 0.0).toFloat(),
+                            formStateFingerprint = obj.optInt("formHash", 0),
+                            activeElementSummary = obj.optString("activeSummary", ""),
+                            activeElementValue = obj.optString("activeValue", ""),
+                            readyState = obj.optString("readyState", "unknown"),
+                            hasVisibleErrorMessage = obj.optBoolean("hasError", false),
+                            hasVisibleSuccessMessage = obj.optBoolean("hasSuccess", false)
                         )
                         if (cont.isActive) cont.resume(snap)
                     } catch (_: Exception) {
