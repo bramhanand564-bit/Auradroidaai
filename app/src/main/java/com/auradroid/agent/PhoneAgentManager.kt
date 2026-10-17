@@ -77,6 +77,8 @@ object PhoneAgentManager {
 
             if (!initialSettingAction.isNullOrBlank() && !nativeAppIntent) {
                 if (!openSystemSettingOrApp(service, initialSettingAction)) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "Could not resolve requested app/setting: $initialSettingAction"
                     service.overlayHud?.updateStatus("Target not opened", "Could not resolve: $initialSettingAction", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ Target resolver refused '$initialSettingAction'; no unrelated app was opened.")
                     return
@@ -87,6 +89,8 @@ object PhoneAgentManager {
             if (nativeAppIntent) {
                 val preferredApp = inferPreferredNativeApp(service, userGoal)
                 if (preferredApp == null) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "No matching installed application was found; unrelated fallback was blocked."
                     service.overlayHud?.updateStatus("App not found", "No matching installed app. Won't switch to Chrome by guess.", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ Native-app intent detected for '$userGoal', but no matching launchable app was found. No browser/Settings fallback was used.")
                     return
@@ -94,6 +98,8 @@ object PhoneAgentManager {
 
                 val launched = openSystemSettingOrApp(service, preferredApp.packageName)
                 if (!launched) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "Could not launch the verified target app: ${preferredApp.label}"
                     service.overlayHud?.updateStatus("Launch failed", "Could not open ${preferredApp.label}", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ App launch failed for '${preferredApp.label}' (${preferredApp.packageName}). Task stopped rather than acting in the wrong app.")
                     return
@@ -107,6 +113,8 @@ object PhoneAgentManager {
                     if (actualPackage == expectedPackage) break
                 }
                 if (actualPackage != expectedPackage) {
+                    terminalTaskStatus = TaskStatus.FAILED
+                    terminalTaskMessage = "Foreground verification failed: expected ${preferredApp.label}; observed ${actualPackage.ifBlank { "unknown" }}."
                     service.overlayHud?.updateStatus("Wrong app blocked", "Expected ${preferredApp.label}; foreground is ${actualPackage.ifBlank { "unknown" }}", "ERROR")
                     VideoQueueManager.appendLog(service, "⛔ App-routing verification failed. Expected '${preferredApp.label}' ($expectedPackage), observed '${actualPackage.ifBlank { "unknown" }}'. No further taps were issued.")
                     return
