@@ -246,12 +246,11 @@ object PhoneAgentManager {
                         !evidenceOfTransientState
                     ) {
                         consecutiveNoProgressWaits++
-                        if (consecutiveNoProgressWaits >= 2) {
+                        if (consecutiveNoProgressWaits == 2) {
                             val recovered = recoverSearchSubmission(service, nodes, userGoal)
                             if (recovered != null) {
                                 history.add("Step $step: WAIT-loop recovery - $recovered")
                                 VideoQueueManager.appendLog(service, "🛠️ Recovered from repeated WAIT: $recovered")
-                                consecutiveNoProgressWaits = 0
                                 delay(2200)
                                 continue
                             }
