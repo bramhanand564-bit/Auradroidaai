@@ -185,11 +185,6 @@ object WebActionVerifier {
                         method = 'DOM_CLICK';
                     } else if ($activeSense === 2) {
                         targetEl.focus();
-                        var pointerSupported = typeof PointerEvent !== 'undefined';
-                        if (pointerSupported) {
-                            targetEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', clientX: x, clientY: y }));
-                            targetEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'mouse', clientX: x, clientY: y }));
-                        }
                         targetEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
                         targetEl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
                         targetEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
