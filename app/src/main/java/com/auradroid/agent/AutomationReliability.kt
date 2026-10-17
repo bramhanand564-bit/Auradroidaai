@@ -1,0 +1,399 @@
+package com.auradroid.agent
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URI
+import java.util.UUID
+
+/**
+ * Deterministic routing and task-state primitives shared by phone and web workflows.
+ * AI may suggest a route, but explicit user intent and safety rules take precedence.
+ */
+enum class AutomationMode { BACKGROUND_WEB, PHONE_UI }
+
+data class AppAutomationProfile(
+    val id: String,
+    val displayName: String,
+    val aliases: List<String>,
+    val packageNames: List<String>,
+    val webHome: String,
+    val websiteKeywords: List<String> = emptyList()
+)
+
+data class AutomationRoute(
+    val mode: AutomationMode,
+    val profile: AppAutomationProfile?,
+    val startUrl: String,
+    val reason: String
+)
+
+object AppAutomationRouter {
+    private val profiles = listOf(
+        AppAutomationProfile(
+            id = "YOUTUBE_STUDIO", displayName = "YouTube Studio",
+            aliases = listOf("youtube studio", "studio.youtube.com"),
+            packageNames = listOf("com.google.android.apps.youtube.creator"),
+            webHome = "https://studio.youtube.com/",
+            websiteKeywords = listOf("upload", "publish", "video", "shorts", "creator studio")
+        ),
+        AppAutomationProfile(
+            id = "GOOGLE_FLOW", displayName = "Google Flow",
+            aliases = listOf("google flow", "flow.google", "labs.google/fx"),
+            packageNames = emptyList(),
+            webHome = "https://labs.google/fx/tools/flow",
+            websiteKeywords = listOf("generate video", "render video", "video prompt")
+        ),
+        AppAutomationProfile(
+            id = "CHROME", displayName = "Chrome",
+            aliases = listOf("chrome", "google chrome"),
+            packageNames = listOf("com.android.chrome"),
+            webHome = "https://www.google.com/"
+        ),
+        AppAutomationProfile(
+            id = "YOUTUBE", displayName = "YouTube",
+            aliases = listOf("youtube", "yt"),
+            packageNames = listOf("com.google.android.youtube"),
+            webHome = "https://www.youtube.com/"
+        ),
+        AppAutomationProfile(
+            id = "WHATSAPP", displayName = "WhatsApp",
+            aliases = listOf("whatsapp", "whats app"),
+            packageNames = listOf("com.whatsapp", "com.whatsapp.w4b"),
+            webHome = "https://web.whatsapp.com/"
+        ),
+        AppAutomationProfile(
+            id = "INSTAGRAM", displayName = "Instagram",
+            aliases = listOf("instagram", "insta"),
+            packageNames = listOf("com.instagram.android"),
+            webHome = "https://www.instagram.com/"
+        ),
+        AppAutomationProfile(
+            id = "GMAIL", displayName = "Gmail",
+            aliases = listOf("gmail", "google mail", "email"),
+            packageNames = listOf("com.google.android.gm"),
+            webHome = "https://mail.google.com/"
+        ),
+        AppAutomationProfile(
+            id = "GOOGLE_DRIVE", displayName = "Google Drive",
+            aliases = listOf("google drive", "drive"),
+            packageNames = listOf("com.google.android.apps.docs"),
+            webHome = "https://drive.google.com/"
+        ),
+        AppAutomationProfile(
+            id = "TELEGRAM", displayName = "Telegram",
+            aliases = listOf("telegram"),
+            packageNames = listOf("org.telegram.messenger", "org.thunderdog.challegram"),
+            webHome = "https://web.telegram.org/"
+        ),
+        AppAutomationProfile(
+            id = "FACEBOOK", displayName = "Facebook",
+            aliases = listOf("facebook", "fb"),
+            packageNames = listOf("com.facebook.katana"),
+            webHome = "https://www.facebook.com/"
+        ),
+        AppAutomationProfile(
+            id = "X", displayName = "X",
+            aliases = listOf("twitter", "x.com", "x app"),
+            packageNames = listOf("com.twitter.android"),
+            webHome = "https://x.com/"
+        )
+    )
+
+    private val explicitPhoneSignals = listOf(
+        "real phone", "phone screen", "on my phone", "actual device", "android app",
+        "open app", "launch app", "phone ko control", "mere phone", "mere mobile",
+        "फोन की स्क्रीन", "असली फोन", "मोबाइल ऐप"
+    )
+    private val webSignals = listOf(
+        "website", "web site", "webpage", "web page", "in browser", "using browser",
+        "in chrome", "on the website", "website par", "web par", "browser me",
+        "search online", "visit the site", "open url", "link ko kholo"
+    )
+    private val webWorkflowVerbs = listOf(
+        "upload", "publish", "post", "website", "webpage", "web page", "download from",
+        "fill this form", "submit form", "browse", "search online", "url", "http://", "https://",
+        "www."
+    )
+    private val urlRegex = Regex("""(?i)(https?://[^\s<>"']+|www\.[^\s<>"']+|(?:[a-z0-9-]+\.)+(?:com|org|net|io|app|dev|in|co|ai|edu|gov)(?:/[^\s<>"']*)?)""")
+
+    fun allProfiles(): List<AppAutomationProfile> = profiles.toList()
+
+    fun profileForGoal(goal: String): AppAutomationProfile? {
+        val value = goal.lowercase()
+        // More specific profiles must win over their parent product.
+        return profiles.firstOrNull { profile ->
+            profile.aliases.sortedByDescending { it.length }.any { alias -> value.contains(alias) }
+        }
+    }
+
+    fun profileForPackage(packageName: String?): AppAutomationProfile? {
+        if (packageName.isNullOrBlank()) return null
+        return profiles.firstOrNull { profile ->
+            profile.packageNames.any { it.equals(packageName, ignoreCase = true) }
+        }
+    }
+
+    fun memoryDomainForGoal(goal: String, foregroundPackage: String? = null): String {
+        return profileForPackage(foregroundPackage)?.id
+            ?: profileForGoal(goal)?.id
+            ?: "ANDROID_UI"
+    }
+
+    fun isExplicitPhoneRequest(goal: String): Boolean {
+        val value = goal.lowercase()
+        return explicitPhoneSignals.any { value.contains(it) }
+    }
+
+    fun chooseRoute(
+        goal: String,
+        suggestedMode: String? = null,
+        forcePhoneUi: Boolean = false,
+        suggestedUrl: String = "",
+        pinnedFlowUrl: String = ""
+    ): AutomationRoute {
+        val value = goal.lowercase()
+        val profile = profileForGoal(goal)
+        val urlInGoal = urlRegex.find(goal)?.value.orEmpty()
+        val explicitPhone = forcePhoneUi || isExplicitPhoneRequest(goal) ||
+            (profile != null && isAppLaunchIntent(value) && !isWebRequest(value) && !isWebsiteWorkflow(value))
+
+        val youtubeUpload = value.contains("youtube") &&
+            listOf("upload", "publish", "post", "short").any { value.contains(it) }
+        val flowTask = value.contains("google flow") || value.contains("flow.google") || value.contains("labs.google/fx")
+        val routeToWeb = !explicitPhone && (
+            youtubeUpload || flowTask || isWebRequest(value) ||
+                urlInGoal.isNotBlank() ||
+                webWorkflowVerbs.any { value.contains(it) } ||
+                suggestedMode.equals("WEB", ignoreCase = true)
+            )
+
+        val mode = if (routeToWeb) AutomationMode.BACKGROUND_WEB else AutomationMode.PHONE_UI
+        val startUrl = resolveStartUrl(goal, suggestedUrl, pinnedFlowUrl)
+        val reason = when {
+            forcePhoneUi || isExplicitPhoneRequest(goal) -> "Explicit real-phone request takes priority."
+            youtubeUpload -> "YouTube publishing/upload tasks use the controlled web workflow by default."
+            flowTask -> "Google Flow is a web-first workflow."
+            urlInGoal.isNotBlank() || isWebRequest(value) -> "The instruction explicitly identifies a website/browser destination."
+            mode == AutomationMode.BACKGROUND_WEB -> "The requested workflow is suitable for the web engine."
+            profile != null -> "The requested app is mapped to its dedicated ${profile.displayName} adapter."
+            else -> "No website target was detected; use the real-phone agent rather than a random web page."
+        }
+        return AutomationRoute(mode, profile, startUrl, reason)
+    }
+
+    fun resolveStartUrl(goal: String, suggestedUrl: String = "", pinnedFlowUrl: String = ""): String {
+        val value = goal.lowercase()
+        val flowTask = value.contains("google flow") || value.contains("flow.google") || value.contains("labs.google/fx")
+        if (flowTask) {
+            return validatedPinnedFlowUrl(pinnedFlowUrl) ?: "https://labs.google/fx/tools/flow"
+        }
+
+        if (value.contains("youtube") &&
+            listOf("upload", "publish", "post", "studio", "creator", "short").any { value.contains(it) }) {
+            return "https://studio.youtube.com/"
+        }
+
+        val explicit = urlRegex.find(goal)?.value
+        if (explicit != null) normalizeHttpUrl(explicit)?.let { return it }
+
+        val profile = profileForGoal(goal)
+        if (profile != null && (isWebRequest(value) || isWebsiteWorkflow(value) ||
+                webWorkflowVerbs.any { value.contains(it) } || value.contains("website"))) {
+            return profile.webHome
+        }
+
+        normalizeHttpUrl(suggestedUrl)?.let { return it }
+        // Never reuse the pinned Google Flow page for an unrelated task.
+        return "https://www.google.com/"
+    }
+
+    fun normalizeHttpUrl(rawUrl: String): String? {
+        val trimmed = rawUrl.trim().trim('"', '\'', ' ', '\n', '\r', '\t')
+        if (trimmed.isBlank()) return null
+        val candidate = when {
+            trimmed.startsWith("https://", ignoreCase = true) -> trimmed
+            trimmed.startsWith("http://", ignoreCase = true) -> "https://" + trimmed.substringAfter("://")
+            trimmed.startsWith("javascript:", ignoreCase = true) ||
+                trimmed.startsWith("file:", ignoreCase = true) ||
+                trimmed.startsWith("content:", ignoreCase = true) ||
+                trimmed.startsWith("data:", ignoreCase = true) -> return null
+            trimmed.startsWith("www.", ignoreCase = true) -> "https://$trimmed"
+            trimmed.contains('.') && !trimmed.contains(' ') -> "https://$trimmed"
+            else -> return null
+        }
+        return try {
+            val uri = URI(candidate)
+            val scheme = uri.scheme?.lowercase()
+            val host = uri.host
+            if (scheme != "https" || host.isNullOrBlank() ||
+                host.equals("localhost", true) ||
+                host == "127.0.0.1" ||
+                host.startsWith("10.") ||
+                host.startsWith("192.168.") ||
+                host.startsWith("169.254.") ||
+                host.endsWith(".local", true)) {
+                null
+            } else candidate
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun validatedPinnedFlowUrl(rawUrl: String): String? {
+        val normalized = normalizeHttpUrl(rawUrl) ?: return null
+        val host = runCatching { URI(normalized).host?.lowercase().orEmpty() }.getOrDefault("")
+        return normalized.takeIf {
+            host == "labs.google" || host.endsWith(".labs.google") ||
+                host == "flow.google" || host.endsWith(".flow.google") ||
+                host == "labs.google.com" || host.endsWith(".labs.google.com")
+        }
+    }
+
+    private fun isAppLaunchIntent(value: String): Boolean =
+        listOf("open ", "launch ", "start ", " kholo", " kholna", " खोलो", " खोलना", "chalao", "run app")
+            .any { value.contains(it) }
+
+    private fun isWebRequest(value: String): Boolean =
+        webSignals.any { value.contains(it) }
+
+    private fun isWebsiteWorkflow(value: String): Boolean =
+        listOf("on website", "website par", "site par", "web page", "webpage").any { value.contains(it) }
+}
+
+enum class TaskStatus { QUEUED, RUNNING, VERIFYING, PAUSED, COMPLETED, FAILED, CANCELLED }
+
+data class TaskRunRecord(
+    val id: String,
+    val goal: String,
+    val mode: String,
+    val adapterId: String,
+    val status: TaskStatus,
+    val step: Int,
+    val message: String,
+    val startedAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * Lightweight persistent run ledger. A process-death interrupted UI task is marked PAUSED,
+ * never silently reported as completed or automatically replayed.
+ */
+object TaskExecutionStore {
+    private const val PREFS = "nax_task_execution_state"
+    private const val KEY_RUNS = "runs_v1"
+    private const val MAX_HISTORY = 30
+
+    @Synchronized
+    fun start(context: Context, goal: String, mode: AutomationMode, adapterId: String): String {
+        val now = System.currentTimeMillis()
+        val id = UUID.randomUUID().toString()
+        val record = TaskRunRecord(
+            id = id,
+            goal = goal.take(500),
+            mode = mode.name,
+            adapterId = adapterId,
+            status = TaskStatus.RUNNING,
+            step = 0,
+            message = "Task accepted; execution started.",
+            startedAt = now,
+            updatedAt = now
+        )
+        save(context, listOf(record) + read(context).filterNot { it.status == TaskStatus.RUNNING || it.status == TaskStatus.VERIFYING }.take(MAX_HISTORY - 1))
+        return id
+    }
+
+    @Synchronized
+    fun update(
+        context: Context,
+        id: String?,
+        status: TaskStatus,
+        step: Int? = null,
+        message: String
+    ) {
+        if (id.isNullOrBlank()) return
+        val records = read(context).toMutableList()
+        val index = records.indexOfFirst { it.id == id }
+        if (index < 0) return
+        val old = records[index]
+        if (!isAllowedTransition(old.status, status)) return
+        records[index] = old.copy(
+            status = status,
+            step = step ?: old.step,
+            message = message.take(700),
+            updatedAt = System.currentTimeMillis()
+        )
+        save(context, records.take(MAX_HISTORY))
+    }
+
+    @Synchronized
+    fun latest(context: Context): TaskRunRecord? = read(context).firstOrNull()
+
+    @Synchronized
+    fun reconcileInterrupted(context: Context): String? {
+        val records = read(context).toMutableList()
+        val index = records.indexOfFirst { it.status == TaskStatus.RUNNING || it.status == TaskStatus.VERIFYING }
+        if (index < 0) return null
+        val old = records[index]
+        records[index] = old.copy(
+            status = TaskStatus.PAUSED,
+            message = "App process ended before task completion was verified. Inspect the screen and resume manually.",
+            updatedAt = System.currentTimeMillis()
+        )
+        save(context, records.take(MAX_HISTORY))
+        return "⚠️ Previous task was interrupted and marked PAUSED; it was not auto-replayed: ${old.goal.take(100)}"
+    }
+
+    private fun isAllowedTransition(from: TaskStatus, to: TaskStatus): Boolean {
+        if (from == to) return true
+        return when (from) {
+            TaskStatus.QUEUED -> to in setOf(TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.FAILED, TaskStatus.PAUSED)
+            TaskStatus.RUNNING -> to in setOf(TaskStatus.VERIFYING, TaskStatus.PAUSED, TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED)
+            TaskStatus.VERIFYING -> to in setOf(TaskStatus.RUNNING, TaskStatus.PAUSED, TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED)
+            TaskStatus.PAUSED -> to in setOf(TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED)
+            TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED -> false
+        }
+    }
+
+    private fun read(context: Context): List<TaskRunRecord> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_RUNS, "[]") ?: "[]"
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                TaskRunRecord(
+                    id = item.optString("id"),
+                    goal = item.optString("goal"),
+                    mode = item.optString("mode"),
+                    adapterId = item.optString("adapterId"),
+                    status = runCatching { TaskStatus.valueOf(item.optString("status")) }.getOrDefault(TaskStatus.FAILED),
+                    step = item.optInt("step"),
+                    message = item.optString("message"),
+                    startedAt = item.optLong("startedAt"),
+                    updatedAt = item.optLong("updatedAt")
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun save(context: Context, records: List<TaskRunRecord>) {
+        val array = JSONArray()
+        records.take(MAX_HISTORY).forEach { run ->
+            array.put(JSONObject().apply {
+                put("id", run.id)
+                put("goal", run.goal)
+                put("mode", run.mode)
+                put("adapterId", run.adapterId)
+                put("status", run.status.name)
+                put("step", run.step)
+                put("message", run.message)
+                put("startedAt", run.startedAt)
+                put("updatedAt", run.updatedAt)
+            })
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_RUNS, array.toString()).apply()
+    }
+}
