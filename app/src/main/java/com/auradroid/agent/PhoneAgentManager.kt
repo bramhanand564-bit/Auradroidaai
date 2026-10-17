@@ -55,8 +55,21 @@ object PhoneAgentManager {
                 goalLower.contains("new message notification")
 
         val maxSteps = if (isContinuousMonitor || unstoppable) 5000 else 40
+        var taskRunId: String? = null
+        var taskCompleted = false
+        var terminalTaskStatus: TaskStatus? = null
+        var terminalTaskMessage = ""
+        var unverifiedDoneCount = 0
 
         try {
+            val adapterId = AppAutomationRouter.memoryDomainForGoal(userGoal)
+            taskRunId = TaskExecutionStore.start(
+                service, userGoal, AutomationMode.PHONE_UI, adapterId
+            )
+            VideoQueueManager.appendLog(
+                service,
+                "🧭 Task route: PHONE_UI • adapter=$adapterId • taskId=$taskRunId"
+            )
             val history = mutableListOf<String>()
             var pinnedNativePackage: String? = null
             val nativeAppIntent = isExplicitNativeAppRequest(service, userGoal)
@@ -215,7 +228,7 @@ object PhoneAgentManager {
                     )
                 }
                 // Avoid treating cursor blinking, clock changes and animated overlays as UI progress.
-                val domainKey = if (goalLower.contains("whatsapp")) "WHATSAPP" else "ANDROID_UI"
+                val domainKey = AppAutomationRouter.memoryDomainForGoal(userGoal, activePackage)
                 val currentSig = stableScreenSignature(nodes)
                 val didScreenChange = step == 1 || currentSig != previousScreenSignature
 
@@ -270,6 +283,10 @@ object PhoneAgentManager {
 
                 val useHighModelNow = autoHighModelEnabled &&
                         (consecutiveVerificationFails >= 2 || consecutiveAiFailures >= 1)
+                TaskExecutionStore.update(
+                    service, taskRunId, TaskStatus.VERIFYING, step,
+                    "Checking live app and screen state before selecting the next action."
+                )
                 val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(service, domainKey)
 
                 val thinkLabel = if (useHighModelNow) "High-Brain Verifying..." else "Multi-frame & memory check..."
@@ -377,10 +394,60 @@ object PhoneAgentManager {
                 VideoQueueManager.appendLog(service, "🤖 Step $step [${decision.action}]:${decision.reason}")
 
                 if (decision.action.equals("DONE", true)) {
+                    TaskExecutionStore.update(
+                        service, taskRunId, TaskStatus.VERIFYING, step,
+                        "AI proposed completion; independently checking current-screen evidence."
+                    )
+                    val completion = GeminiBrain.verifyPhoneTaskCompletion(
+                        apiKey = apiKey,
+                        model = model,
+                        highModelName = highModelName,
+                        goal = userGoal,
+                        screenSummary = screenDump,
+                        recentHistory = history,
+                        screenshotBase64 = currentScreenshotB64
+                    )
+                    if (!completion.verified) {
+                        unverifiedDoneCount++
+                        val message = "DONE rejected (attempt $unverifiedDoneCount/3): ${completion.reason}"
+                        history.add("Step $step: $message")
+                        VideoQueueManager.appendLog(service, "🛡️ $message")
+                        VideoQueueManager.appendDetailedLog(
+                            context = service,
+                            modelUsed = highModelName,
+                            clickSense = "Independent Phone Completion Check",
+                            actionDesc = "Rejected unsupported DONE",
+                            whyReason = completion.evidence.ifBlank { completion.reason },
+                            verifyStatus = "⚠️ NOT VERIFIED"
+                        )
+                        if (unverifiedDoneCount >= 3) {
+                            terminalTaskStatus = TaskStatus.PAUSED
+                            terminalTaskMessage = "Stopped safely: completion could not be verified after three checks."
+                            service.overlayHud?.setCursorOverlayVisible(false)
+                            service.overlayHud?.updateStatus(
+                                "Task not verified",
+                                "The screen did not provide enough proof. Check the phone and retry.",
+                                "ERROR"
+                            )
+                            break
+                        }
+                        TaskExecutionStore.update(
+                            service, taskRunId, TaskStatus.RUNNING, step,
+                            "Completion not verified; agent will reassess the live screen."
+                        )
+                        delay(900)
+                        continue
+                    }
+
+                    taskCompleted = true
+                    TaskExecutionStore.update(
+                        service, taskRunId, TaskStatus.COMPLETED, step,
+                        "Verified completion: ${completion.evidence}"
+                    )
                     AutoTouchService.isJobRunning = false
                     service.overlayHud?.setCursorOverlayVisible(false)
-                    service.overlayHud?.updateStatus("🎉 Task Complete!", decision.reason, "DONE")
-                    VideoQueueManager.appendLog(service, "✅ Task Completed: ${decision.reason}")
+                    service.overlayHud?.updateStatus("🎉 Task Complete!", completion.evidence, "DONE")
+                    VideoQueueManager.appendLog(service, "✅ Task completed and independently verified: ${completion.evidence}")
                     break
                 }
 
@@ -570,13 +637,26 @@ object PhoneAgentManager {
                 delay(stepDelay)
             }
         } catch (e: CancellationException) {
-            // Clean user stop
+            terminalTaskStatus = TaskStatus.CANCELLED
+            terminalTaskMessage = "Task cancelled; no success was recorded."
         } catch (e: Exception) {
+            terminalTaskStatus = TaskStatus.FAILED
+            terminalTaskMessage = e.message ?: "Agent failed before completion was verified."
             AutoTouchService.isJobRunning = false
             service.overlayHud?.setCursorOverlayVisible(false)
             service.overlayHud?.updateStatus("Agent Error", e.message ?: "Failed", "ERROR")
             VideoQueueManager.appendLog(service, "❌ Agent Error: ${e.message}")
         } finally {
+            if (!taskCompleted && taskRunId != null) {
+                val status = terminalTaskStatus ?: TaskStatus.PAUSED
+                val message = terminalTaskMessage.ifBlank {
+                    "Execution ended without independent completion proof; inspect the final screen before retrying."
+                }
+                TaskExecutionStore.update(service, taskRunId, status, message = message)
+                if (status != TaskStatus.COMPLETED) {
+                    VideoQueueManager.appendLog(service, "📋 Task state saved: $status • $message")
+                }
+            }
             service.overlayHud?.setCursorOverlayVisible(false)
             service.overlayHud?.hidePodForFocusedTextInput(false)
             AutoTouchService.isJobRunning = false
