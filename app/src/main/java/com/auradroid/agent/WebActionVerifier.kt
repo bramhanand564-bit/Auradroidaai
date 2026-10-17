@@ -54,9 +54,9 @@ object WebActionVerifier {
     fun getSenseName(senseIndex: Int): String {
         return when (senseIndex.coerceIn(1, 4)) {
             1 -> "Sense-1: DOM Click"
-            2 -> "Sense-2: 3x Finger Tap"
-            3 -> "Sense-3: Inner Icon Tap"
-            else -> "Sense-4: Offset Tap + Pro AI"
+            2 -> "Sense-2: DOM Pointer/Mouse Events"
+            3 -> "Sense-3: Inner Control Touch"
+            else -> "Sense-4: Offset Touch / Keyboard Fallback"
         }
     }
 
@@ -150,37 +150,68 @@ object WebActionVerifier {
         label: String
     ): String {
         val activeSense = senseLevel.coerceIn(1, 4)
+        val usePhysicalTouch = VideoQueueManager.isRealWebTouchEnabled(webView.context)
         val jsResult = suspendCancellableCoroutine<String> { cont ->
             val js = """
                 (function() {
-                    var vw = window.innerWidth ? window.innerWidth : 540;
-                    var vh = window.innerHeight ? window.innerHeight : 960;
-                    var list = window.__naxElements ? window.__naxElements : [];
+                    var vw = window.innerWidth || 540;
+                    var vh = window.innerHeight || 960;
+                    var list = window.__naxElements || [];
                     var el = list[$elementIndex];
-                    if (el) {
-                        var targetEl = el;
-                        if ($activeSense === 3 && el.querySelector) {
-                            var inner = el.querySelector('button, a, [role="button"], svg, img, video');
-                            if (inner) targetEl = inner;
-                        }
-                        var r = targetEl.getBoundingClientRect();
+                    if (!el) return JSON.stringify({ ok: false, error: 'STALE_TARGET', vw: vw, vh: vh });
+
+                    var disabled = !!el.disabled || el.getAttribute('aria-disabled') === 'true';
+                    if (disabled) return JSON.stringify({ ok: false, error: 'DISABLED_TARGET', vw: vw, vh: vh });
+
+                    var targetEl = el;
+                    if ($activeSense === 3 && el.querySelector) {
+                        var inner = el.querySelector('button:not([disabled]), a, [role="button"]:not([aria-disabled="true"]), input:not([disabled]), svg, [aria-label]');
+                        if (inner) targetEl = inner;
+                    }
+
+                    var r = targetEl.getBoundingClientRect();
+                    if (r.width < 1 || r.height < 1 || r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) {
+                        return JSON.stringify({ ok: false, error: 'TARGET_NOT_VISIBLE', vw: vw, vh: vh });
+                    }
+
+                    var x = r.left + r.width / 2;
+                    var y = r.top + r.height / 2;
+                    var method = '';
+                    if ($activeSense === 1) {
                         targetEl.focus();
                         targetEl.click();
-                        var mDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
-                        var mUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
-                        targetEl.dispatchEvent(mDown);
-                        targetEl.dispatchEvent(mUp);
-                        return JSON.stringify({
-                            ok: true,
-                            x: Math.round(r.left + r.width / 2),
-                            y: Math.round(r.top + r.height / 2),
-                            vw: vw,
-                            vh: vh
-                        });
+                        method = 'DOM_CLICK';
+                    } else if ($activeSense === 2) {
+                        targetEl.focus();
+                        var pointerSupported = typeof PointerEvent !== 'undefined';
+                        if (pointerSupported) {
+                            targetEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', clientX: x, clientY: y }));
+                            targetEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'mouse', clientX: x, clientY: y }));
+                        }
+                        targetEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+                        targetEl.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+                        targetEl.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+                        method = 'POINTER_MOUSE_EVENTS';
+                    } else if (!$usePhysicalTouch) {
+                        targetEl.focus();
+                        var key = ($activeSense === 3) ? 'Enter' : ' ';
+                        targetEl.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true }));
+                        targetEl.dispatchEvent(new KeyboardEvent('keyup', { key: key, bubbles: true, cancelable: true }));
+                        method = 'KEYBOARD_' + ($activeSense === 3 ? 'ENTER' : 'SPACE');
+                    } else {
+                        method = ($activeSense === 3) ? 'INNER_TOUCH' : 'OFFSET_TOUCH';
+                        if ($activeSense === 4) {
+                            x = Math.max(r.left + 4, Math.min(r.right - 4, x + Math.min(10, r.width / 5)));
+                            y = Math.max(r.top + 4, Math.min(r.bottom - 4, y - Math.min(8, r.height / 5)));
+                        }
                     }
-                    return JSON.stringify({ ok: false, vw: vw, vh: vh });
+                    return JSON.stringify({
+                        ok: true, method: method,
+                        x: Math.round(x), y: Math.round(y), vw: vw, vh: vh
+                    });
                 })();
             """.trimIndent()
+                .replace("$" + "usePhysicalTouch", usePhysicalTouch.toString())
 
             mainHandler.post {
                 webView.evaluateJavascript(js) { raw ->
@@ -190,34 +221,29 @@ object WebActionVerifier {
             }
         }
 
-        try {
+        return try {
             val obj = JSONObject(jsResult)
-            val vw = obj.optDouble("vw", 540.0).toFloat()
-            val vh = obj.optDouble("vh", 960.0).toFloat()
-            val baseX = if (obj.optBoolean("ok", false)) obj.optDouble("x", fallbackCssX.toDouble()).toFloat() else fallbackCssX
-            val baseY = if (obj.optBoolean("ok", false)) obj.optDouble("y", fallbackCssY.toDouble()).toFloat() else fallbackCssY
-
-            if (baseX > 0f && baseY > 0f && VideoQueueManager.isRealWebTouchEnabled(webView.context)) {
-                val (offsetX, offsetY, holdMs) = when (activeSense) {
-                    1 -> Triple(0f, 0f, 85L)
-                    2 -> Triple(0f, 0f, 120L)
-                    3 -> Triple(-18f, -18f, 140L)
-                    else -> Triple(16f, -24f, 260L)
-                }
-                dispatchRealWebTouch(
-                    webView = webView,
-                    hud = hud,
-                    cssX = baseX + offsetX,
-                    cssY = baseY + offsetY,
-                    viewportCssWidth = vw,
-                    viewportCssHeight = vh,
-                    holdDurationMs = holdMs,
-                    label = "${getSenseName(activeSense)} •${label.take(12)}"
-                )
+            if (!obj.optBoolean("ok", false)) {
+                "FAILED: ${obj.optString("error", "target unavailable")}; no click was sent"
+            } else {
+                val method = obj.optString("method", "UNKNOWN")
+                if (method == "INNER_TOUCH" || method == "OFFSET_TOUCH") {
+                    val ok = dispatchRealWebTouch(
+                        webView = webView,
+                        hud = hud,
+                        cssX = obj.optDouble("x", fallbackCssX.toDouble()).toFloat(),
+                        cssY = obj.optDouble("y", fallbackCssY.toDouble()).toFloat(),
+                        viewportCssWidth = obj.optDouble("vw", 540.0).toFloat(),
+                        viewportCssHeight = obj.optDouble("vh", 960.0).toFloat(),
+                        holdDurationMs = if (activeSense == 3) 120L else 150L,
+                        label = "${getSenseName(activeSense)} • ${label.take(18)}"
+                    )
+                    if (!ok) "FAILED: WebView touch dispatch failed" else "${getSenseName(activeSense)}: ${method}"
+                } else "${getSenseName(activeSense)}: ${method}"
             }
-        } catch (_: Exception) {}
-
-        return getSenseName(activeSense)
+        } catch (_: Exception) {
+            "FAILED: click strategy threw an exception"
+        }
     }
 
     /**
