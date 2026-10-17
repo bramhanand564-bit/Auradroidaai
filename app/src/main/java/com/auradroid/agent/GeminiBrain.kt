@@ -707,10 +707,17 @@ object GeminiBrain {
             CURRENT WEBPAGE ELEMENTS:
             $pageTextAndElements
             
+            BACKGROUND WEB MODE (IMPORTANT):
+            - There is no reliable phone screenshot in this mode. Use the live DOM target list, role, label, disabled/selected state, URL and page state only. Do not guess visual coordinates when a matching DOM target exists.
+            - Choose the exact visible, enabled target whose label and role match the current goal. Never select a disabled target. If multiple targets have similar labels, inspect surrounding labels and choose the best contextual match.
+            - If the previous verification says VERIFY FAILED, DONE REJECTED, or NOT CONFIRMED, the prior step is still pending. Do NOT advance to the next logical task step. Pick one recovery strategy for the SAME pending step, or WAIT to re-observe / report a blocker.
+            - Prefer different recovery mechanisms, not repeated identical clicks. Do not repeat a possibly irreversible submit/upload/publish/send/delete/purchase/create action when its outcome is uncertain; inspect the new DOM for confirmation first.
+            - Treat disabled state, selected tabs, focus, field contents, URL, visible result/alert text and loading/progress indicators as evidence. A click being dispatched is not proof that the action worked.
             RULES:
-            1. Every step must be confirmed within 1s. If the screen did not update, switch clicking sense or model.
-            2. Never type prompt twice.
-            3. When 100% rendering is reached, return action="DOWNLOAD_VIDEO".
+            1. Every action must be checked against fresh DOM state. If not verified, use the supplied failure report to recover the same step.
+            2. Never type/submit a prompt twice.
+            3. When rendering reaches 100% or a completed result is visibly confirmed, return action="DOWNLOAD_VIDEO".
+            4. Return DONE only when the page contains direct, task-specific evidence that the requested goal is complete. Never infer success only because the expected button was clicked.
             
             Respond strictly in valid JSON:
             {
