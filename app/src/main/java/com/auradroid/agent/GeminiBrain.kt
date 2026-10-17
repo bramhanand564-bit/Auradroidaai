@@ -61,7 +61,11 @@ data class WebAgentDecision(
     val learnedRule: String = ""
 )
 
-data class PhoneTaskCompletionVerification(val verified: Boolean, val reason: String)
+data class PhoneTaskCompletionVerification(
+    val verified: Boolean,
+    val reason: String,
+    val evidence: String = ""
+)
 
 object GeminiBrain {
 
@@ -771,7 +775,9 @@ object GeminiBrain {
             Goal: $goal
             Current screen summary: $screenSummary
             Recent actions: ${recentHistory.takeLast(8).joinToString("; ")}
-            Return JSON only: {"verified": true/false, "reason": "brief evidence-based explanation"}
+            Return JSON only:
+            {"verified": true/false, "evidence": "specific visible text or screen state that proves completion; empty if none", "reason": "brief explanation"}
+            Never set verified=true unless evidence identifies concrete proof visible on the current screen. Do not treat attempted actions or your own prior DONE decision as proof.
         """.trimIndent()
         return try {
             val raw = callGeminiApi(
@@ -780,9 +786,20 @@ object GeminiBrain {
                 escalateToHighModel = true, highModelName = highModelName
             )
             val obj = extractCleanJsonObject(raw)
+            val modelClaimedVerified = obj.optBoolean("verified", false)
+            val evidence = obj.optString("evidence", "").trim()
+            val verified = modelClaimedVerified && evidence.isNotBlank()
+            val reason = when {
+                modelClaimedVerified && evidence.isBlank() ->
+                    "Completion was rejected because the verifier supplied no concrete on-screen evidence."
+                else ->
+                    obj.optString("reason", "No clear completion evidence.")
+                        .ifBlank { "No clear completion evidence." }
+            }
             PhoneTaskCompletionVerification(
-                verified = obj.optBoolean("verified", false),
-                reason = obj.optString("reason", "No clear completion evidence.").ifBlank { "No clear completion evidence." }
+                verified = verified,
+                reason = reason,
+                evidence = evidence
             )
         } catch (e: CancellationException) {
             throw e
