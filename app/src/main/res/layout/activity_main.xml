@@ -1,454 +1,1438 @@
-package com.auradroid.agent
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#090D16"
+    android:orientation="vertical">
 
-import android.animation.ValueAnimator
-import android.annotation.SuppressLint
-import android.app.DownloadManager
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.PixelFormat
-import android.graphics.Rect
-import android.graphics.RectF
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.os.Handler
-import android.os.Looper
-import android.util.Base64
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
-import android.view.animation.DecelerateInterpolator
-import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
-import android.webkit.URLUtil
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
-import kotlinx.coroutines.suspendCancellableCoroutine
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
-import kotlin.coroutines.resume
-import kotlin.math.abs
-import kotlin.math.sin
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#121826"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp">
 
-class AiOverlayHud(private val context: Context) {
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-    companion object {
-        @Volatile
-        var lastSniffedMp4Url: String? = null
-        @Volatile
-        var lastSniffedTimestampMs: Long = 0L
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AuraDroid OS • Nax Bot"
+                android:textColor="#F0F9FF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
-        init {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                try {
-                    WebView.enableSlowWholeDocumentDraw()
-                } catch (_: Exception) {}
-            }
-        }
-    }
+            <TextView
+                android:id="@+id/tvActiveSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Cognitive State Machine • Stealth AI Edition"
+                android:textColor="#7DD3FC"
+                android:textSize="12sp" />
+        </LinearLayout>
 
-    private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private val mainHandler = Handler(Looper.getMainLooper())
+        <Button
+            android:id="@+id/btnToggleFloatingPod"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="12dp"
+            android:text="Nax: ON"
+            android:textAllCaps="false"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:textStyle="bold" />
 
-    private var pointerCanvasView: NaxHandCursorCanvas? = null
-    private var podRootLayout: LinearLayout? = null
-    private var podLayoutParams: WindowManager.LayoutParams? = null
+        <TextView
+            android:id="@+id/tvServiceBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#1E293B"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="6dp"
+            android:text="TOUCH: OFF"
+            android:textColor="#F87171"
+            android:textSize="11.5sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
-    private var compactRow: LinearLayout? = null
-    private var sideInfoContainer: LinearLayout? = null
-    private var tvPodTitle: TextView? = null
-    private var tvPodSubtitle: TextView? = null
-    private var btnQuickMiniBrowser: TextView? = null
-    private var btnQuickTeachToggle: TextView? = null
-    private var stopBadge: TextView? = null
-    private var botAvatarView: NaxBotAvatarView? = null
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#2638BDF8" />
 
-    private var expandedContainer: LinearLayout? = null
-    private var tvExpandedStepInfo: TextView? = null
-    private var btnExpandFullToggle: TextView? = null
-    private var podWebFrame: FrameLayout? = null
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-    private var sharedWebView: WebView? = null
-    private var isDesktopMode = false
-    private var isAdded = false
-    private var isPodVisible = true
-    private var isSideBarExpanded = false
-    private var currentStage = 1
+        <ScrollView
+            android:id="@+id/tabChatLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="visible">
 
-    var isLiveTeachActive = false
-        private set
-    private var currentTeachSkillName = "GOOGLE_FLOW"
-    private val recordedTeachSteps = JSONArray()
-    private var onLiveTeachFinishedCallback: ((String) -> Unit)? = null
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
 
-    private val autoCollapseSideBarRunnable = Runnable {
-        if (!AutoTouchService.isJobRunning && !isLiveTeachActive && currentStage == 1) {
-            setSideBarExpanded(false)
-        }
-    }
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#4038BDF8"
+                    app:strokeWidth="1.2dp">
 
-    @SuppressLint("SetJavaScriptEnabled")
-    fun getOrCreateSharedWebView(): WebView {
-        if (sharedWebView == null) {
-            val wv = object : WebView(context.applicationContext) {
-                override fun onCheckIsTextEditor(): Boolean = true
-            }.apply {
-                isFocusable = true
-                isFocusableInTouchMode = true
-                requestFocus()
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.databaseEnabled = true
-                settings.javaScriptCanOpenWindowsAutomatically = true
-                settings.setSupportMultipleWindows(false)
-                settings.mediaPlaybackRequiresUserGesture = false
-                settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                settings.allowFileAccess = true
-                settings.allowContentAccess = true
-                settings.useWideViewPort = true
-                settings.loadWithOverviewMode = true
-                settings.setSupportZoom(true)
-                settings.builtInZoomControls = true
-                settings.displayZoomControls = false
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
 
-                // Idea 5: Stealth Anti-Bot JS Setup
-                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="💧 Nax Bot • Cognitive Planner"
+                                android:textColor="#F0F9FF"
+                                android:textSize="16.5sp"
+                                android:textStyle="bold" />
 
-                CookieManager.getInstance().apply {
-                    setAcceptCookie(true)
-                    setAcceptThirdPartyCookies(this@apply, true)
-                }
+                            <Button
+                                android:id="@+id/btnClearChat"
+                                android:layout_width="wrap_content"
+                                android:layout_height="34dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="Clear"
+                                android:textAllCaps="false"
+                                android:textColor="#7DD3FC"
+                                android:textSize="12sp" />
+                        </LinearLayout>
 
-                addJavascriptInterface(object {
-                    @JavascriptInterface
-                    fun saveBase64Video(base64Data: String, fileName: String) {
-                        try {
-                            val cleanB64 = base64Data.substringAfter(",")
-                            val bytes = Base64.decode(cleanB64, Base64.DEFAULT)
-                            val prefs = context.getSharedPreferences("auradroid_prefs", Context.MODE_PRIVATE)
-                            val defaultFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "AutoVideos").absolutePath
-                            val targetFolder = prefs.getString("folder_path", defaultFolder) ?: defaultFolder
-                            val dir = File(targetFolder)
-                            if (!dir.exists()) dir.mkdirs()
-                            val outFile = File(dir, fileName)
-                            FileOutputStream(outFile).use { it.write(bytes) }
-                        } catch (_: Exception) {}
-                    }
-                }, "AuraBlobBridge")
+                        <TextView
+                            android:id="@+id/tvChatHistory"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:background="#0B101C"
+                            android:lineSpacingExtra="5dp"
+                            android:minHeight="145dp"
+                            android:padding="14dp"
+                            android:text="🤖 Nax Bot: Main ab State-Machine aur Pure Vision AI se sochta hoon. Mujhe apna task bataiye!"
+                            android:textColor="#E0F2FE"
+                            android:textSize="14.5sp" />
 
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                        val reqUrl = request?.url?.toString() ?: ""
-                        val lower = reqUrl.lowercase()
-                        if ((lower.contains(".mp4") || lower.contains("videoplayback") || lower.contains("generated_video")) && !lower.endsWith(".js") && !lower.endsWith(".css")) {
-                            lastSniffedMp4Url = reqUrl
-                            lastSniffedTimestampMs = System.currentTimeMillis()
-                        }
-                        return super.shouldInterceptRequest(view, request)
-                    }
+                        <EditText
+                            android:id="@+id/etChatInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="92dp"
+                            android:layout_marginTop="12dp"
+                            android:background="#192338"
+                            android:gravity="top|start"
+                            android:hint="अपना काम यहाँ लिखें..."
+                            android:padding="14dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="14.5sp" />
 
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        super.onPageFinished(view, url)
-                        CookieManager.getInstance().flush()
-                        url?.let { MainActivity.onBrowserUrlChanged?.invoke(it) }
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnVoiceMic"
+                                android:layout_width="wrap_content"
+                                android:layout_height="50dp"
+                                android:layout_marginEnd="8dp"
+                                android:backgroundTint="#1E293B"
+                                android:text="🎙️ बोलें"
+                                android:textAllCaps="false"
+                                android:textColor="#38BDF8"
+                                android:textSize="14.5sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnSendChat"
+                                android:layout_width="0dp"
+                                android:layout_height="50dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#0284C7"
+                                android:text="✨ प्लान बनाएं"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#402DD4BF"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📋 Cognitive Execution Plan"
+                            android:textColor="#F0F9FF"
+                            android:textSize="16.5sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvAutoTimerSummary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="#0F292E"
+                            android:padding="10dp"
+                            android:text="⏰ Smart Timer: Ready"
+                            android:textColor="#2DD4BF"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvPlanSteps"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="#0B101C"
+                            android:lineSpacingExtra="5dp"
+                            android:padding="14dp"
+                            android:text="अभी कोई प्लान नहीं है।"
+                            android:textColor="#CBD5E1"
+                            android:textSize="14sp" />
+
+                        <RadioGroup
+                            android:id="@+id/rgExecutionMode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="vertical">
+
+                            <RadioButton
+                                android:id="@+id/rbModeBackgroundWeb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="🌐 1x1 Stealth Mode (OS से छुपकर Full Speed में चलाएं)"
+                                android:textColor="#38BDF8"
+                                android:textSize="13.5sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbModePhoneScreen"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="📱 Live Phone Vision (स्क्रीन देखकर काम करे)"
+                                android:textColor="#F0F9FF"
+                                android:textSize="13.5sp" />
+                        </RadioGroup>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnExecutePlan"
+                                android:layout_width="0dp"
+                                android:layout_height="52dp"
+                                android:layout_marginEnd="8dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#0D9488"
+                                android:text="▶ Start AI"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14.5sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnStopAgent"
+                                android:layout_width="wrap_content"
+                                android:layout_height="52dp"
+                                android:backgroundTint="#E11D48"
+                                android:text="■ STOP"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <LinearLayout
+            android:id="@+id/tabWebLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="10dp"
+            android:visibility="gone">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardBackgroundColor="#131B2E"
+                app:cardCornerRadius="18dp"
+                app:strokeColor="#4038BDF8"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnBrowserBack"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minWidth="48dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="⬅ Back"
+                                android:textAllCaps="false"
+                                android:textColor="#F0F9FF"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserForward"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minWidth="48dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="Next ➡"
+                                android:textAllCaps="false"
+                                android:textColor="#F0F9FF"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserRefresh"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="🔄 Reload"
+                                android:textAllCaps="false"
+                                android:textColor="#F0F9FF"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserFlow"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#0284C7"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="12dp"
+                                android:text="🎬 Google Flow"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12.5sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnBrowserGmail"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="🔑 Google Login"
+                                android:textAllCaps="false"
+                                android:textColor="#F0F9FF"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserDesktop"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="🖥️ Desktop: OFF"
+                                android:textAllCaps="false"
+                                android:textColor="#F0F9FF"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnBrowserDownloads"
+                                android:layout_width="wrap_content"
+                                android:layout_height="38dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="📥 Downloads"
+                                android:textAllCaps="false"
+                                android:textColor="#2DD4BF"
+                                android:textSize="12.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </HorizontalScrollView>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/etWebUrl"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:background="#192338"
+                            android:hint="https://labs.google/fx/tools/flow"
+                            android:inputType="textUri"
+                            android:paddingHorizontal="12dp"
+                            android:singleLine="true"
+                            android:text="https://labs.google/fx/tools/flow"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="13.5sp" />
+
+                        <Button
+                            android:id="@+id/btnWebGo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="42dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#0284C7"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minWidth="56dp"
+                            android:text="Go"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13.5sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            android:id="@+id/btnPinFlowUrl"
+                            android:layout_width="wrap_content"
+                            android:layout_height="42dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#1E293B"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="10dp"
+                            android:text="📌 Pin"
+                            android:textAllCaps="false"
+                            android:textColor="#2DD4BF"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/etWebTaskGoal"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:background="#192338"
+                            android:hint="यहाँ काम लिखें..."
+                            android:paddingHorizontal="12dp"
+                            android:singleLine="true"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="13sp" />
+
+                        <Button
+                            android:id="@+id/btnRunWebAgent"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#0D9488"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:text="▶ Start"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <FrameLayout
+                android:id="@+id/webPreviewContainer"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="#090D16" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/tabPipelinesLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#4038BDF8"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🎬 Story Showrunner (State-Machine AI)"
+                            android:textColor="#F0F9FF"
+                            android:textSize="16.5sp"
+                            android:textStyle="bold" />
+
+                        <EditText
+                            android:id="@+id/etFlowTopic"
+                            android:layout_width="match_parent"
+                            android:layout_height="76dp"
+                            android:layout_marginTop="10dp"
+                            android:background="#192338"
+                            android:gravity="top|start"
+                            android:hint="Story theme..."
+                            android:padding="12dp"
+                            android:text="Cinematic hyper-realistic technical story series of an adult futuristic cybernetic explorer inventing quantum gadgets in a glowing sci-fi world with Hindi voice and dialog"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13.5sp" />
+
+                        <EditText
+                            android:id="@+id/etStoryCharacterLock"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="8dp"
+                            android:background="#192338"
+                            android:gravity="center_vertical|start"
+                            android:paddingHorizontal="12dp"
+                            android:text="Adult futuristic cybernetic tech explorer wearing a sleek glowing neon-blue visor and dark metallic jacket"
+                            android:textColor="#E0F2FE"
+                            android:textSize="13sp" />
+
+                        <RadioGroup
+                            android:id="@+id/rgStoryMode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="vertical">
+
+                            <RadioButton
+                                android:id="@+id/rbStorySerialMode"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="📚 Series Part 1 ➔ 2 ➔ 3"
+                                android:textColor="#2DD4BF"
+                                android:textSize="13sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbStorySideMode"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="🌟 Side-Story Reel"
+                                android:textColor="#FACC15"
+                                android:textSize="13sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbStoryStandaloneMode"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="🎲 Standalone Reel"
+                                android:textColor="#F0F9FF"
+                                android:textSize="13sp" />
+                        </RadioGroup>
+
+                        <EditText
+                            android:id="@+id/etStoryCustomTwist"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="8dp"
+                            android:background="#192338"
+                            android:gravity="top|start"
+                            android:hint="Custom Twist..."
+                            android:padding="10dp"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <RadioGroup
+                                android:id="@+id/rgVideoDuration"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="horizontal">
+
+                                <RadioButton
+                                    android:id="@+id/rbDuration8s"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginEnd="6dp"
+                                    android:text="8s"
+                                    android:textColor="#F0F9FF"
+                                    android:textSize="13sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rbDuration10s"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginEnd="6dp"
+                                    android:checked="true"
+                                    android:text="10s"
+                                    android:textColor="#2DD4BF"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <RadioButton
+                                    android:id="@+id/rbDuration12s"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginEnd="6dp"
+                                    android:text="12s"
+                                    android:textColor="#F0F9FF"
+                                    android:textSize="13sp" />
+
+                                <RadioButton
+                                    android:id="@+id/rbDuration15s"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="15s"
+                                    android:textColor="#F0F9FF"
+                                    android:textSize="13sp" />
+                            </RadioGroup>
+
+                            <EditText
+                                android:id="@+id/etCustomDurationSec"
+                                android:layout_width="54dp"
+                                android:layout_height="38dp"
+                                android:background="#192338"
+                                android:gravity="center"
+                                android:hint="Sec"
+                                android:inputType="number"
+                                android:text="10"
+                                android:textColor="#38BDF8"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Part #: "
+                                android:textColor="#F0F9FF"
+                                android:textSize="13.5sp"
+                                android:textStyle="bold" />
+
+                            <EditText
+                                android:id="@+id/etNextEpisodeNumber"
+                                android:layout_width="54dp"
+                                android:layout_height="40dp"
+                                android:background="#192338"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="1"
+                                android:textColor="#38BDF8"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnViewStoryHistory"
+                                android:layout_width="0dp"
+                                android:layout_height="40dp"
+                                android:layout_marginStart="8dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="📜 Arc"
+                                android:textAllCaps="false"
+                                android:textColor="#7DD3FC"
+                                android:textSize="12sp" />
+
+                            <Button
+                                android:id="@+id/btnResetStoryArc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="40dp"
+                                android:layout_marginStart="6dp"
+                                android:backgroundTint="#1E293B"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="10dp"
+                                android:text="🔄 Ep 1"
+                                android:textAllCaps="false"
+                                android:textColor="#F87171"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <CheckBox
+                            android:id="@+id/cbOneSecAiConfirm"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:checked="true"
+                            android:text="🧠 ML Vision Coordinate Clicking (DOM-less)"
+                            android:textColor="#2DD4BF"
+                            android:textSize="12.5sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbFirstRunLiveLearn"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🕵️ Stealth Anti-Bot JS Injection Active"
+                            android:textColor="#FACC15"
+                            android:textSize="12.5sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbVideoFrameVisionSeo"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🔄 Dynamic State Machine (Pop-ups auto kill)"
+                            android:textColor="#38BDF8"
+                            android:textSize="12.5sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Daily Time: "
+                                android:textColor="#F0F9FF"
+                                android:textSize="13.5sp" />
+
+                            <EditText
+                                android:id="@+id/etHour"
+                                android:layout_width="52dp"
+                                android:layout_height="42dp"
+                                android:background="#192338"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="19"
+                                android:textColor="#FFFFFF"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:paddingHorizontal="6dp"
+                                android:text=":"
+                                android:textColor="#FFFFFF"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <EditText
+                                android:id="@+id/etMinute"
+                                android:layout_width="52dp"
+                                android:layout_height="42dp"
+                                android:background="#192338"
+                                android:gravity="center"
+                                android:inputType="number"
+                                android:text="00"
+                                android:textColor="#FFFFFF"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnSaveSchedule"
+                                android:layout_width="match_parent"
+                                android:layout_height="42dp"
+                                android:layout_marginStart="10dp"
+                                android:backgroundTint="#0284C7"
+                                android:text="⏰ Set"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnRunFlowToYouTubeNow"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="12dp"
+                            android:backgroundTint="#0284C7"
+                            android:text="✨ Run State Machine ➔ YouTube"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14.5sp"
+                            android:textStyle="bold" />
                         
-                        // Idea 5: Stealth Injection to bypass Webdriver detection
-                        val stealthJs = """
-                            (function() {
-                                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                                window.chrome = { runtime: {} };
-                            })();
-                        """.trimIndent()
-                        view?.evaluateJavascript(stealthJs, null)
-                    }
-                }
-                webChromeClient = WebChromeClient()
+                        <!-- Invisible elements needed for compilation compatibility with Activity -->
+                        <EditText android:id="@+id/etDailyVideoLimit" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone"/>
+                        <CheckBox android:id="@+id/cbAutoGenerateFlowFirst" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone"/>
 
-                setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-                    enqueueDirectVideoDownload(url, userAgent, contentDisposition, mimeType)
-                }
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-                measure(View.MeasureSpec.makeMeasureSpec(540, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(960, View.MeasureSpec.EXACTLY))
-                layout(0, 0, 540, 960)
-            }
-            sharedWebView = wv
-        }
-        return sharedWebView!!
-    }
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#402DD4BF"
+                    app:strokeWidth="1.2dp">
 
-    fun enqueueDirectVideoDownload(url: String, userAgent: String = "Mozilla/5.0", contentDisposition: String = "", mimeType: String = "video/mp4"): Boolean {
-        return try {
-            val wv = getOrCreateSharedWebView()
-            if (url.startsWith("blob:")) {
-                val js = "(function() { fetch('$url').then(r => r.blob()).then(b => { var reader = new FileReader(); reader.onloadend = function() { AuraBlobBridge.saveBase64Video(reader.result, 'flow_video_' + Date.now() + '.mp4'); }; reader.readAsDataURL(b); }); })();"
-                mainHandler.post { wv.evaluateJavascript(js, null) }
-                return true
-            }
-            val rawName = URLUtil.guessFileName(url, contentDisposition, mimeType)
-            val fileName = if (!rawName.contains(".")) "flow_video_${System.currentTimeMillis()}.mp4" else rawName
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-            val request = DownloadManager.Request(Uri.parse(url)).apply {
-                setMimeType("video/mp4")
-                addRequestHeader("User-Agent", userAgent)
-                CookieManager.getInstance().getCookie(url)?.let { addRequestHeader("Cookie", it) }
-                setTitle(fileName)
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "AutoVideos/$fileName")
-            }
-            (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📂 Storage Vector RAG Sync"
+                            android:textColor="#F0F9FF"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
 
-    fun startOrStopLiveTeach(skillName: String = "GOOGLE_FLOW", onFinishedJson: ((String) -> Unit)? = null): Boolean {
-        // ... (Keep existing implementation)
-        return false // Stubbed for brevity here, keep your existing logic
-    }
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="horizontal">
 
-    suspend fun captureWebViewScreenshotBase64(): String? = suspendCancellableCoroutine { cont ->
-        mainHandler.post {
-            try {
-                val wv = getOrCreateSharedWebView()
-                val bmp = Bitmap.createBitmap(540, 960, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(bmp)
-                canvas.drawColor(Color.parseColor("#090D16"))
-                wv.draw(canvas)
-                val baos = ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.JPEG, 68, baos)
-                bmp.recycle()
-                if (cont.isActive) cont.resume(Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP))
-            } catch (_: Exception) {
-                if (cont.isActive) cont.resume(null)
-            }
-        }
-    }
+                            <EditText
+                                android:id="@+id/etFolderPath"
+                                android:layout_width="0dp"
+                                android:layout_height="44dp"
+                                android:layout_weight="1"
+                                android:background="#192338"
+                                android:paddingHorizontal="12dp"
+                                android:singleLine="true"
+                                android:text="/storage/emulated/0/Download/AutoVideos"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp" />
 
-    fun toggleDesktopMode(): Boolean {
-        isDesktopMode = !isDesktopMode
-        val wv = getOrCreateSharedWebView()
-        wv.settings.userAgentString = if (isDesktopMode) "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" else "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
-        wv.reload()
-        return isDesktopMode
-    }
+                            <Button
+                                android:id="@+id/btnPickAnyFolder"
+                                android:layout_width="wrap_content"
+                                android:layout_height="44dp"
+                                android:layout_marginStart="6dp"
+                                android:backgroundTint="#0284C7"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:paddingHorizontal="12dp"
+                                android:text="📂 Pick"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
 
-    fun attachWebViewToContainer(targetContainer: FrameLayout) {
-        mainHandler.post {
-            val wv = getOrCreateSharedWebView()
-            (wv.parent as? ViewGroup)?.removeView(wv)
-            targetContainer.removeAllViews()
-            targetContainer.addView(wv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            wv.requestFocus()
-        }
-    }
+                        <RadioGroup
+                            android:id="@+id/rgUploadOrder"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:orientation="vertical">
 
-    fun collapseToCompactStage() { setPodStage(1) }
-    fun openForFirstRunLiveCalibration() { if (currentStage == 1 || currentStage == 4) setPodStage(2) }
+                            <RadioButton
+                                android:id="@+id/rbUploadNewestFirst"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="🆕 Newest First"
+                                android:textColor="#2DD4BF"
+                                android:textSize="13.5sp" />
 
-    // Idea 4: 1x1 Pixel Invisible Background Mode
-    fun enableInvisible1x1StealthMode() {
-        setPodStage(4)
-    }
+                            <RadioButton
+                                android:id="@+id/rbUploadOldestFirst"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="⏳ Oldest First"
+                                android:textColor="#F0F9FF"
+                                android:textSize="13.5sp" />
+                        </RadioGroup>
 
-    fun show() {
-        mainHandler.post {
-            if (!isPodVisible) return@post
-            if (isAdded && podRootLayout?.windowToken != null) return@post
-            try {
-                val canvasParams = WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT)
-                pointerCanvasView = NaxHandCursorCanvas(context).apply { visibility = View.GONE }
-                windowManager.addView(pointerCanvasView, canvasParams)
+                        <TextView
+                            android:id="@+id/tvQueueStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#0B101C"
+                            android:padding="12dp"
+                            android:text="Total: 0 • Pending: 0"
+                            android:textColor="#2DD4BF"
+                            android:textSize="13.5sp"
+                            android:textStyle="bold" />
 
-                podLayoutParams = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = dpToPx(10); y = dpToPx(40) }
-                podRootLayout = buildThreeStagePodUi()
-                windowManager.addView(podRootLayout, podLayoutParams)
-                isAdded = true
-                currentStage = 1
-                setSideBarExpanded(AutoTouchService.isJobRunning)
-            } catch (_: Exception) { isAdded = false }
-        }
-    }
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="horizontal">
 
-    fun hide() {
-        mainHandler.post {
-            try { pointerCanvasView?.let { windowManager.removeView(it) } } catch (_: Exception) {}
-            try { podRootLayout?.let { windowManager.removeView(it) } } catch (_: Exception) {}
-            isAdded = false
-        }
-    }
+                            <Button
+                                android:id="@+id/btnScanFolder"
+                                android:layout_width="0dp"
+                                android:layout_height="46dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#1E293B"
+                                android:text="📂 Scan"
+                                android:textAllCaps="false"
+                                android:textColor="#F0F9FF" />
 
-    fun togglePodVisibility(): Boolean {
-        isPodVisible = !isPodVisible
-        if (isPodVisible) show() else hide()
-        return isPodVisible
-    }
+                            <Button
+                                android:id="@+id/btnResetHistory"
+                                android:layout_width="0dp"
+                                android:layout_height="46dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#1E293B"
+                                android:text="🔄 Reset"
+                                android:textAllCaps="false"
+                                android:textColor="#F87171" />
+                        </LinearLayout>
 
-    private fun setSideBarExpanded(expanded: Boolean) {
-        mainHandler.post { isSideBarExpanded = expanded; sideInfoContainer?.visibility = if (expanded) View.VISIBLE else View.GONE }
-    }
+                        <Button
+                            android:id="@+id/btnRunYouTubeNow"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="10dp"
+                            android:backgroundTint="#0D9488"
+                            android:text="▶ Run Frame Vision Upload"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
 
-    fun setPodStage(stage: Int) {
-        mainHandler.post {
-            currentStage = stage.coerceIn(1, 4)
-            val lp = podLayoutParams ?: return@post
+        <ScrollView
+            android:id="@+id/tabDoctorLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
 
-            when (currentStage) {
-                1 -> { // Compact Normal
-                    podWebFrame?.removeAllViews()
-                    expandedContainer?.visibility = View.GONE
-                    podRootLayout?.alpha = 1.0f
-                    lp.width = WindowManager.LayoutParams.WRAP_CONTENT
-                    lp.height = WindowManager.LayoutParams.WRAP_CONTENT
-                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                }
-                2 -> { // Mini Floating
-                    setSideBarExpanded(true)
-                    expandedContainer?.visibility = View.VISIBLE
-                    podRootLayout?.alpha = 1.0f
-                    lp.width = dpToPx(300)
-                    lp.height = dpToPx(470)
-                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    podWebFrame?.let { attachWebViewToContainer(it) }
-                }
-                3 -> { // Full Screen
-                    setSideBarExpanded(true)
-                    expandedContainer?.visibility = View.VISIBLE
-                    podRootLayout?.alpha = 1.0f
-                    lp.width = WindowManager.LayoutParams.MATCH_PARENT
-                    lp.height = WindowManager.LayoutParams.MATCH_PARENT
-                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    podWebFrame?.let { attachWebViewToContainer(it) }
-                }
-                4 -> { // Idea 4: 1x1 Pixel Invisible Background Mode (Tricks OS into keeping Webview fully active)
-                    podWebFrame?.removeAllViews()
-                    expandedContainer?.visibility = View.GONE
-                    podRootLayout?.alpha = 0.01f // Invisible
-                    lp.width = 1 // 1 pixel
-                    lp.height = 1 // 1 pixel
-                    lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                }
-            }
-            try { if (isAdded) windowManager.updateViewLayout(podRootLayout, lp) } catch (_: Exception) {}
-        }
-    }
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
 
-    @SuppressLint("ClickableViewAccessibility")
-    private fun buildThreeStagePodUi(): LinearLayout {
-        val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        compactRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable().apply { setColor(Color.parseColor("#D90F172A")); cornerRadius = dpToPx(24).toFloat(); setStroke(dpToPx(1), Color.parseColor("#5938BDF8")) }
-            setPadding(dpToPx(3), dpToPx(2), dpToPx(5), dpToPx(2))
-        }
-        botAvatarView = NaxBotAvatarView(context).apply { layoutParams = LinearLayout.LayoutParams(dpToPx(46), dpToPx(46)) }
-        sideInfoContainer = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dpToPx(5), 0, dpToPx(2), 0); visibility = View.GONE }
-        
-        val textCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dpToPx(4) } }
-        tvPodTitle = TextView(context).apply { text = "Nax Bot"; setTextColor(Color.parseColor("#F0F9FF")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); typeface = Typeface.DEFAULT_BOLD; maxLines = 1; maxWidth = dpToPx(112) }
-        tvPodSubtitle = TextView(context).apply { text = "Ready"; setTextColor(Color.parseColor("#7DD3FC")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.8f); maxLines = 1; maxWidth = dpToPx(112) }
-        textCol.addView(tvPodTitle); textCol.addView(tvPodSubtitle)
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#4038BDF8"
+                    app:strokeWidth="1.2dp">
 
-        btnQuickMiniBrowser = TextView(context).apply { text = "🌐"; gravity = Gravity.CENTER; setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); background = GradientDrawable().apply { setColor(Color.parseColor("#0284C7")); cornerRadius = dpToPx(10).toFloat() }; layoutParams = LinearLayout.LayoutParams(dpToPx(20), dpToPx(20)).apply { marginEnd = dpToPx(3) }; setOnClickListener { if (currentStage == 1) setPodStage(2) else setPodStage(1) } }
-        btnQuickTeachToggle = TextView(context).apply { text = "🎓"; gravity = Gravity.CENTER; setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); background = GradientDrawable().apply { setColor(Color.parseColor("#D97706")); cornerRadius = dpToPx(10).toFloat() }; layoutParams = LinearLayout.LayoutParams(dpToPx(20), dpToPx(20)).apply { marginEnd = dpToPx(3) } }
-        stopBadge = TextView(context).apply { text = "■"; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f); typeface = Typeface.DEFAULT_BOLD; background = GradientDrawable().apply { setColor(Color.parseColor("#E11D48")); cornerRadius = dpToPx(10).toFloat() }; layoutParams = LinearLayout.LayoutParams(dpToPx(20), dpToPx(20)); setOnClickListener { AutoTouchService.instance?.stopCurrentJob(); updateStatus("Nax Bot", "Stopped", "IDLE") } }
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-        sideInfoContainer?.addView(textCol); sideInfoContainer?.addView(btnQuickMiniBrowser); sideInfoContainer?.addView(btnQuickTeachToggle); sideInfoContainer?.addView(stopBadge)
-        compactRow?.addView(botAvatarView); compactRow?.addView(sideInfoContainer)
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🎓 RAG Memory &amp; State Editor"
+                            android:textColor="#F0F9FF"
+                            android:textSize="16.5sp"
+                            android:textStyle="bold" />
 
-        var initialX = 0; var initialY = 0; var initialTouchX = 0f; var initialTouchY = 0f; var isDragging = false
-        botAvatarView?.setOnTouchListener { _, event ->
-            val lp = podLayoutParams ?: return@setOnTouchListener false
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { initialX = lp.x; initialY = lp.y; initialTouchX = event.rawX; initialTouchY = event.rawY; isDragging = false; true }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - initialTouchX).toInt(); val dy = (event.rawY - initialTouchY).toInt()
-                    if (abs(dx) > dpToPx(6) || abs(dy) > dpToPx(6)) { isDragging = true; lp.x = initialX + dx; lp.y = initialY + dy; try { windowManager.updateViewLayout(podRootLayout, lp) } catch (_: Exception) {} }
-                    true
-                }
-                MotionEvent.ACTION_UP -> { if (!isDragging) { if (currentStage > 1) setPodStage(1) else setSideBarExpanded(!isSideBarExpanded) }; true }
-                else -> false
-            }
-        }
+                        <EditText
+                            android:id="@+id/etSkillTaskName"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="10dp"
+                            android:background="#192338"
+                            android:hint="Skill Name"
+                            android:paddingHorizontal="12dp"
+                            android:singleLine="true"
+                            android:text="GOOGLE_FLOW"
+                            android:textColor="#38BDF8"
+                            android:textColorHint="#64748B"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
 
-        expandedContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; background = GradientDrawable().apply { setColor(Color.parseColor("#131B2E")); cornerRadius = dpToPx(16).toFloat(); setStroke(dpToPx(1), Color.parseColor("#5938BDF8")) }; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT).apply { topMargin = dpToPx(4) } }
-        val headerBar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dpToPx(8), dpToPx(5), dpToPx(8), dpToPx(5)); setBackgroundColor(Color.parseColor("#192338")) }
-        tvExpandedStepInfo = TextView(context).apply { text = "Nax Bot • Cognitive State"; setTextColor(Color.parseColor("#E0F2FE")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f); maxLines = 1; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-        btnExpandFullToggle = TextView(context).apply { text = "⛶ Full"; setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3)); background = GradientDrawable().apply { setColor(Color.parseColor("#0284C7")); cornerRadius = dpToPx(8).toFloat() }; setOnClickListener { if (currentStage == 2) setPodStage(3) else setPodStage(2) } }
-        val btnHideMini = TextView(context).apply { text = "━ Hide"; setTextColor(Color.parseColor("#CBD5E1")); setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f); setPadding(dpToPx(8), dpToPx(3), dpToPx(8), dpToPx(3)); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dpToPx(5) }; background = GradientDrawable().apply { setColor(Color.parseColor("#334155")); cornerRadius = dpToPx(8).toFloat() }; setOnClickListener { setPodStage(1) } }
-        headerBar.addView(tvExpandedStepInfo); headerBar.addView(btnExpandFullToggle); headerBar.addView(btnHideMini)
-        podWebFrame = FrameLayout(context).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f); setBackgroundColor(Color.parseColor("#090D16")) }
-        expandedContainer?.addView(headerBar); expandedContainer?.addView(podWebFrame)
-        root.addView(compactRow); root.addView(expandedContainer)
-        return root
-    }
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
 
-    fun updateStatus(title: String, subtitle: String, emotion: String = "AUTO") {
-        mainHandler.post {
-            if (!isAdded) show()
-            tvPodTitle?.text = title.take(20); tvPodSubtitle?.text = subtitle.take(24); tvExpandedStepInfo?.text = "$title • $subtitle"
-            botAvatarView?.setEmotion(if (emotion == "AUTO") "WORKING" else emotion.uppercase())
-            setSideBarExpanded(true)
-            mainHandler.removeCallbacks(autoCollapseSideBarRunnable)
-            if (!AutoTouchService.isJobRunning) mainHandler.postDelayed(autoCollapseSideBarRunnable, 4500L)
-        }
-    }
+                            <Button
+                                android:id="@+id/btnPickScreenshotsToTrain"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#0284C7"
+                                android:text="📸 Vision OCR Train"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12.5sp"
+                                android:textStyle="bold" />
 
-    fun getWebViewBoundsOnScreen(): Rect? {
-        val wv = sharedWebView ?: return null
-        if (!wv.isShown) return null
-        val loc = IntArray(2); wv.getLocationOnScreen(loc)
-        return Rect(loc[0], loc[1], loc[0] + wv.width, loc[1] + wv.height)
-    }
+                            <Button
+                                android:id="@+id/btnStartLiveTeachMode"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#D97706"
+                                android:text="🔴 State Record"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
 
-    fun showTapEffect(x: Float, y: Float, label: String = "") { mainHandler.post { pointerCanvasView?.visibility = View.VISIBLE; pointerCanvasView?.triggerTapAnimation(x, y, label) } }
-    fun moveBotAndShowTap(x: Float, y: Float, label: String = "") { showTapEffect(x, y, label) }
-    fun showSwipeEffect(startX: Float, startY: Float, endX: Float, endY: Float) { mainHandler.post { pointerCanvasView?.visibility = View.VISIBLE; pointerCanvasView?.triggerSwipeAnimation(startX, startY, endX, endY) } }
-    private fun dpToPx(dp: Int): Int { return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp.toFloat(), context.resources.displayMetrics).toInt() }
-}
+                        <EditText
+                            android:id="@+id/etTrainedSkillJson"
+                            android:layout_width="match_parent"
+                            android:layout_height="155dp"
+                            android:layout_marginTop="10dp"
+                            android:background="#0B101C"
+                            android:fontFamily="monospace"
+                            android:gravity="top|start"
+                            android:padding="12dp"
+                            android:textColor="#2DD4BF"
+                            android:textColorHint="#64748B"
+                            android:textSize="12sp" />
 
-class NaxBotAvatarView(context: Context) : View(context) {
-    // Basic Avatar View to keep snippet length manageable, keeping UI solid
-    private var currentEmotion = "IDLE"
-    fun setEmotion(emotion: String) { currentEmotion = emotion; invalidate() }
-    override fun onDraw(canvas: Canvas) {
-        val paint = Paint().apply { color = Color.parseColor("#F8FAFC"); style = Paint.Style.FILL }
-        canvas.drawCircle(width/2f, height/2f, width/2.2f, paint)
-        paint.color = Color.parseColor("#0F172A")
-        canvas.drawCircle(width/3f, height/2f, 6f, paint)
-        canvas.drawCircle(width*2/3f, height/2f, 6f, paint)
-    }
-}
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="horizontal">
 
-class NaxHandCursorCanvas(context: Context) : View(context) {
-    private var tapX = -1f; private var tapY = -1f
-    fun triggerTapAnimation(x: Float, y: Float, label: String) { tapX = x; tapY = y; invalidate() }
-    fun triggerSwipeAnimation(x1: Float, y1: Float, x2: Float, y2: Float) {}
-    fun stopAnimations() { tapX = -1f; tapY = -1f; invalidate() }
-    override fun onDraw(canvas: Canvas) {
-        if (tapX >= 0f) {
-            val p = Paint().apply { color = Color.parseColor("#2DD4BF"); style = Paint.Style.FILL }
-            canvas.drawCircle(tapX, tapY, 20f, p)
-        }
-    }
-}
+                            <Button
+                                android:id="@+id/btnSaveTrainedSkillJson"
+                                android:layout_width="0dp"
+                                android:layout_height="46dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#0D9488"
+                                android:text="💾 Sync RAG"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnCopyTrainedSkillJson"
+                                android:layout_width="wrap_content"
+                                android:layout_height="46dp"
+                                android:layout_marginEnd="6dp"
+                                android:backgroundTint="#1E293B"
+                                android:text="📤 Copy"
+                                android:textAllCaps="false"
+                                android:textColor="#F0F9FF"
+                                android:textSize="12.5sp" />
+
+                            <Button
+                                android:id="@+id/btnViewAllTrainedSkills"
+                                android:layout_width="wrap_content"
+                                android:layout_height="46dp"
+                                android:backgroundTint="#1E293B"
+                                android:text="📚 Vectors"
+                                android:textAllCaps="false"
+                                android:textColor="#38BDF8"
+                                android:textSize="12.5sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#402DD4BF"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔐 RAG Vector Memory Vault"
+                            android:textColor="#F0F9FF"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <EditText
+                            android:id="@+id/etMemoryVault"
+                            android:layout_width="match_parent"
+                            android:layout_height="115dp"
+                            android:layout_marginTop="8dp"
+                            android:background="#192338"
+                            android:gravity="top|start"
+                            android:padding="12dp"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp" />
+
+                        <Button
+                            android:id="@+id/btnSaveMemory"
+                            android:layout_width="match_parent"
+                            android:layout_height="46dp"
+                            android:layout_marginTop="8dp"
+                            android:backgroundTint="#0284C7"
+                            android:text="💾 Save RAG State"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <ScrollView
+            android:id="@+id/tabSettingsLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#4038BDF8"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="⚙️ Cognitive AI Engines"
+                            android:textColor="#F0F9FF"
+                            android:textSize="16.5sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnEnableAccessibility"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#1E293B"
+                                android:text="Enable Touch"
+                                android:textAllCaps="false"
+                                android:textColor="#38BDF8"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnEnableStorage"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#1E293B"
+                                android:text="Allow Storage"
+                                android:textAllCaps="false"
+                                android:textColor="#2DD4BF"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnDisableBatteryOptimization"
+                            android:layout_width="match_parent"
+                            android:layout_height="46dp"
+                            android:layout_marginTop="8dp"
+                            android:backgroundTint="#0D9488"
+                            android:text="🛡️ Force Active (No OS Sleep)"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Gemini API Key:"
+                            android:textColor="#7DD3FC"
+                            android:textSize="13.5sp" />
+
+                        <EditText
+                            android:id="@+id/etApiKey"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:background="#192338"
+                            android:hint="Paste Gemini API Key..."
+                            android:inputType="textPassword"
+                            android:padding="12dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Fast State-Machine Engine:"
+                            android:textColor="#7DD3FC"
+                            android:textSize="13sp" />
+
+                        <EditText
+                            android:id="@+id/etModelName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:background="#192338"
+                            android:padding="12dp"
+                            android:text="gemini-3.8-flash"
+                            android:textColor="#F0F9FF" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="High-Cognition Error Recovery Engine:"
+                            android:textColor="#38BDF8"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <EditText
+                            android:id="@+id/etHighModelName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:background="#192338"
+                            android:padding="12dp"
+                            android:text="gemini-3.8-pro"
+                            android:textColor="#38BDF8"
+                            android:textStyle="bold" />
+
+                        <CheckBox
+                            android:id="@+id/cbAutoHighModel"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:checked="true"
+                            android:text="🧠 Vector Context Fallback (Switch to High Model on Error)"
+                            android:textColor="#F0F9FF" />
+
+                        <CheckBox
+                            android:id="@+id/cbGoogleSearchGrounding"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🌍 Google Search Context Engine"
+                            android:textColor="#F0F9FF" />
+
+                        <CheckBox
+                            android:id="@+id/cbRealWebTouch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="👆 Real Human Touch Injection"
+                            android:textColor="#F0F9FF" />
+
+                        <CheckBox
+                            android:id="@+id/cbUseScreenVision"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="👁️ ML-Kit Coordinate Vision"
+                            android:textColor="#F0F9FF" />
+
+                        <CheckBox
+                            android:id="@+id/cb24HourUnstoppable"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🔋 24-Hour Watchdog Loop"
+                            android:textColor="#F0F9FF" />
+
+                        <Button
+                            android:id="@+id/btnSaveSettings"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="10dp"
+                            android:backgroundTint="#0284C7"
+                            android:text="💾 Save Cognitive Core"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#402DD4BF"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📊 Detailed State Logs"
+                            android:textColor="#2DD4BF"
+                            android:textSize="15.5sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvConsoleLog"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="#0B101C"
+                            android:fontFamily="monospace"
+                            android:minHeight="195dp"
+                            android:padding="12dp"
+                            android:text="[System] Cognitive Engine Initialized."
+                            android:textColor="#E0F2FE"
+                            android:textSize="12.5sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:background="#121826"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="4dp">
+
+        <Button android:id="@+id/navTabChat" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="?attr/selectableItemBackground" android:text="💧\nChat" android:textAllCaps="false" android:textColor="#38BDF8" android:textSize="11.5sp" android:textStyle="bold" />
+        <Button android:id="@+id/navTabWeb" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="?attr/selectableItemBackground" android:text="🌐\nBrowser" android:textAllCaps="false" android:textColor="#94A3B8" android:textSize="11.5sp" />
+        <Button android:id="@+id/navTabPipelines" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="?attr/selectableItemBackground" android:text="🎬\nStory &amp; YT" android:textAllCaps="false" android:textColor="#94A3B8" android:textSize="11.5sp" />
+        <Button android:id="@+id/navTabDoctor" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="?attr/selectableItemBackground" android:text="🎓\nRAG Vector" android:textAllCaps="false" android:textColor="#94A3B8" android:textSize="11.5sp" />
+        <Button android:id="@+id/navTabSettings" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="?attr/selectableItemBackground" android:text="⚙️\nCore Settings" android:textAllCaps="false" android:textColor="#94A3B8" android:textSize="11.5sp" />
+    </LinearLayout>
+</LinearLayout>
