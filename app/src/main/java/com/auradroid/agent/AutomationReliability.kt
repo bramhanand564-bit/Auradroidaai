@@ -176,6 +176,28 @@ object AppAutomationRouter {
             ?: "ANDROID_UI"
     }
 
+    fun adapterGuidance(goal: String, packageName: String? = null): String {
+        val profile = profileForPackage(packageName) ?: profileForGoal(goal)
+        return when (profile?.id) {
+            "CHROME" -> "CHROME ADAPTER: verify the current URL, tab title, loading state and active tab. Prefer current semantic/DOM targets; never use an old target index after navigation."
+            "YOUTUBE", "YOUTUBE_STUDIO" -> "YOUTUBE ADAPTER: distinguish the consumer YouTube app from YouTube Studio. For uploads, verify exact filename/preview, metadata and audience/privacy before the final side effect; require visible upload evidence."
+            "GOOGLE_FLOW" -> "GOOGLE FLOW ADAPTER: submit a generation prompt once only. Wait for fresh render/progress evidence and verify the actual finished video file before chaining to YouTube."
+            "WHATSAPP" -> "WHATSAPP ADAPTER: verify the contact/group header before typing. A typed draft is not a sent message; never send unless the original user goal explicitly requests it and verify the resulting chat state."
+            "INSTAGRAM" -> "INSTAGRAM ADAPTER: confirm the active account/profile and the selected media. Distinguish save-draft from publish; do not repeat post/follow actions when the result is uncertain."
+            "GMAIL" -> "GMAIL ADAPTER: check recipient, subject and body independently. A populated compose form is not a sent email; send only when explicitly requested and verify visible sent evidence."
+            "GOOGLE_DRIVE" -> "DRIVE ADAPTER: verify filename and destination folder before moving, sharing or deleting. Treat permission dialogs and upload progress as separate states."
+            "GOOGLE_PHOTOS" -> "PHOTOS ADAPTER: verify the selected photo/video by visible preview and date/name when available; don't confuse Photos with a local Downloads folder."
+            "GOOGLE_MAPS" -> "MAPS ADAPTER: verify the destination name and location in the selected result before starting navigation or changing route options."
+            "TELEGRAM" -> "TELEGRAM ADAPTER: verify the conversation header and recipient; a composer draft is not a sent message."
+            "FACEBOOK" -> "FACEBOOK ADAPTER: verify the active profile/page and target audience; treat publish, follow and delete as sensitive side effects."
+            "X" -> "X/TWITTER ADAPTER: verify the exact installed app or website destination and current account; don't switch between similarly named clients without explicit user intent."
+            "SPOTIFY" -> "SPOTIFY ADAPTER: verify the selected track/playlist and current playback state before reporting playback success."
+            "LINKEDIN" -> "LINKEDIN ADAPTER: verify the active profile and target post/person; never submit a post or connection action unless explicitly requested."
+            "ANDROID_SETTINGS" -> "ANDROID SETTINGS ADAPTER: confirm the exact settings page and current toggle state; don't claim a setting changed until its new state is observed."
+            else -> "UNIVERSAL ADAPTER: confirm the foreground app and current screen before every action; use fresh targets, verify the result and pause rather than guessing when evidence is ambiguous."
+        }
+    }
+
     fun isExplicitPhoneRequest(goal: String): Boolean {
         val value = goal.lowercase()
         return explicitPhoneSignals.any { value.contains(it) }
