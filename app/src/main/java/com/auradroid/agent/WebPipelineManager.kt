@@ -317,6 +317,7 @@ object WebPipelineManager {
                 var prevShotB64: String? = null
                 var currentSense = 1
                 var lastVerifyReport = "Initial state ready."
+                var unverifiedDoneCount = 0
                 val trainedBlueprint = VideoQueueManager.getTrainedSkillBlueprint(context, "CUSTOM_WEB")
 
                 for (step in 1..36) {
@@ -353,22 +354,92 @@ object WebPipelineManager {
                     hud.updateStatus("Web • ${decision.action}", decision.reason, "AUTO")
 
                     var senseUsed = WebActionVerifier.getSenseName(currentSense)
+                    var inlineAfterSnap: DomSnapshot? = null
+                    var inlineVerifyRes: StepVerificationResult? = null
                     when (decision.action) {
                         "DONE" -> {
-                            VideoQueueManager.markSkillLiveVerified(context, "CUSTOM_WEB", true)
-                            hud.updateStatus("Nax Bot • Done", decision.reason, "HAPPY")
-                            break
+                            val doneEvidence = WebActionVerifier.verifyGoalCompletion(goal, snap)
+                            if (doneEvidence != null) {
+                                VideoQueueManager.markSkillLiveVerified(context, "CUSTOM_WEB", true)
+                                VideoQueueManager.appendDetailedLog(
+                                    context = context,
+                                    modelUsed = activeModelLabel,
+                                    clickSense = "Goal Evidence Check",
+                                    actionDesc = "AI proposed DONE",
+                                    whyReason = decision.reason,
+                                    verifyStatus = "✅ $doneEvidence"
+                                )
+                                hud.updateStatus("Nax Bot • Done", doneEvidence, "HAPPY")
+                                break
+                            }
+
+                            unverifiedDoneCount++
+                            lastVerifyReport = "DONE REJECTED: no task-specific completion evidence on the live page. Verify the pending task or report the blocker; do not claim success."
+                            history.add("Step $step: DONE rejected — completion evidence not found.")
+                            VideoQueueManager.appendDetailedLog(
+                                context = context,
+                                modelUsed = activeModelLabel,
+                                clickSense = "Goal Evidence Check",
+                                actionDesc = "Rejected unsupported DONE decision",
+                                whyReason = decision.reason,
+                                verifyStatus = "⚠️ NO COMPLETION EVIDENCE"
+                            )
+                            if (unverifiedDoneCount >= 3) {
+                                hud.updateStatus("Web • Not Verified", "AI reported DONE repeatedly, but the page gave no proof.", "ERROR")
+                                VideoQueueManager.appendLog(context, "⚠️ Web task stopped: DONE was rejected 3 times because completion evidence was absent.")
+                                break
+                            }
+                            delay(700)
+                            continue
                         }
                         "CLICK_EL" -> {
-                            senseUsed = WebActionVerifier.executeMultiSenseClick(
-                                webView = webView,
-                                hud = hud,
-                                elementIndex = decision.elementIndex,
-                                fallbackCssX = decision.tapX,
-                                fallbackCssY = decision.tapY,
-                                senseLevel = currentSense,
-                                label = decision.reason
-                            )
+                            val originalTargetLine = snap.interactiveElementsText.lineSequence()
+                                .firstOrNull { it.trimStart().startsWith("[${decision.elementIndex}] ") }.orEmpty()
+                            val repeatUnsafe = WebActionVerifier.isNonRepeatableAction("$originalTargetLine ${decision.reason}")
+                            val tryLevels = if (repeatUnsafe) listOf(currentSense) else
+                                ((currentSense.coerceIn(1, 4)..4).toList() + (1 until currentSense.coerceIn(1, 4)).toList())
+
+                            for ((attemptNo, senseLevel) in tryLevels.withIndex()) {
+                                val attemptBefore = if (attemptNo == 0) snap else WebActionVerifier.captureSnapshot(webView)
+                                val resolvedIndex = if (attemptNo == 0) decision.elementIndex else
+                                    WebActionVerifier.resolveElementIndexByLabel(
+                                        originalElements = snap.interactiveElementsText,
+                                        currentElements = attemptBefore.interactiveElementsText,
+                                        originalIndex = decision.elementIndex
+                                    )
+                                if (resolvedIndex < 0) {
+                                    lastVerifyReport = "RETRY STOPPED: original clickable target could not be safely re-identified after the page changed."
+                                    break
+                                }
+
+                                senseUsed = WebActionVerifier.executeMultiSenseClick(
+                                    webView = webView,
+                                    hud = hud,
+                                    elementIndex = resolvedIndex,
+                                    fallbackCssX = decision.tapX,
+                                    fallbackCssY = decision.tapY,
+                                    senseLevel = senseLevel,
+                                    label = decision.reason
+                                )
+
+                                val (attemptAfter, attemptVerify) = WebActionVerifier.confirmStepInOneSecond(
+                                    webView = webView,
+                                    before = attemptBefore,
+                                    actionTaken = "CLICK_EL",
+                                    expectedOutcome = decision.reason,
+                                    waitMs = maxOf(1050L, VideoQueueManager.getStepDelayMs(context))
+                                )
+                                inlineAfterSnap = attemptAfter
+                                inlineVerifyRes = attemptVerify
+                                if (attemptVerify.passed) break
+
+                                // Never blindly repeat a potentially irreversible action.
+                                if (repeatUnsafe) {
+                                    lastVerifyReport = "CLICK NOT CONFIRMED after one attempt. This target may have side effects; re-inspect page state before any retry."
+                                    break
+                                }
+                                if (attemptNo < tryLevels.lastIndex) delay(250)
+                            }
                         }
                         "CLICK_XY" -> {
                             WebActionVerifier.dispatchRealWebTouch(
@@ -396,17 +467,33 @@ object WebPipelineManager {
                         }
                     }
 
-                    // 1-Second Live AI Confirmation Check after every step!
-                    val (afterSnap, verifyRes) = WebActionVerifier.confirmStepInOneSecond(
-                        webView = webView,
-                        before = snap,
-                        actionTaken = decision.action,
-                        expectedOutcome = decision.reason,
-                        waitMs = VideoQueueManager.getStepDelayMs(context)
-                    )
+                    // Reuse the last fresh verification if the click recovery ladder already performed it.
+                    // All other actions are verified here before a new task decision is requested.
+                    val expectedOutcome = when (decision.action) {
+                        "TYPE_EL" -> decision.textToType
+                        "LOAD_URL" -> decision.url
+                        else -> decision.reason
+                    }
+                    val afterSnap: DomSnapshot
+                    val verifyRes: StepVerificationResult
+                    if (inlineAfterSnap != null && inlineVerifyRes != null) {
+                        afterSnap = inlineAfterSnap!!
+                        verifyRes = inlineVerifyRes!!
+                    } else {
+                        val pair = WebActionVerifier.confirmStepInOneSecond(
+                            webView = webView,
+                            before = snap,
+                            actionTaken = decision.action,
+                            expectedOutcome = expectedOutcome,
+                            waitMs = maxOf(1050L, VideoQueueManager.getStepDelayMs(context))
+                        )
+                        afterSnap = pair.first
+                        verifyRes = pair.second
+                    }
 
                     currentSense = verifyRes.recommendedSense
                     lastVerifyReport = verifyRes.verificationReport
+                    unverifiedDoneCount = 0
 
                     VideoQueueManager.appendDetailedLog(
                         context = context,
